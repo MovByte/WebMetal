@@ -72,9 +72,12 @@ have the same device profile when their keys are equal.
 | `timeout` | none; the runner killed the process after `--timeout` seconds |
 
 Any outcome may carry `assertion`: the first Metal assertion printed by the
-process, from the start of its line to its closing quote, with hexadecimal
-addresses replaced by `0x`. The text depends on the OS build and is never
-compared.
+process, from the start of its line. A quoted validation message ends at its
+closing quote (the first `'` followed by a line end or the end of the
+output); any other assertion ends at its line end. A system log prefix
+(date, time, process name and identifiers) is removed, and hexadecimal
+numbers of 9 or more digits (object addresses) are replaced by `0x`. The
+text depends on the OS build and is never compared.
 
 ## Records
 

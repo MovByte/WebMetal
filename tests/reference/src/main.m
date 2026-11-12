@@ -369,19 +369,40 @@ static WMChildResult WMSpawnChild(NSString *executable, NSArray<NSString *> *arg
 }
 
 // The first Metal assertion in the child's output, from the start of its
-// line to the closing quote, with object addresses replaced by "0x".
+// line to its end. Validation assertions quote their message
+// ("failed assertion `...'"), which may span lines and contain quotes; it
+// ends at a quote followed by a line end or the end of the output. Other
+// assertions ("failed assertion <condition> at line N in <method>") end at
+// the line end. Object addresses (hexadecimal numbers of 9 or more digits)
+// are replaced by "0x".
 static NSString *WMAssertion(NSData *output) {
     NSString *text = [[NSString alloc] initWithData:output encoding:NSUTF8StringEncoding];
     if (!text) text = [[NSString alloc] initWithData:output encoding:NSISOLatin1StringEncoding];
-    NSRange marker = [text rangeOfString:@"failed assertion `"];
+    NSRange marker = [text rangeOfString:@"failed assertion"];
     if (marker.location == NSNotFound) return nil;
     NSRange line = [text lineRangeForRange:NSMakeRange(marker.location, 0)];
     NSUInteger start = line.location;
-    NSRange close = [text rangeOfString:@"'" options:0
-                                  range:NSMakeRange(NSMaxRange(marker), text.length - NSMaxRange(marker))];
-    NSUInteger end = close.location == NSNotFound ? text.length : NSMaxRange(close);
+    NSUInteger end = NSMaxRange(line);
+    if (end > start && [text characterAtIndex:end - 1] == '\n') end--;
+    if ([text rangeOfString:@"failed assertion `" options:NSAnchoredSearch
+                      range:NSMakeRange(marker.location, text.length - marker.location)].location != NSNotFound) {
+        end = text.length;
+        for (NSUInteger i = NSMaxRange(marker) + 2; i < text.length; i++) {
+            if ([text characterAtIndex:i] != '\'') continue;
+            if (i + 1 == text.length || [text characterAtIndex:i + 1] == '\n') {
+                end = i + 1;
+                break;
+            }
+        }
+    }
     NSString *assertion = [text substringWithRange:NSMakeRange(start, end - start)];
-    NSRegularExpression *address = [NSRegularExpression regularExpressionWithPattern:@"0x[0-9a-fA-F]+"
+    // Drop a system log prefix ("2026-01-02 03:04:05.678 wmref[pid:tid] ").
+    NSRegularExpression *prefix = [NSRegularExpression
+        regularExpressionWithPattern:@"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+ [^ \\[]+\\[[0-9]+:[0-9a-fA-F]+\\] "
+                             options:0 error:NULL];
+    assertion = [prefix stringByReplacingMatchesInString:assertion options:0
+                                                   range:NSMakeRange(0, assertion.length) withTemplate:@""];
+    NSRegularExpression *address = [NSRegularExpression regularExpressionWithPattern:@"0x[0-9a-fA-F]{9,}"
                                                                              options:0 error:NULL];
     return [address stringByReplacingMatchesInString:assertion options:0
                                                range:NSMakeRange(0, assertion.length) withTemplate:@"0x"];
