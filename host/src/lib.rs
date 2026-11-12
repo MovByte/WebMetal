@@ -3,8 +3,9 @@
 //!
 //! [`embed`] is the interface the embedding environment (the kernel side) provides to the executor; [`exec`] is the core
 //! executor; [`gpu`] is the executor's binding to WebGPU; [`mem`] keeps buffers, textures and IOSurfaces coherent
-//! between guest memory and WebGPU.
+//! between guest memory and WebGPU; [`blit`] records blit encoders.
 
+pub mod blit;
 pub mod embed;
 pub mod exec;
 pub mod format;

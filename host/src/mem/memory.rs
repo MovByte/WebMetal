@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::blit::kernels::Kernels;
 use crate::format::webgpu::{HostFeatures, WebGpuFormat};
 use crate::gpu::idl::SupportedLimits;
 use crate::gpu::{Api, Device as _};
@@ -30,6 +31,8 @@ pub struct Memory<A: Api> {
     pub(crate) masked_words: Cell<u64>,
     /// The IOSurface planes textures are made over, shared by every task.
     pub(crate) surfaces: RefCell<HashMap<(SurfaceId, u32), Rc<SurfacePlane>>>,
+    /// The pipelines of the passes that move bytes WebGPU's copies cannot (`crate::blit::kernels`), made on first use.
+    pub(crate) kernels: Kernels<A>,
 }
 
 impl<A: Api> Memory<A> {
@@ -45,6 +48,7 @@ impl<A: Api> Memory<A> {
             masked: RefCell::new(None),
             masked_words: Cell::new(0),
             surfaces: RefCell::new(HashMap::new()),
+            kernels: Kernels::default(),
         }
     }
 

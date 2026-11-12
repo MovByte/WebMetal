@@ -929,7 +929,7 @@ fn texture_error_paths() {
         ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 5, SHARED, 1)),
         Err(MemError::Undefined { .. })
     ));
-    // An R8 blit whose rows start off a 4-byte boundary needs a shader re-pitch.
+    // An R8 blit whose rows start off a 4-byte boundary, both ways: the rows move through the GPU's byte passes.
     let r8 = ctx
         .mem
         .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 10, (3, 3, 1), 1, 1, PRIVATE, 1))
@@ -940,11 +940,7 @@ fn texture_error_paths() {
         slice: 0,
         layout: RegionLayout::new("blit", &r8.geometry, r8.blocks.unwrap(), &a).unwrap(),
     };
-    let src = ctx.shared_buffer(&[7u8; 12]);
-    let encoder = g.device.create_command_encoder(&CommandEncoderDescriptor::new());
-    assert!(matches!(
-        ctx.mem.encode_buffer_to_texture(&ctx.direct, &encoder, (&src, 0), &r8, &r),
-        Err(MemError::Unimplemented { .. })
-    ));
+    let bytes: Vec<u8> = (1..=9).collect();
+    assert_eq!(ctx.blit_round_trip(&r8, &r, &bytes).unwrap(), bytes);
     g.assert_no_errors();
 }

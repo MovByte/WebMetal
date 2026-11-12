@@ -34,7 +34,7 @@ use crate::format::handling::{self, Dimension, Emulation, Resolution, Unavailabl
 use crate::format::packed;
 use crate::format::pvrtc;
 use crate::format::storage;
-use crate::format::webgpu::{Feature, WebGpuFormat};
+use crate::format::webgpu::{Aspect, Feature, WebGpuFormat};
 use crate::gpu::idl::{
     BufferDescriptor, BufferUsage, CommandBufferDescriptor, CommandEncoderDescriptor, Extent3D, Extent3DDict, MapMode,
     Origin3D, Origin3DDict, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureAspect,
@@ -44,6 +44,8 @@ use crate::gpu::{
     Api, Buffer as _, CommandEncoder as _, Device as _, GpuFuture, MappedRange as _, Queue as _, Size64, Texture as _,
 };
 use webmetal_wire::{GetBytes, GetBytesSlice, Handle, ReplaceRegion, ReplaceRegionSlice, TextureDescriptor};
+
+use crate::blit::kernels::{DepthWrite, Rows, Source, depth_bits, encode_depth_write, encode_rows, encode_swap10};
 
 use super::buffer::{Buffer, label};
 use super::calls::Calls;
@@ -153,6 +155,29 @@ impl<A: Api> Texture<A> {
         self.state.borrow().purgeable
     }
 
+    /// The twin texture of `level`, if the texture keeps one.
+    pub(crate) fn twin(&self, level: u32) -> Option<&A::Texture> {
+        self.twins.get(level as usize)
+    }
+
+    /// The layer of `slice` in the per-subresource state: the slice, or 0 for a 3D texture.
+    pub(crate) fn layer_of(&self, slice: u32) -> u32 {
+        if self.geometry.kind.is_3d() { 0 } else { slice }
+    }
+
+    /// Record which copies of `(level, layer)` hold the current contents after a blit wrote them: the stored texture,
+    /// the twin, or both. A texture over an IOSurface plane is marked written.
+    pub(crate) fn set_current(&self, level: u32, layer: u32, stored: bool, twin: bool) {
+        debug_assert!(stored || (twin && self.has_twin()), "a subresource keeps a current copy");
+        let i = self.sub(level, layer);
+        let mut st = self.state.borrow_mut();
+        st.stored[i] = stored;
+        st.twin[i] = twin && self.has_twin();
+        if self.surface.is_some() {
+            st.surface_written = true;
+        }
+    }
+
     pub(crate) fn surface_state(&self) -> (u64, bool) {
         let st = self.state.borrow();
         (st.surface_version, st.surface_written)
@@ -183,12 +208,12 @@ fn gpu_err(op: &'static str) -> impl Fn(crate::gpu::Exception) -> MemError {
 
 /// One copy of a region of a texture: which WebGPU texture, where, and the bytes of a row.
 #[derive(Clone, Copy, Debug)]
-struct Placement {
-    level: u32,
-    origin: (u32, u32, u32),
-    extent: (u32, u32, u32),
-    row_bytes: u64,
-    rows: u32,
+pub(crate) struct Placement {
+    pub(crate) level: u32,
+    pub(crate) origin: (u32, u32, u32),
+    pub(crate) extent: (u32, u32, u32),
+    pub(crate) row_bytes: u64,
+    pub(crate) rows: u32,
 }
 
 /// How the bytes read from a copy become Metal's.
@@ -321,7 +346,12 @@ impl<A: Api> Memory<A> {
         if storage != StorageMode::Memoryless {
             gpu_usage |= TextureUsage::COPY_SRC | TextureUsage::COPY_DST;
         }
-        if (wants(usage::RENDER_TARGET) || storage == StorageMode::Memoryless) && can_render {
+        // Metal blits write every texture that is not memoryless and generate the mipmaps of any mipmapped
+        // color-renderable texture, whatever its usage (`generateMipmaps(for:)`); WebGPU writes a depth aspect that is
+        // not a copy destination, and makes mipmap levels, only through render passes.
+        let blit_renders = storage != StorageMode::Memoryless
+            && (caps.aspects.iter().any(|a| !a.copy_dst) || (geometry.mip_levels > 1 && caps.aspects.is_empty()));
+        if (wants(usage::RENDER_TARGET) || storage == StorageMode::Memoryless || blit_renders) && can_render {
             gpu_usage |= TextureUsage::RENDER_ATTACHMENT;
         }
         if wants(usage::SHADER_WRITE) && can_store {
@@ -443,7 +473,13 @@ impl<A: Api> Memory<A> {
 
     /// Where a region of `(level, slice)` lies in the stored texture (texel coordinates; compressed regions rounded
     /// out to whole blocks, as WebGPU copies them) and in the twin (block coordinates).
-    fn placements(&self, t: &Texture<A>, l: &RegionLayout, level: u32, slice: u32) -> (Placement, Placement) {
+    pub(crate) fn placements(
+        &self,
+        t: &Texture<A>,
+        l: &RegionLayout,
+        level: u32,
+        slice: u32,
+    ) -> (Placement, Placement) {
         let b = t.blocks.expect("regions have blocks");
         let (ox, oy, oz) = l.origin;
         let z = if t.geometry.kind.is_3d() { oz } else { slice };
@@ -541,9 +577,21 @@ impl<A: Api> Memory<A> {
     /// An upload of compressed blocks is exact in what it is used for: the decoded values, which WebGPU preserves
     /// (every value a compressed block decodes to is finite and normal), while the bits stay in the twin. Every other
     /// transfer needs the format's texel copies proven on this host ([`super::proof`]).
-    fn check_stored_transfer(&self, t: &Texture<A>, call: &'static str, upload: bool) -> Result<(), MemError> {
+    pub(crate) fn check_stored_transfer(
+        &self,
+        t: &Texture<A>,
+        call: &'static str,
+        upload: bool,
+    ) -> Result<(), MemError> {
         let f = t.resolution.storage();
         if f.texel_copy_exact(None) || (upload && f.is_compressed()) {
+            return Ok(());
+        }
+        if !upload && depth_float_only(f) {
+            // A depth32float texture holds only what a depth output (clamped to [0, 1]) or the checked depth write
+            // ([`crate::blit::kernels::encode_depth_write`]: +0 and normal values of [0, 1]) put there: finite values
+            // whose copies keep them (WebGPU section 11.2: "valid, finite, non-subnormal numeric values in the source
+            // have the same numeric value in the destination").
             return Ok(());
         }
         match self.proof(f) {
@@ -561,7 +609,8 @@ impl<A: Api> Memory<A> {
     /// The format whose texel copies a transfer of `t` needs proven before it can run, if any.
     pub fn texture_needs_proof(&self, t: &Texture<A>) -> Option<WebGpuFormat> {
         let f = t.resolution.storage();
-        (!f.texel_copy_exact(None) && !f.is_compressed() && self.proof(f).is_none()).then_some(f)
+        (!f.texel_copy_exact(None) && !f.is_compressed() && !depth_float_only(f) && self.proof(f).is_none())
+            .then_some(f)
     }
 
     /// `replaceRegion:mipmapLevel:withBytes:bytesPerRow:` (ReplaceRegion).
@@ -623,6 +672,35 @@ impl<A: Api> Memory<A> {
         self.upload_region(g, call, t, &l, (a.level as u32, a.slice as u32), &l.pack(&metal))
     }
 
+    /// Write a region of a depth32float texture from bytes the CPU holds, through a render pass ([`encode_depth_write`]):
+    /// WebGPU copies cannot write its depth aspect. Values the pass would not store unchanged are refused.
+    fn upload_depth(
+        &self,
+        g: &impl Calls<A>,
+        call: &'static str,
+        t: &Texture<A>,
+        l: &RegionLayout,
+        (level, slice): (u32, u32),
+        tight: &[u8],
+    ) -> Result<(), MemError> {
+        let bits = depth_bits(call, tight)?;
+        let encoder = g.call("GPUDevice.createCommandEncoder", call, |d| {
+            d.create_command_encoder(&CommandEncoderDescriptor::new())
+        });
+        let w = DepthWrite {
+            texture: &t.stored,
+            level,
+            layer: slice,
+            origin: (l.origin.0, l.origin.1),
+            size: (l.size.0, l.size.1),
+            bits: &bits,
+        };
+        encode_depth_write(self, g, &encoder, &w)?;
+        let cb = g.call("GPUCommandEncoder.finish", call, |_| encoder.finish(&CommandBufferDescriptor::new()));
+        g.call("GPUQueue.submit", call, |_| g.queue().submit(&[&cb]));
+        Ok(())
+    }
+
     /// Write a region's tight bytes into every current copy of the subresource.
     pub(crate) fn upload_region(
         &self,
@@ -637,11 +715,8 @@ impl<A: Api> Memory<A> {
         let (stored_now, twin_now) = (t.stored_current(level, layer), t.twin_current(level, layer));
         let (sp, tp) = self.placements(t, l, level, slice);
         if stored_now {
-            if t.resolution.storage().caps().aspects.len() == 1 && !t.resolution.storage().caps().aspects[0].copy_dst {
-                return Err(MemError::unimplemented(format!(
-                    "{call}: WebGPU cannot copy into {} textures; writing them needs a render pass",
-                    t.resolution.storage().name()
-                )));
+            if depth_float_only(t.resolution.storage()) {
+                return self.upload_depth(g, call, t, l, (level, slice), tight);
             }
             self.check_stored_transfer(t, call, true)?;
             let data = self.stored_bytes(t, l, tight, level)?;
@@ -830,10 +905,13 @@ impl<A: Api> Memory<A> {
         Ok(())
     }
 
-    /// A buffer the executor uses as a GPU-side staging area for re-pitched copies.
+    /// A buffer the executor uses as a GPU-side staging area for re-pitched copies; the blit passes
+    /// ([`crate::blit::kernels`]) read and write it as a storage buffer.
     fn copy_staging(&self, g: &impl Calls<A>, size: u64) -> Result<A::Buffer, MemError> {
-        let d =
-            BufferDescriptor::new(size64(size.max(4), "createBuffer")?, BufferUsage::COPY_SRC | BufferUsage::COPY_DST);
+        let d = BufferDescriptor::new(
+            size64(size.max(4), "createBuffer")?,
+            BufferUsage::COPY_SRC | BufferUsage::COPY_DST | BufferUsage::STORAGE,
+        );
         g.call("GPUDevice.createBuffer", "webmetal copy staging", |dev| dev.create_buffer(&d))
             .map_err(gpu_err("GPUDevice.createBuffer"))
     }
@@ -841,8 +919,10 @@ impl<A: Api> Memory<A> {
     /// Encode a blit of a region from a buffer into a texture (`copyFromBuffer:...toTexture:`): `l` lays the bytes out
     /// at `offset` of `src` as Metal does. The bytes land in the twin when the texture keeps one (the stored texture is
     /// then stale until [`Memory::prepare_texture`]), else in the stored texture. Rows whose Metal stride is not a
-    /// multiple of 256 are re-pitched through a staging buffer with buffer copies, which needs every row to start on a
-    /// 4-byte boundary; other layouts are refused until a shader re-pitch exists.
+    /// multiple of 256 are re-pitched through a staging buffer: with buffer copies when every row starts on a 4-byte
+    /// boundary, else with the GPU's byte moves ([`encode_rows`]). A depth aspect that WebGPU copies cannot write
+    /// (`depth32float`) and the aspects of combined depth-stencil formats are the blit service's
+    /// ([`crate::blit::depth`]).
     pub fn encode_buffer_to_texture(
         &self,
         g: &impl Calls<A>,
@@ -905,7 +985,6 @@ impl<A: Api> Memory<A> {
         texture: &A::Texture,
         p: &Placement,
     ) -> Result<(), MemError> {
-        const CALL: &str = "-[MTLBlitCommandEncoder copyFromBuffer:...toTexture:...]";
         let mut dst = TexelCopyTextureInfo::<A>::new(texture);
         dst.mip_level = p.level;
         dst.origin = origin(p.origin.0, p.origin.1, p.origin.2);
@@ -927,15 +1006,13 @@ impl<A: Api> Memory<A> {
         let pitch = StagingPitch::new(l.row_bytes, rows, u64::from(l.images));
         let staging = self.copy_staging(g, pitch.size())?;
         let chunk = l.row_bytes.next_multiple_of(4);
-        for i in 0..u64::from(l.images) {
-            for r in 0..rows {
-                let from = offset + i * l.bytes_per_image + r * l.bytes_per_row;
-                if !from.is_multiple_of(4) || from + chunk > src.size() {
-                    return Err(MemError::unimplemented(format!(
-                        "{CALL}: a source row at byte {from} is not on a 4-byte boundary; re-pitching it needs a \
-                         shader pass"
-                    )));
-                }
+        let starts = || {
+            (0..u64::from(l.images))
+                .flat_map(move |i| (0..rows).map(move |r| (i, r, offset + i * l.bytes_per_image + r * l.bytes_per_row)))
+        };
+        if starts().all(|(_, _, from)| from.is_multiple_of(4) && from + chunk <= src.size()) {
+            // Whole words: one buffer copy per row.
+            for (i, r, from) in starts() {
                 let to = (i * rows + r) * pitch.bytes_per_row;
                 let (a, b, n) = (
                     size64(from, "copyBufferToBuffer")?,
@@ -946,6 +1023,18 @@ impl<A: Api> Memory<A> {
                     encoder.copy_buffer_to_buffer_with_offsets(src, a, &staging, b, Some(n))
                 });
             }
+        } else {
+            // Rows that start inside a word: moved byte by byte on the GPU.
+            let rows_layout = Rows {
+                row_bytes: l.row_bytes,
+                rows,
+                images: u64::from(l.images),
+                src_row_pitch: l.bytes_per_row,
+                src_image_pitch: l.bytes_per_image,
+                dst_row_pitch: pitch.bytes_per_row,
+                dst_image_pitch: pitch.bytes_per_row * rows,
+            };
+            encode_rows(self, g, encoder, Source::Buffer(src, offset), (&staging, 0), rows_layout)?;
         }
         let mut s = TexelCopyBufferInfo::<A>::new(&staging);
         s.bytes_per_row = Some(pitch.bytes_per_row as u32);
@@ -955,9 +1044,9 @@ impl<A: Api> Memory<A> {
     }
 
     /// Encode a blit of a region from a texture into a buffer (`copyFromTexture:...toBuffer:`), laid out at `offset`
-    /// of `dst` as `l` describes; the buffer's readback window grows to cover it. Rows are written whole: a row whose
-    /// byte count or start is not a multiple of 4 is refused until a masked shader write exists, since a buffer copy
-    /// would overwrite the bytes beside it.
+    /// of `dst` as `l` describes; the buffer's readback window grows to cover it. Rows that are not whole 4-byte words
+    /// are written with the GPU's byte moves ([`encode_rows`]), which leave the bytes beside them as they are; a
+    /// BGR10A2 texture read from its stored `rgb10a2unorm` texels has its red and blue fields exchanged back first.
     pub fn encode_texture_to_buffer(
         &self,
         g: &impl Calls<A>,
@@ -977,8 +1066,8 @@ impl<A: Api> Memory<A> {
             return Err(MemError::undefined(CALL, "a memoryless texture has no contents"));
         }
         let (texture, p, convert) = self.read_source(CALL, t, l, level, slice)?;
-        if convert != Convert::None {
-            return Err(MemError::unimplemented(format!("{CALL}: BGR10A2 blits need a channel swap pass")));
+        if let Convert::PvrtcToMorton { .. } = convert {
+            return Err(MemError::undefined(CALL, "PVRTC blits to a buffer take MTLBlitOptionRowLinearPVRTC"));
         }
         let rows = u64::from(l.blocks.1);
         let pitch = StagingPitch::new(l.row_bytes, rows, u64::from(l.images));
@@ -993,25 +1082,50 @@ impl<A: Api> Memory<A> {
             encoder.copy_texture_to_buffer(&src, &sd, &extent(p.extent.0, p.extent.1, p.extent.2))
         })
         .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
-        for i in 0..u64::from(l.images) {
-            for r in 0..rows {
-                let to = offset + i * l.bytes_per_image + r * l.bytes_per_row;
-                if !to.is_multiple_of(4) || !l.row_bytes.is_multiple_of(4) {
-                    return Err(MemError::unimplemented(format!(
-                        "{CALL}: a destination row of {} bytes at byte {to} is not whole 4-byte words; writing it \
-                         without touching its neighbours needs a masked shader write",
-                        l.row_bytes
-                    )));
-                }
+        if convert == Convert::SwapRedBlue10 {
+            // The stored rgb10a2unorm texels back to Metal's BGR10A2 bytes.
+            encode_swap10(self, g, encoder, &staging, 0, pitch.size() / 4)?;
+        }
+        self.encode_staged_rows(g, encoder, &staging, (pitch, rows), l, (dst, offset))
+    }
+
+    /// Write rows staged at `pitch` into `dst` at `offset` laid out as `l`: one buffer copy per row when every row is
+    /// whole words, else the GPU's byte moves, which leave the bytes beside the rows as they are.
+    pub(crate) fn encode_staged_rows(
+        &self,
+        g: &impl Calls<A>,
+        encoder: &A::CommandEncoder,
+        staging: &A::Buffer,
+        (pitch, rows): (StagingPitch, u64),
+        l: &RegionLayout,
+        (dst, offset): (&Buffer<A>, u64),
+    ) -> Result<(), MemError> {
+        let starts = || {
+            (0..u64::from(l.images))
+                .flat_map(move |i| (0..rows).map(move |r| (i, r, offset + i * l.bytes_per_image + r * l.bytes_per_row)))
+        };
+        if l.row_bytes.is_multiple_of(4) && starts().all(|(_, _, to)| to.is_multiple_of(4)) {
+            for (i, r, to) in starts() {
                 let (a, b, n) = (
                     size64((i * rows + r) * pitch.bytes_per_row, "copyBufferToBuffer")?,
                     size64(to, "copyBufferToBuffer")?,
                     size64(l.row_bytes, "copyBufferToBuffer")?,
                 );
                 g.call("GPUCommandEncoder.copyBufferToBuffer", "", |_| {
-                    encoder.copy_buffer_to_buffer_with_offsets(&staging, a, dst.gpu(), b, Some(n))
+                    encoder.copy_buffer_to_buffer_with_offsets(staging, a, dst.gpu(), b, Some(n))
                 });
             }
+        } else {
+            let rows_layout = Rows {
+                row_bytes: l.row_bytes,
+                rows,
+                images: u64::from(l.images),
+                src_row_pitch: pitch.bytes_per_row,
+                src_image_pitch: pitch.bytes_per_row * rows,
+                dst_row_pitch: l.bytes_per_row,
+                dst_image_pitch: l.bytes_per_image,
+            };
+            encode_rows(self, g, encoder, Source::Buffer(staging, 0), (dst.gpu(), offset), rows_layout)?;
         }
         self.note_buffer_write(dst, Some((offset, offset + l.span)));
         Ok(())
@@ -1053,6 +1167,10 @@ impl<A: Api> Memory<A> {
                 encoder.copy_texture_to_buffer(&src, &sd, &extent(bx, by, images))
             })
             .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
+            if let Resolution::Emulated(Emulation { upload: Upload::SwapRedBlue10, .. }) = t.resolution {
+                // Metal's BGR10A2 bytes to the stored rgb10a2unorm texels.
+                encode_swap10(self, g, encoder, &staging, 0, pitch.size() / 4)?;
+            }
             let mut dst = TexelCopyTextureInfo::<A>::new(&t.stored);
             dst.mip_level = level;
             dst.origin = origin(0, 0, layer);
@@ -1149,6 +1267,11 @@ pub enum Prepare {
     Ready,
     /// The stored texture of a decoded format is stale: run [`Memory::refresh_decoded`] first.
     Decode,
+}
+
+/// Is `f` a depth format whose depth aspect WebGPU copies cannot write (`depth32float`, WebGPU section 26.1.2)?
+pub(crate) fn depth_float_only(f: WebGpuFormat) -> bool {
+    matches!(f.caps().aspects, [a] if a.aspect == Aspect::Depth && !a.copy_dst)
 }
 
 /// WebGPU's alignment of a buffer offset in a copy with a texture of `format`: the texel block copy footprint, or 4

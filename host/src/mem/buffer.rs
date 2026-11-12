@@ -560,6 +560,24 @@ impl<A: Api> Memory<A> {
         }
     }
 
+    /// The bytes `range` of the buffer's GPU copy, when the CPU knows them: the buffer is CPU-visible and its GPU copy
+    /// equals its shadow (no readback is pending, no GPU write has been noted since they last agreed, no zeroing is
+    /// due). Encoder services read values a WebGPU command cannot check on the GPU this way.
+    pub(crate) fn gpu_bytes_known(&self, b: &Buffer<A>, range: std::ops::Range<u64>) -> Option<Vec<u8>> {
+        let st = b.state.borrow();
+        if b.backing == Backing::Private || st.zero_gpu || st.discard_when_idle {
+            return None;
+        }
+        if matches!(st.writes, Writes::Known(Some(_))) {
+            return None;
+        }
+        let shadow = st.shadow.as_ref()?;
+        if shadow.pending().next().is_some() {
+            return None;
+        }
+        shadow.bytes().get(range.start as usize..range.end as usize).map(<[u8]>::to_vec)
+    }
+
     /// Encode, at the end of `encoder`, the readback of every CPU-visible buffer of `buffers` that the recorded work
     /// may have written. The readbacks take their queue position now: `encoder` must be submitted before any other
     /// upload of this module reaches the queue.

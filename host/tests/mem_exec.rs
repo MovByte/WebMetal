@@ -377,11 +377,9 @@ fn texture_cpu_access_through_the_executor() {
             pixel_bytes: GuestAddr(src),
             bytes_per_row: bpr,
         }));
-        if f.status != status::OK {
-            // WebGPU copies cannot write depth32float: refused loudly until a render-pass upload exists.
-            assert!(f.message.contains("cannot copy into depth32float"), "{name}: {f:?}");
-            continue;
-        }
+        // Depth32Float is written through a render pass, which keeps the reference's values (+0 and normal values of
+        // [0, 1]); every format the host stores takes its bytes.
+        assert_eq!(f.status, status::OK, "{name}: {f:?}");
         let dst = h.alloc(input.len() as u64);
         h.ok(Request::GetBytes(GetBytes {
             texture: t,
