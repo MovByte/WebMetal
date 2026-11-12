@@ -24,6 +24,9 @@
 //! **Splits.** A WebGPU pass is ended and a new one begun (loading the attachments) at a memory barrier after the
 //! vertex stage, and around each primitive of a pipeline whose pass plan is per-primitive (framebuffer fetch, plan
 //! section 5.9); `attachments` describes how the store and resolve actions then apply.
+//!
+//! **Views.** A texture view binds as a WebGPU view of its root texture over the view's levels and slices, in its
+//! format ([`crate::mem::view`]); its writes are noted on the root's subresources it covers.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -1722,9 +1725,10 @@ impl<A: Api> Run<'_, A> {
                         }
                         let view = self.texture_view(&tex, resource, *stage, *index)?;
                         if b.writable() {
-                            let layers = tex.texture().geometry.layers();
-                            for layer in 0..layers {
-                                self.notes.textures.push((tex.clone(), 0, layer));
+                            // A storage binding is the first level of the texture or view.
+                            let (levels, slices) = tex.root_window();
+                            for layer in slices {
+                                self.notes.textures.push((tex.clone(), levels.start, layer));
                             }
                         }
                         views.push((b.binding, view));
@@ -1849,25 +1853,31 @@ impl<A: Api> Run<'_, A> {
     /// The view of a bound texture for a binding.
     fn texture_view(&self, tex: &Tex<A>, resource: &Resource, stage: MetalStage, index: u64) -> Result<A::TextureView> {
         let t: &Texture<A> = tex.texture();
+        // The root's subresources the binding sees: every level and slice of a texture, a view's own.
+        let (levels, slices) = tex.root_window();
+        let sees =
+            |level: u32, slice: u32| levels.contains(&level) && (t.geometry.kind.is_3d() || slices.contains(&slice));
         for c in self.targets.colors.iter().flatten() {
-            if Rc::ptr_eq(c.texture.texture(), tex.texture()) {
+            if Rc::ptr_eq(c.texture.texture(), tex.texture()) && sees(c.level, c.slice) {
                 return Err(RenderError::unimplemented(format!(
                     "{} texture {index} is an attachment of the pass: WebGPU forbids a texture binding and an \
-                     attachment of one subresource in a pass, and a shader binding sees every level",
+                     attachment of one subresource in a pass, and the binding sees the attachment's subresource",
                     stage.name()
                 )));
             }
         }
         if let Some(ds) = &self.targets.depth_stencil
             && Rc::ptr_eq(ds.texture.texture(), tex.texture())
+            && sees(ds.level, ds.slice)
         {
             return Err(RenderError::unimplemented(format!(
                 "{} texture {index} is the depth-stencil attachment of the pass",
                 stage.name()
             )));
         }
-        match t.resolution {
-            Resolution::Native(_) => {}
+        match tex.resolution() {
+            // An X32_Stencil8 view reads the stencil aspect, a WebGPU view of its own.
+            Resolution::Native(_) | Resolution::StencilAspect => {}
             Resolution::Emulated(e) if e.read == Read::Native => {}
             _ => {
                 return Err(RenderError::unimplemented(format!(
@@ -1898,12 +1908,12 @@ impl<A: Api> Run<'_, A> {
                 );
             }
             Resource::StorageTexture { view_dimension, .. } => {
-                if t.geometry.mip_levels != 1 {
+                if tex.geometry().mip_levels != 1 {
                     return Err(RenderError::unimplemented(format!(
                         "{} texture {index}: a read-write or write-only binding of a texture with {} levels (a WebGPU \
                          storage binding is one level)",
                         stage.name(),
-                        t.geometry.mip_levels
+                        tex.geometry().mip_levels
                     )));
                 }
                 if t.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 {
@@ -1912,10 +1922,38 @@ impl<A: Api> Run<'_, A> {
                         format!("{} texture {index} was not created with MTLTextureUsageShaderWrite", stage.name()),
                     ));
                 }
+                if let Some(f) = tex.view().and_then(|v| v.view_format()) {
+                    return Err(RenderError::host(format!(
+                        "{} texture {index}: this host cannot write {} textures from shaders",
+                        stage.name(),
+                        f.as_str()
+                    )));
+                }
                 d.dimension = Some(*view_dimension);
                 d.mip_level_count = Some(1);
+                if let Some(v) = tex.view() {
+                    v.describe(&mut d, 0..1, TextureUsage::STORAGE_BINDING);
+                }
             }
             _ => return Err(RenderError::invalid("a texture source for a non-texture binding")),
+        }
+        if let Some(v) = tex.view()
+            && let Some(dimension) = d.dimension
+            && !v.takes(dimension)
+        {
+            return Err(RenderError::undefined(
+                DRAW,
+                format!(
+                    "{} texture {index} is a {:?} view of {} slices, and the function's texture type takes a {} view",
+                    stage.name(),
+                    v.geometry.kind,
+                    v.geometry.slices(),
+                    dimension.as_str()
+                ),
+            ));
+        }
+        if let (Some(v), Resource::Texture { .. }) = (tex.view(), resource) {
+            v.describe(&mut d, 0..v.geometry.mip_levels, TextureUsage::TEXTURE_BINDING);
         }
         self.call("GPUTexture.createView", |_| t.gpu().create_view(&d))
             .map_err(|e| RenderError::gpu("GPUTexture.createView", e))
@@ -2101,12 +2139,14 @@ impl<A: Api> Run<'_, A> {
                 )));
             }
             let (w, h, _) = t.geometry.level_extent(c.level);
+            // The snapshot reads as the attachment does: in a view's format (an sRGB sibling, copy-compatible).
+            let format = c.texture.view().and_then(|v| v.view_format()).unwrap_or_else(|| t.gpu().format());
             let snapshot = match self.snapshots.get(&a) {
                 Some(s) => s.clone(),
                 None => {
                     let mut d = TextureDescriptor::new(
                         Extent3D::Extent3DDict(Extent3DDict { width: w, height: h, depth_or_array_layers: 1 }),
-                        t.gpu().format(),
+                        format,
                         // WebGPU requires RENDER_ATTACHMENT of a multisampled texture (createTexture validation).
                         TextureUsage::COPY_DST
                             | TextureUsage::TEXTURE_BINDING

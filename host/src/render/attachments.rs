@@ -15,6 +15,10 @@
 //! **Split passes.** When the encoder must end the WebGPU pass in the middle of the Metal pass (barriers, per-primitive
 //! passes), every WebGPU pass but the first loads the attachments and every pass stores them; the Metal store and
 //! resolve actions are then applied by a final pass that loads and draws nothing ([`Targets::finish_descriptor`]).
+//!
+//! **Views.** A texture view ([`crate::mem::view`]) is an attachment through its root texture: the attachment's level
+//! and slice are the view's, checked against the view and moved to the root's, and its WebGPU view (one level and one
+//! slice, as WebGPU's render attachments are) is in the view's format. Attachments record the root's level and slice.
 
 use std::rc::Rc;
 
@@ -30,20 +34,23 @@ use crate::gpu::idl::{
 };
 use crate::gpu::{Api, Float32, Float64, Texture as _};
 use crate::mem::calls::Calls;
+use crate::mem::layout::Geometry;
 use crate::mem::linear::LinearTexture;
 use crate::mem::options::StorageMode;
 use crate::mem::texture::{Texture, idl_format};
+use crate::mem::view::TextureView;
 
 use super::error::{RenderError, Result};
 use super::metal::{DepthResolveFilter, LoadAction, StencilResolveFilter, StoreAction};
 
 pub(crate) const BEGIN: &str = "-[MTLCommandBuffer renderCommandEncoderWithDescriptor:]";
 
-/// A texture a pass uses: a texture, or a texture over a buffer's bytes.
+/// A texture a pass uses: a texture, a texture over a buffer's bytes, or a view of a texture.
 #[derive(Clone)]
 pub enum Tex<A: Api> {
     Plain(Rc<Texture<A>>),
     Linear(Rc<LinearTexture<A>>),
+    View(Rc<TextureView<A>>),
 }
 
 impl<A: Api> Tex<A> {
@@ -59,24 +66,72 @@ impl<A: Api> Tex<A> {
             Ok(t) => return Ok(Tex::Plain(t)),
             Err(p) => p,
         };
-        match p.downcast::<LinearTexture<A>>() {
-            Ok(lt) if lt.texture.is_some() => Ok(Tex::Linear(lt)),
-            Ok(_) => Err(RenderError::unimplemented(format!(
-                "texture {:#x} is of type MTLTextureTypeTextureBuffer, which shaders read through its buffer (plan \
-                 section 5.7); the render path binds it neither as an attachment nor as a texture",
-                handle.get()
-            ))),
-            Err(_) => Err(RenderError::unimplemented(format!(
-                "texture {:#x}: texture views are not provided by the memory module yet",
-                handle.get()
-            ))),
+        let p = match p.downcast::<LinearTexture<A>>() {
+            Ok(lt) if lt.texture.is_some() => return Ok(Tex::Linear(lt)),
+            Ok(_) => {
+                return Err(RenderError::unimplemented(format!(
+                    "texture {:#x} is of type MTLTextureTypeTextureBuffer, which shaders read through its buffer (plan \
+                     section 5.7); the render path binds it neither as an attachment nor as a texture",
+                    handle.get()
+                )));
+            }
+            Err(p) => p,
+        };
+        match p.downcast::<TextureView<A>>() {
+            Ok(v) => Ok(Tex::View(v)),
+            Err(_) => Err(RenderError::invalid(format!("handle {:#x} is not a texture", handle.get()))),
         }
     }
 
+    /// The texture whose storage the pass uses: a view's root.
     pub fn texture(&self) -> &Rc<Texture<A>> {
         match self {
             Tex::Plain(t) => t,
             Tex::Linear(lt) => lt.texture.as_ref().expect("checked at lookup"),
+            Tex::View(v) => &v.root,
+        }
+    }
+
+    /// The view, for a view.
+    pub fn view(&self) -> Option<&Rc<TextureView<A>>> {
+        match self {
+            Tex::View(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// The geometry Metal's rules apply to: a view's own.
+    pub fn geometry(&self) -> &Geometry {
+        match self {
+            Tex::View(v) => &v.geometry,
+            _ => &self.texture().geometry,
+        }
+    }
+
+    /// `MTLPixelFormat`: a view's own.
+    pub fn format(&self) -> u32 {
+        match self {
+            Tex::View(v) => v.format,
+            _ => self.texture().format,
+        }
+    }
+
+    /// How the host provides the pixel format: a view's own.
+    pub fn resolution(&self) -> Resolution {
+        match self {
+            Tex::View(v) => v.resolution,
+            _ => self.texture().resolution,
+        }
+    }
+
+    /// The root's levels and array slices the texture covers (a 3D texture's depth images are one slice).
+    pub fn root_window(&self) -> (std::ops::Range<u32>, std::ops::Range<u32>) {
+        match self {
+            Tex::View(v) => (v.root_levels(), v.root_slices()),
+            _ => {
+                let g = &self.texture().geometry;
+                (0..g.mip_levels, 0..g.slices())
+            }
         }
     }
 }
@@ -218,7 +273,8 @@ fn integer_range(name: &str, channel: usize) -> (f64, f64) {
     }
 }
 
-/// Check that a texture can be an attachment of a pass and return the WebGPU view of `(level, slice, depth_plane)`.
+/// Check that a texture can be an attachment of a pass and return the WebGPU view of `(level, slice, depth_plane)`, with
+/// the root's level and slice.
 fn attachment_view<A: Api>(
     g: &impl Calls<A>,
     tex: &Tex<A>,
@@ -229,7 +285,7 @@ fn attachment_view<A: Api>(
     aspect: TextureAspect,
 ) -> Result<(A::TextureView, u32, u32, Option<u32>)> {
     let t = tex.texture();
-    let geo = &t.geometry;
+    let geo = tex.geometry();
     if t.gpu().usage() & TextureUsage::RENDER_ATTACHMENT == 0 {
         return Err(RenderError::undefined(
             BEGIN,
@@ -257,11 +313,19 @@ fn attachment_view<A: Api>(
         })?;
         (s, None)
     };
+    let (level, slice) = match tex.view() {
+        Some(v) => (v.root_level(level), if geo.kind.is_3d() { slice } else { v.root_slice(slice) }),
+        None => (level, slice),
+    };
     let mut d = TextureViewDescriptor::new();
     d.label = format!("{} {what}", t.label);
     d.base_mip_level = level;
     d.mip_level_count = Some(1);
     d.aspect = aspect;
+    if let Some(f) = tex.view().and_then(|v| v.view_format()) {
+        d.format = Some(f);
+        d.usage = TextureUsage::RENDER_ATTACHMENT;
+    }
     if geo.kind.is_3d() {
         d.dimension = Some(TextureViewDimension::D3);
     } else {
@@ -286,7 +350,7 @@ fn resolve_target<A: Api>(
 ) -> Result<Option<(ResolveTarget<A>, A::TextureView)>> {
     let Some(h) = handle else { return Ok(None) };
     let tex = Tex::<A>::lookup(objects, h)?;
-    if tex.texture().geometry.kind.is_3d() {
+    if tex.geometry().kind.is_3d() {
         return Err(RenderError::unimplemented(format!(
             "{what}: a resolve into a 3D texture (WebGPU resolve targets are 2D views)"
         )));
@@ -403,8 +467,8 @@ impl<A: Api> Targets<A> {
             }
             let tex = Tex::<A>::lookup(objects, handle)?;
             let t = tex.texture().clone();
-            if t.resolution.storage().caps().table == FormatTable::DepthStencil
-                || t.resolution == Resolution::StencilAspect
+            if tex.resolution().storage().caps().table == FormatTable::DepthStencil
+                || tex.resolution() == Resolution::StencilAspect
             {
                 return Err(RenderError::undefined(BEGIN, format!("{what}: a depth or stencil format")));
             }
@@ -425,7 +489,7 @@ impl<A: Api> Targets<A> {
             agree(&t, level, &what)?;
             // The clear value matters only to a clear load action.
             let clear = if load == LoadAction::Clear {
-                clear_color(t.resolution, &a.clear_color, i as u32)?
+                clear_color(tex.resolution(), &a.clear_color, i as u32)?
             } else {
                 Color::ColorDict(ColorDict { r: f64v(0.0), g: f64v(0.0), b: f64v(0.0), a: f64v(0.0) })
             };
@@ -446,7 +510,7 @@ impl<A: Api> Targets<A> {
                     RenderError::undefined(BEGIN, format!("{what}: a resolve store action without a resolve texture"))
                 })?;
                 let rt = r.0.texture.texture();
-                if rt.format != t.format || rt.geometry.sample_count != 1 {
+                if r.0.texture.format() != tex.format() || rt.geometry.sample_count != 1 {
                     return Err(RenderError::undefined(
                         BEGIN,
                         format!("{what}: the resolve texture differs in pixel format or is multisampled"),
@@ -457,7 +521,7 @@ impl<A: Api> Targets<A> {
                 if (rw, rh) != (aw, ah) {
                     return Err(RenderError::undefined(BEGIN, format!("{what}: the resolve texture's size differs")));
                 }
-                handling::check_resolve(t.resolution, features).map_err(RenderError::refused)?;
+                handling::check_resolve(tex.resolution(), features).map_err(RenderError::refused)?;
                 Some(r)
             } else {
                 None
@@ -465,6 +529,7 @@ impl<A: Api> Targets<A> {
             while colors.len() < i {
                 colors.push(None);
             }
+            let pixel_format = tex.format();
             colors.push(Some(ColorAttachment {
                 index: i as u32,
                 texture: tex,
@@ -472,7 +537,7 @@ impl<A: Api> Targets<A> {
                 slice,
                 view,
                 depth_slice,
-                pixel_format: t.format,
+                pixel_format,
                 load,
                 clear,
                 store,
@@ -532,7 +597,7 @@ impl<A: Api> Targets<A> {
         }
         let tex = Tex::<A>::lookup(objects, handle)?;
         let t = tex.texture().clone();
-        let storage = match t.resolution {
+        let storage = match tex.resolution() {
             Resolution::Native(f) if f.caps().table == FormatTable::DepthStencil => f,
             Resolution::StencilAspect => {
                 return Err(RenderError::unimplemented("an X32_Stencil8 view as the stencil attachment"));
@@ -587,7 +652,7 @@ impl<A: Api> Targets<A> {
                         )
                     })?;
                 let rt = target.texture.texture();
-                if rt.format != t.format || rt.geometry.sample_count != 1 {
+                if target.texture.format() != tex.format() || rt.geometry.sample_count != 1 {
                     return Err(RenderError::undefined(
                         BEGIN,
                         format!("{what}: the resolve texture differs in pixel format or is multisampled"),
@@ -649,12 +714,13 @@ impl<A: Api> Targets<A> {
             }
             None => None,
         };
+        let pixel_format = tex.format();
         Ok(Some(DepthStencilAttachment {
             texture: tex,
             level,
             slice,
             view,
-            pixel_format: t.format,
+            pixel_format,
             format: idl_format(storage),
             has_depth,
             has_stencil,
