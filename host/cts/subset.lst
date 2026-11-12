@@ -1,0 +1,32 @@
+# The WebGPU CTS queries for the API areas the binding layer relies on: adapter and device requests with features and
+# limits, error scopes and uncaptured errors, device loss, buffer creation and mapping, labels, queue writes and work
+# completion, the content-timeline checks of texture, view and query-set creation and of setBindGroup and
+# setImmediates, and basic compute, copy and render work. One query per line; `#` starts a comment.
+
+webgpu:api,operation,adapter,requestAdapter:*
+webgpu:api,operation,adapter,requestDevice:*
+webgpu:api,operation,adapter,info:*
+webgpu:api,operation,device,lost:*
+webgpu:api,operation,device,all_limits_and_features:*
+webgpu:api,validation,error_scope:*
+webgpu:api,operation,uncapturederror:*
+webgpu:api,operation,labels:*
+webgpu:api,validation,buffer,create:*
+webgpu:api,validation,buffer,destroy:*
+webgpu:api,validation,buffer,mapping:*
+webgpu:api,operation,buffers,map:*
+webgpu:api,operation,buffers,map_detach:*
+webgpu:api,operation,buffers,map_ArrayBuffer:*
+webgpu:api,operation,onSubmittedWorkDone:*
+webgpu:api,validation,queue,writeBuffer:*
+webgpu:api,operation,queue,writeBuffer:*
+webgpu:api,validation,capability_checks,features,query_types:*
+webgpu:api,validation,capability_checks,features,texture_formats:*
+webgpu:api,validation,createView:*
+webgpu:api,validation,getBindGroupLayout:*
+webgpu:api,validation,encoding,cmds,setBindGroup:*
+webgpu:api,validation,encoding,cmds,setImmediates:*
+webgpu:api,operation,command_buffer,basic:*
+webgpu:api,operation,command_buffer,copyBufferToBuffer:*
+webgpu:api,operation,compute,basic:*
+webgpu:api,operation,rendering,basic:*
