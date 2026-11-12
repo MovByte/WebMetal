@@ -17,6 +17,8 @@
 #import <Metal/Metal.h>
 #import <os/lock.h>
 
+#import <objc/message.h>
+
 #include <cstdint>
 #include <string>
 
@@ -78,6 +80,8 @@ int64_t DeviceAllocatedSize(WebMetalDevice *device);
 // device total is not answered.
 void DeviceAddUnsized(WebMetalDevice *device, int64_t count);
 int64_t DeviceUnsizedCount(WebMetalDevice *device);
+// The AGX device's creation flags (-deviceCreationFlags).
+uint64_t DeviceCreationFlags(WebMetalDevice *device);
 
 // IOGPUMetalResource._res, as far as the plugin's answers depend on it. The comments name the field of
 // _IOGPUMetalResource each member reproduces.
@@ -115,11 +119,22 @@ NSUInteger HeapOffset(const ResourceState &state);
 NSString *RetainedLabel(ResourceState &state);
 void SetLabel(id self, SEL _cmd, ResourceState &state, NSString *label);
 MTLPurgeableState SetPurgeableState(id self, SEL _cmd, ResourceState &state, MTLPurgeableState purgeableState);
-void MakeAliasable(ResourceState &state);
+// `reportOnly` for a call from -dealloc, where a host failure is reported without raising.
+void MakeAliasable(id self, SEL _cmd, ResourceState &state, bool reportOnly);
 BOOL DoesAlias(const ResourceState &a, const ResourceState &b);
 int SetOwnerWithIdentity(id self, SEL _cmd, ResourceState &state, uint32_t identity);
 // Sends Release for a created object; failures are reported only.
 void ReleaseObject(ResourceState &state, const char *what);
+
+// A getter of a Metal.framework descriptor, which may be SPI. The plugin reads every field the wire carries; a running
+// framework that lacks the getter cannot be served.
+template <typename T> T Get(id self, SEL _cmd, id object, const char *name)
+{
+    SEL selector = sel_registerName(name);
+    if (![object respondsToSelector:selector])
+        WMLoudMethod(self, _cmd, (std::string("the descriptor has no -") + name + ", which the wire format carries").c_str());
+    return ((T(*)(id, SEL))objc_msgSend)(object, selector);
+}
 
 // The ResourceState of any plugin buffer or texture, or null for another object.
 ResourceState *StateOf(id resource);

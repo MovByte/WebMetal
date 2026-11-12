@@ -994,6 +994,36 @@ inline constexpr DriverSelector kAGXA10FamilyThreadedRenderPassDriver[] = {
     {SelectorKind::Instance, "setStencilStoreAction:", "v24@0:8Q16", "agx", ""},
 };
 
+// Driver-layer selectors of AGXA10FamilyHeap -> IOGPUMetalHeap -> _MTLHeap -> _MTLObjectWithLabel.
+inline constexpr DriverSelector kAGXA10FamilyHeapDriver[] = {
+    {SelectorKind::Instance, "currentAllocatedSize", "Q16@0:8", "iogpu", ""},
+    {SelectorKind::Instance, "deallocHeapSubResource", "v16@0:8", "iogpu", ""},
+    {SelectorKind::Instance, "device", "@16@0:8", "iogpu", ""},
+    {SelectorKind::Instance, "gpuAddress", "Q16@0:8", "iogpu", ""},
+    {SelectorKind::Instance, "initWithDevice:descriptor:", "@32@0:8@16@24", "agx", ""},
+    {SelectorKind::Instance, "initWithDevice:size:options:args:argsSize:", "@52@0:8@16Q24Q32^{IOGPUNewResourceArgs={IOGPUNewResourceData=IISSSSCCCCIQQQI(?={?=QQQ(?=IQ)}{?=IIII[2Q]})}}40I48", "iogpu", ""},
+    {SelectorKind::Instance, "initWithDevice:size:options:args:argsSize:desc:", "@60@0:8@16Q24Q32^{IOGPUNewResourceArgs={IOGPUNewResourceData=IISSSSCCCCIQQQI(?={?=QQQ(?=IQ)}{?=IIII[2Q]})}}40I48@52", "iogpu", ""},
+    {SelectorKind::Instance, "maxAvailableSizeWithAlignment:", "Q24@0:8Q16", "iogpu", ""},
+    {SelectorKind::Instance, "newAccelerationStructureWithDescriptor:", "@24@0:8@16", "agx", ""},
+    {SelectorKind::Instance, "newAccelerationStructureWithDescriptor:offset:", "@32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:", "@24@0:8Q16", "agx", ""},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:offset:", "@32@0:8Q16Q24", "agx", ""},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:offset:resourceIndex:", "@40@0:8Q16Q24Q32", "agx", ""},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:resourceIndex:", "@32@0:8Q16Q24", "agx", ""},
+    {SelectorKind::Instance, "newBufferWithLength:options:", "@32@0:8Q16Q24", "agx", ""},
+    {SelectorKind::Instance, "newBufferWithLength:options:atOffset:", "@40@0:8Q16Q24Q32", "agx", ""},
+    {SelectorKind::Instance, "newSubResourceAtOffset:withLength:alignment:options:", "@48@0:8Q16Q24Q32Q40", "iogpu", ""},
+    {SelectorKind::Instance, "newSubResourceWithLength:alignment:options:offset:", "@48@0:8Q16Q24Q32^Q40", "iogpu", ""},
+    {SelectorKind::Instance, "newTextureWithDescriptor:", "@24@0:8@16", "agx", ""},
+    {SelectorKind::Instance, "newTextureWithDescriptor:atOffset:", "@32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "protectionOptions", "Q16@0:8", "iogpu", ""},
+    {SelectorKind::Instance, "setLabel:", "v24@0:8@16", "iogpu", ""},
+    {SelectorKind::Instance, "setPurgeableState:", "Q24@0:8Q16", "iogpu", ""},
+    {SelectorKind::Instance, "size", "Q16@0:8", "iogpu", ""},
+    {SelectorKind::Instance, "unpinMemoryAtOffset:withLength:", "v32@0:8Q16Q24", "iogpu", ""},
+    {SelectorKind::Instance, "usedSize", "Q16@0:8", "iogpu", ""},
+};
+
 inline constexpr Role kRoles[] = {
     {"WebMetalDevice", "AGXA10XDevice", "_MTLDevice", kAGXA10XDeviceDriver, 264},
     {"WebMetalBuffer", "AGXA10FamilyBuffer", "_MTLResource", kAGXA10FamilyBufferDriver, 75},
@@ -1004,6 +1034,7 @@ inline constexpr Role kRoles[] = {
     {"WebMetalComputeCommandEncoder", "AGXA10FamilyComputeContext", "_MTLCommandEncoder", kAGXA10FamilyComputeContextDriver, 87},
     {"WebMetalBlitCommandEncoder", "AGXA10FamilyBlitContext", "_MTLCommandEncoder", kAGXA10FamilyBlitContextDriver, 50},
     {"WebMetalParallelRenderCommandEncoder", "AGXA10FamilyThreadedRenderPass", "_MTLParallelRenderCommandEncoder", kAGXA10FamilyThreadedRenderPassDriver, 14},
+    {"WebMetalHeap", "AGXA10FamilyHeap", "_MTLHeap", kAGXA10FamilyHeapDriver, 26},
 };
 
 inline constexpr BaseIvar k_MTLAccelerationStructureCommandEncoderIvars[] = {
@@ -2350,7 +2381,43 @@ inline constexpr BaseIvar k_MTLHeapIvars[] = {
     {"_gpuAddress", 40, "Q"},
 };
 inline constexpr BaseSelector k_MTLHeapSelectors[] = {
-    {SelectorKind::Instance, nullptr, nullptr},  // none; the count below is 0
+    {SelectorKind::Instance, "cpuCacheMode", "Q16@0:8"},
+    {SelectorKind::Instance, "currentAllocatedSize", nullptr},
+    {SelectorKind::Instance, "deallocHeapSubResource", nullptr},
+    {SelectorKind::Instance, "device", nullptr},
+    {SelectorKind::Instance, "formattedDescription:", "@24@0:8Q16"},
+    {SelectorKind::Instance, "gpuAddress", "Q16@0:8"},
+    {SelectorKind::Instance, "hazardTrackingMode", "Q16@0:8"},
+    {SelectorKind::Instance, "initWithDevice:descriptor:", nullptr},
+    {SelectorKind::Instance, "initWithDevice:size:options:args:argsSize:", nullptr},
+    {SelectorKind::Instance, "initWithDevice:size:options:args:argsSize:desc:", nullptr},
+    {SelectorKind::Instance, "label", "@16@0:8"},
+    {SelectorKind::Instance, "maxAvailableSizeWithAlignment:", nullptr},
+    {SelectorKind::Instance, "memoryPoolId", "Q16@0:8"},
+    {SelectorKind::Instance, "newAccelerationStructureWithDescriptor:", "@24@0:8@16"},
+    {SelectorKind::Instance, "newAccelerationStructureWithDescriptor:offset:", "@32@0:8@16Q24"},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:", "@24@0:8Q16"},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:offset:", "@32@0:8Q16Q24"},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:offset:resourceIndex:", "@40@0:8Q16Q24Q32"},
+    {SelectorKind::Instance, "newAccelerationStructureWithSize:resourceIndex:", "@32@0:8Q16Q24"},
+    {SelectorKind::Instance, "newBufferWithLength:options:", nullptr},
+    {SelectorKind::Instance, "newBufferWithLength:options:atOffset:", "@40@0:8Q16Q24Q32"},
+    {SelectorKind::Instance, "newBufferWithLength:options:offset:", "@40@0:8Q16Q24Q32"},
+    {SelectorKind::Instance, "newSubResourceAtOffset:withLength:alignment:options:", nullptr},
+    {SelectorKind::Instance, "newSubResourceWithLength:alignment:options:offset:", nullptr},
+    {SelectorKind::Instance, "newTextureWithDescriptor:", nullptr},
+    {SelectorKind::Instance, "newTextureWithDescriptor:atOffset:", "@32@0:8@16Q24"},
+    {SelectorKind::Instance, "newTextureWithDescriptor:offset:", "@32@0:8@16Q24"},
+    {SelectorKind::Instance, "protectionOptions", nullptr},
+    {SelectorKind::Instance, "resourceOptions", "Q16@0:8"},
+    {SelectorKind::Instance, "setLabel:", "v24@0:8@16"},
+    {SelectorKind::Instance, "setPurgeableState:", nullptr},
+    {SelectorKind::Instance, "size", nullptr},
+    {SelectorKind::Instance, "storageMode", "Q16@0:8"},
+    {SelectorKind::Instance, "type", "q16@0:8"},
+    {SelectorKind::Instance, "unfilteredResourceOptions", "Q16@0:8"},
+    {SelectorKind::Instance, "unpinMemoryAtOffset:withLength:", nullptr},
+    {SelectorKind::Instance, "usedSize", nullptr},
 };
 
 inline constexpr BaseIvar k_MTLIndirectArgumentEncoderIvars[] = {
@@ -2676,7 +2743,7 @@ inline constexpr BaseLayout kBases[] = {
     {"_MTLDynamicLibrary", "_MTLObjectWithLabel", 49, k_MTLDynamicLibraryIvars, 4, k_MTLDynamicLibrarySelectors, 0},
     {"_MTLFence", "_MTLObjectWithLabel", 20, k_MTLFenceIvars, 0, k_MTLFenceSelectors, 0},
     {"_MTLFunctionHandle", "NSObject", 32, k_MTLFunctionHandleIvars, 3, k_MTLFunctionHandleSelectors, 0},
-    {"_MTLHeap", "_MTLObjectWithLabel", 48, k_MTLHeapIvars, 3, k_MTLHeapSelectors, 0},
+    {"_MTLHeap", "_MTLObjectWithLabel", 48, k_MTLHeapIvars, 3, k_MTLHeapSelectors, 37},
     {"_MTLIndirectArgumentEncoder", "_MTLObjectWithLabel", 40, k_MTLIndirectArgumentEncoderIvars, 2, k_MTLIndirectArgumentEncoderSelectors, 0},
     {"_MTLIndirectComputeCommand", "NSObject", 8, k_MTLIndirectComputeCommandIvars, 0, k_MTLIndirectComputeCommandSelectors, 0},
     {"_MTLIndirectRenderCommand", "NSObject", 8, k_MTLIndirectRenderCommandIvars, 0, k_MTLIndirectRenderCommandSelectors, 0},

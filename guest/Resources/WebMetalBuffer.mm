@@ -9,6 +9,7 @@
 
 #import "WebMetalBuffer.h"
 #import "WebMetalTexture.h"
+#import "WebMetalHeapPrivate.h"
 
 #include <mach/mach.h>
 
@@ -223,6 +224,41 @@ WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer,
     return finishCreation(buffer);
 }
 
+// -[AGXBuffer initWithHeap:length:alignment:options:] and its atOffset: form, through -[AGXBuffer(Internal)
+// initImplWithHeap:resource:length:atOffset:] (AGXMetalA10 0x21c8a4b04) and -[IOGPUMetalBuffer initWithHeap:resource:
+// offset:length:] (IOGPU 0x1fcb2d810): the buffer takes the heap backing resource's options and modes and may not be
+// purgeable (-[IOGPUMetalResource initWithResource:]), keeps the heap, the range and its length, and is pinned unless
+// the heap is a placement heap. Its contents lie at the range's offset in the heap's.
+WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, MTLResourceOptions options,
+                              uint64_t heapOptions, uint64_t offset, uint64_t rangeLength, void *contents,
+                              bool placement)
+{
+    WebMetalDevice *device = static_cast<WebMetalDevice *>(heap.device);
+    WebMetalBuffer *buffer = [WebMetalBuffer new];
+    InitResourceState(buffer->_state, device, heapOptions);
+    buffer->_state.purgeableAllowed = false;
+    buffer->_state.heap = heap;
+    buffer->_state.heapOffset = offset;
+    buffer->_state.heapLength = rangeLength;
+    buffer->_state.pinned = !placement;
+    buffer->_length = length;
+    buffer->_contents = contents;
+    Connection *connection = DeviceConnection(device);
+    buffer->_state.handle = connection->NewHandle();
+    wire::HeapCreateBuffer request;
+    request.heap = HeapHandle(heap);
+    request.buffer = buffer->_state.handle;
+    request.length = length;
+    request.options = options;
+    request.contents = reinterpret_cast<uint64_t>(contents);
+    wire::Reply<wire::HeapCreateBufferReply> reply;
+    connection->Call(heap, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(heap, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+    buffer->_state.created = true;
+    return buffer;
+}
+
 }  // namespace webmetal
 
 @implementation WebMetalBuffer
@@ -235,8 +271,8 @@ WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer,
     using namespace webmetal;
     DeviceAddAllocation(_state.device, -_accounted);
     if (_state.heap) {
-        MakeAliasable(_state);
-        [(id)_state.heap deallocHeapSubResource];
+        MakeAliasable(self, _cmd, _state, true);
+        [(WebMetalHeap *)_state.heap deallocHeapSubResource];
     }
     ReleaseObject(_state, "-[WebMetalBuffer dealloc]");
     if (_deallocator) {
@@ -313,7 +349,7 @@ WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer,
 
 - (void)makeAliasable
 {
-    webmetal::MakeAliasable(_state);
+    webmetal::MakeAliasable(self, _cmd, _state, false);
 }
 
 // -[IOGPUMetalBuffer allocatedSize] (0x1fcb31bfc): a sub-allocated buffer's length; otherwise

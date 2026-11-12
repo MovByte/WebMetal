@@ -39,3 +39,7 @@ target = "AGXA10FamilyBlitContext"
 [[class]]
 name = "WebMetalParallelRenderCommandEncoder"
 target = "AGXA10FamilyThreadedRenderPass"
+
+[[class]]
+name = "WebMetalHeap"
+target = "AGXA10FamilyHeap"

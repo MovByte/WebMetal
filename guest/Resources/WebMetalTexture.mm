@@ -36,16 +36,6 @@ namespace {
 
 constexpr char kLayout[] = "the A10X texture layout (AGX::Texture in AGXMetalA10) that decides it is not established";
 
-// A getter of the running framework's descriptor class. The plugin reads every field the wire carries; a framework
-// that lacks one cannot be served.
-template <typename T> T get(id self, SEL _cmd, id object, const char *name)
-{
-    SEL selector = sel_registerName(name);
-    if (![object respondsToSelector:selector])
-        WMLoudMethod(self, _cmd, (std::string("the descriptor has no -") + name + ", which the wire format carries").c_str());
-    return ((T(*)(id, SEL))objc_msgSend)(object, selector);
-}
-
 }  // namespace
 
 @interface WebMetalTexture () {
@@ -86,40 +76,40 @@ namespace webmetal {
 wire::TextureDescriptor WireTextureDescriptor(id self, SEL _cmd, MTLTextureDescriptor *d)
 {
     wire::TextureDescriptor w;
-    w.allowGpuOptimizedContents = get<BOOL>(self, _cmd, d, "allowGPUOptimizedContents");
-    w.arrayLength = get<NSUInteger>(self, _cmd, d, "arrayLength");
-    w.colorSpaceConversionMatrix = get<NSUInteger>(self, _cmd, d, "colorSpaceConversionMatrix");
-    w.compressionFootprint = get<NSUInteger>(self, _cmd, d, "compressionFootprint");
-    w.compressionMode = get<NSUInteger>(self, _cmd, d, "compressionMode");
-    w.compressionType = get<NSInteger>(self, _cmd, d, "compressionType");
-    w.cpuCacheMode = get<NSUInteger>(self, _cmd, d, "cpuCacheMode");
-    w.depth = get<NSUInteger>(self, _cmd, d, "depth");
-    w.forceResourceIndex = get<BOOL>(self, _cmd, d, "forceResourceIndex");
-    w.framebufferOnly = get<BOOL>(self, _cmd, d, "framebufferOnly");
-    w.hazardTrackingMode = get<NSUInteger>(self, _cmd, d, "hazardTrackingMode");
-    w.height = get<NSUInteger>(self, _cmd, d, "height");
-    w.isDrawable = get<BOOL>(self, _cmd, d, "isDrawable");
-    w.lossyCompressionMode = get<NSInteger>(self, _cmd, d, "lossyCompressionMode");
-    w.mipmapLevelCount = get<NSUInteger>(self, _cmd, d, "mipmapLevelCount");
-    w.pixelFormat = get<NSUInteger>(self, _cmd, d, "pixelFormat");
-    w.protectionOptions = get<NSUInteger>(self, _cmd, d, "protectionOptions");
-    w.resourceIndex = get<NSUInteger>(self, _cmd, d, "resourceIndex");
-    w.resourceOptions = get<NSUInteger>(self, _cmd, d, "resourceOptions");
-    w.rotation = get<NSUInteger>(self, _cmd, d, "rotation");
-    w.sampleCount = get<NSUInteger>(self, _cmd, d, "sampleCount");
-    w.sparseSurfaceDefaultValue = get<NSUInteger>(self, _cmd, d, "sparseSurfaceDefaultValue");
-    w.storageMode = get<NSUInteger>(self, _cmd, d, "storageMode");
-    const MTLTextureSwizzleChannels swizzle = get<MTLTextureSwizzleChannels>(self, _cmd, d, "swizzle");
+    w.allowGpuOptimizedContents = Get<BOOL>(self, _cmd, d, "allowGPUOptimizedContents");
+    w.arrayLength = Get<NSUInteger>(self, _cmd, d, "arrayLength");
+    w.colorSpaceConversionMatrix = Get<NSUInteger>(self, _cmd, d, "colorSpaceConversionMatrix");
+    w.compressionFootprint = Get<NSUInteger>(self, _cmd, d, "compressionFootprint");
+    w.compressionMode = Get<NSUInteger>(self, _cmd, d, "compressionMode");
+    w.compressionType = Get<NSInteger>(self, _cmd, d, "compressionType");
+    w.cpuCacheMode = Get<NSUInteger>(self, _cmd, d, "cpuCacheMode");
+    w.depth = Get<NSUInteger>(self, _cmd, d, "depth");
+    w.forceResourceIndex = Get<BOOL>(self, _cmd, d, "forceResourceIndex");
+    w.framebufferOnly = Get<BOOL>(self, _cmd, d, "framebufferOnly");
+    w.hazardTrackingMode = Get<NSUInteger>(self, _cmd, d, "hazardTrackingMode");
+    w.height = Get<NSUInteger>(self, _cmd, d, "height");
+    w.isDrawable = Get<BOOL>(self, _cmd, d, "isDrawable");
+    w.lossyCompressionMode = Get<NSInteger>(self, _cmd, d, "lossyCompressionMode");
+    w.mipmapLevelCount = Get<NSUInteger>(self, _cmd, d, "mipmapLevelCount");
+    w.pixelFormat = Get<NSUInteger>(self, _cmd, d, "pixelFormat");
+    w.protectionOptions = Get<NSUInteger>(self, _cmd, d, "protectionOptions");
+    w.resourceIndex = Get<NSUInteger>(self, _cmd, d, "resourceIndex");
+    w.resourceOptions = Get<NSUInteger>(self, _cmd, d, "resourceOptions");
+    w.rotation = Get<NSUInteger>(self, _cmd, d, "rotation");
+    w.sampleCount = Get<NSUInteger>(self, _cmd, d, "sampleCount");
+    w.sparseSurfaceDefaultValue = Get<NSUInteger>(self, _cmd, d, "sparseSurfaceDefaultValue");
+    w.storageMode = Get<NSUInteger>(self, _cmd, d, "storageMode");
+    const MTLTextureSwizzleChannels swizzle = Get<MTLTextureSwizzleChannels>(self, _cmd, d, "swizzle");
     w.swizzle.red = swizzle.red;
     w.swizzle.green = swizzle.green;
     w.swizzle.blue = swizzle.blue;
     w.swizzle.alpha = swizzle.alpha;
-    w.swizzleKey = get<uint32_t>(self, _cmd, d, "swizzleKey");
-    w.textureType = get<NSUInteger>(self, _cmd, d, "textureType");
-    w.textureUsage = get<NSUInteger>(self, _cmd, d, "textureUsage");
-    w.usage = get<NSUInteger>(self, _cmd, d, "usage");
-    w.width = get<NSUInteger>(self, _cmd, d, "width");
-    w.writeSwizzleEnabled = get<BOOL>(self, _cmd, d, "writeSwizzleEnabled");
+    w.swizzleKey = Get<uint32_t>(self, _cmd, d, "swizzleKey");
+    w.textureType = Get<NSUInteger>(self, _cmd, d, "textureType");
+    w.textureUsage = Get<NSUInteger>(self, _cmd, d, "textureUsage");
+    w.usage = Get<NSUInteger>(self, _cmd, d, "usage");
+    w.width = Get<NSUInteger>(self, _cmd, d, "width");
+    w.writeSwizzleEnabled = Get<BOOL>(self, _cmd, d, "writeSwizzleEnabled");
     return w;
 }
 
@@ -366,7 +356,7 @@ WebMetalTexture *NewBufferTexture(WebMetalBuffer *buffer, SEL _cmd, MTLTextureDe
 
 - (void)makeAliasable
 {
-    webmetal::MakeAliasable(_state);
+    webmetal::MakeAliasable(self, _cmd, _state, false);
 }
 
 // -[IOGPUMetalResource allocatedSize] (0x1fcb3a10c): a heap texture's range length, or the kernel resource's resident

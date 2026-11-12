@@ -20,6 +20,9 @@
 #pragma clang diagnostic ignored "-Wprotocol"
 #pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
 
+// Metal.framework's overriding device creation flags: true, with the flags, when an override is in effect.
+extern "C" bool MTLGetOverridenDeviceCreationFlags(uint64_t *flags);
+
 namespace {
 
 // The base-class guard, then the LOUD stubs: once per process, before the first device is created.
@@ -44,6 +47,24 @@ bool prepareClasses()
     return ready;
 }
 
+// -[AGXA10FamilyDevice initWithAcceleratorPort:simultaneousInstances:] (AGXMetalA10 0x21c8d1c50) clears a process-wide
+// word, runs gatherDeviceOptions's block once per process (0x21c8fd014: the word loses its low 25 bits, then takes
+// Metal's overriding device creation flags when MTLGetOverridenDeviceCreationFlags supplies them), and keeps the word as
+// the device's creation flags. A device created after the first one therefore keeps 0.
+uint64_t gatherCreationFlags()
+{
+    static uint64_t word;
+    static dispatch_once_t once;
+    word = 0;
+    dispatch_once(&once, ^{
+        word &= ~uint64_t(0x1ffffff);
+        uint64_t overridden = 0;
+        if (MTLGetOverridenDeviceCreationFlags(&overridden))
+            word = overridden;
+    });
+    return word;
+}
+
 }  // namespace
 
 @interface WebMetalDevice () {
@@ -58,8 +79,11 @@ bool prepareClasses()
     std::atomic<int64_t> _unsized;
     // IOGPUMetalDevice._deviceWrapper: the object Metal.framework wraps the device in (its debug layer), held weakly.
     __weak id _deviceWrapper;
+    // The AGX device's creation flags (AGX::Device +0x750, -deviceCreationFlags).
+    uint64_t _creationFlags;
 }
 @end
+
 
 namespace webmetal {
 
@@ -86,6 +110,11 @@ void DeviceAddUnsized(WebMetalDevice *device, int64_t count)
 int64_t DeviceUnsizedCount(WebMetalDevice *device)
 {
     return device->_unsized.load(std::memory_order_relaxed);
+}
+
+uint64_t DeviceCreationFlags(WebMetalDevice *device)
+{
+    return device->_creationFlags;
 }
 
 }  // namespace webmetal
@@ -121,6 +150,7 @@ int64_t DeviceUnsizedCount(WebMetalDevice *device)
     _acceleratorPort = service;
     _registryID = registryID;
     _connection = std::move(connection);
+    _creationFlags = gatherCreationFlags();
     return self;
 }
 
@@ -138,6 +168,12 @@ int64_t DeviceUnsizedCount(WebMetalDevice *device)
 - (uint64_t)registryID
 {
     return _registryID;
+}
+
+// -[AGXA10FamilyDevice deviceCreationFlags] (AGXMetalA10 0x21c8db548).
+- (NSUInteger)deviceCreationFlags
+{
+    return _creationFlags;
 }
 
 // -[IOGPUMetalDevice _setDeviceWrapper:] (IOGPU 0x1fcb35bb0): stores the wrapper weakly.

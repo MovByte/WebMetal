@@ -127,13 +127,27 @@ MTLPurgeableState SetPurgeableState(id self, SEL _cmd, ResourceState &state, MTL
 }
 
 // -[IOGPUMetalResource makeAliasable] (0x1fcb2cd24): a pinned heap resource unpins its heap range (the heap's
-// unpinMemoryAtOffset:withLength:) and becomes aliasable; any other resource is unchanged.
-void MakeAliasable(ResourceState &state)
+// unpinMemoryAtOffset:withLength:) and becomes aliasable; any other resource is unchanged. The host learns of it with
+// MakeAliasable.
+void MakeAliasable(id self, SEL _cmd, ResourceState &state, bool reportOnly)
 {
     if (!state.heap || !state.pinned)
         return;
-    [(id)state.heap unpinMemoryAtOffset:state.heapOffset withLength:state.heapLength];
+    [(WebMetalHeap *)state.heap unpinMemoryAtOffset:state.heapOffset withLength:state.heapLength];
     state.pinned = false;
+    if (!state.created)
+        return;
+    wire::MakeAliasable request;
+    request.resource = state.handle;
+    if (reportOnly) {
+        DeviceConnection(state.device)->CallReportOnly<wire::MakeAliasable, wire::MakeAliasableReply>(
+            "-[IOGPUMetalResource makeAliasable] from -dealloc", request);
+        return;
+    }
+    wire::Reply<wire::MakeAliasableReply> reply;
+    DeviceConnection(state.device)->Call(self, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(self, _cmd, "the host answered MakeAliasable with a Metal error, which Metal does not define");
 }
 
 // -[IOGPUMetalResource doesAliasResource:] (0x1fcb39f30): both resources come from the same heap, both ranges are

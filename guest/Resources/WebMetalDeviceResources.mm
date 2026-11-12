@@ -3,6 +3,7 @@
 
 #import "WebMetalBuffer.h"
 #import "WebMetalTexture.h"
+#import "WebMetalHeapPrivate.h"
 
 // The class adopts the protocols that declare these methods; this category, not the class, implements them.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
@@ -72,6 +73,15 @@
                                 deallocator:(void (^)(void *pointer, NSUInteger length))deallocator
 {
     return webmetal::NewNoCopyTexture(self, _cmd, bytes, length, descriptor, deallocator);
+}
+
+// -[AGXA10FamilyDevice newHeapWithDescriptor:] (AGXMetalA10 0x21c8d6918): an AGXA10FamilySparseHeap for
+// MTLHeapTypeSparse (2), an AGXA10FamilyHeap otherwise. The driver also counts the call in its telemetry.
+- (id<MTLHeap>)newHeapWithDescriptor:(MTLHeapDescriptor *)descriptor
+{
+    if (descriptor.type == 2)
+        WMLoudMethod(self, _cmd, "a sparse heap (AGXA10FamilySparseHeap) is not implemented");
+    return webmetal::NewHeap(self, _cmd, descriptor);
 }
 
 @end
