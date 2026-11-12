@@ -10,11 +10,24 @@ build = "build.rs"
 [features]
 # Run on a native WebGPU implementation (Dawn or wgpu-native, chosen as host/build.rs describes).
 native = ["webmetal-host/native"]
+# Run in a browser (wasm32), presenting to a page's canvas.
+web = ["webmetal-host/web", "dep:wasm-bindgen", "dep:js-sys", "dep:wasm-bindgen-futures"]
 
 [dependencies]
 webmetal-host = { path = ".." }
 webmetal-wire = { path = "../../wire" }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The versions host/Cargo.toml pins; the wasm-bindgen CLI that post-processes the module must match.
+wasm-bindgen = { version = "=0.2.105", optional = true }
+js-sys = { version = "=0.3.82", optional = true }
+wasm-bindgen-futures = { version = "=0.4.55", optional = true }
+
 [[bin]]
 name = "webmetal-embed-ref"
 required-features = ["native"]
+
+[[example]]
+name = "present_web"
+crate-type = ["cdylib"]
+required-features = ["web"]

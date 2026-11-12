@@ -301,6 +301,9 @@ dependencies = [
 name = "webmetal-embed-ref"
 version = "0.1.0"
 dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "webmetal-host",
  "webmetal-wire",
 ]

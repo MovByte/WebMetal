@@ -6,7 +6,9 @@
 //! recordings on it ([`recording`]). It stands where a kernel stands when the guest runs, so that the executor and the
 //! presentation path can be tested against WebGPU implementations and compared with real Metal without a guest.
 //!
-//! The `webmetal-embed-ref` program (feature `native`) replays a recording file on Dawn or wgpu-native.
+//! The `webmetal-embed-ref` program (feature `native`) replays a recording file on Dawn or wgpu-native. The
+//! `present_web` example (feature `web`, wasm32), run by `tools/present_web.py`, shows frames on a page's canvas and
+//! reads back what the browser shows.
 
 pub mod embedder;
 pub mod host;
