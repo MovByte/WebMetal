@@ -161,7 +161,8 @@ publisher = "The Khronos Group"
 version = "1.4.0"
 date = "2026-09-18"
 url = "https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html"
-sha256 = "7b1a6da9921fad991d8dcc9c03f113fa6f27a5a2972639424b3c4747856a3c7e"
+strip = "cloudflare-challenge"
+sha256 = "66f6c645c7f1661fbb83a25e378efeb857f7a1a3a9c5c1a6571b80ac231b036f"
 kind = "html"
 
 # Apple's published family tables; a cross-check only. Device capabilities of the
