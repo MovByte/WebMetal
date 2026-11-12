@@ -4,12 +4,14 @@
 //!   specification by `host/gen/gpugen.py`) and the numeric domains of [`num`].
 //! - [`negotiate`]: which features and limits to request from an adapter, from the tables of `tables/limits.toml`
 //!   ([`tables`]), and the check that the device received them.
+//! - [`scope`]: error-scope plumbing that captures every WebGPU error and attributes it to the call that raised it.
 
 pub mod api;
 #[rustfmt::skip]
 pub mod idl;
 pub mod negotiate;
 pub mod num;
+pub mod scope;
 #[rustfmt::skip]
 pub mod tables;
 
