@@ -4,4 +4,4 @@ members = ["wire", "host"]
 
 [workspace.package]
 edition = "2024"
-license = "BSD-2-Clause-Patent"
+license = "AGPL-3.0-only"
