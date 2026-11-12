@@ -9,6 +9,7 @@
 //!   Metal format's image with them.
 //! - [`packed`]: bit layouts and exact conversions of the formats stored in another WebGPU format.
 //! - [`reinterpret`]: views in another pixel format.
+//! - [`ycbcr`]: the 4:2:2 formats and textures over IOSurface planes.
 
 pub mod astc;
 pub mod decode;
@@ -20,6 +21,7 @@ pub mod reinterpret;
 #[rustfmt::skip]
 pub mod table;
 pub mod webgpu;
+pub mod ycbcr;
 
 #[cfg(test)]
 mod reference_tests;
