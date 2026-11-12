@@ -369,3 +369,161 @@ WMREF_CASE(computePipelineProperties, "compute.pipeline-properties", "compute.pi
     [c value:@"limited.at-most-descriptor-limit" boolean:limited.maxTotalThreadsPerThreadgroup <= 96
         rule:WMExact()];
 }
+
+// Byte offset and width of each scalar component of LayoutRecord (see
+// shaders/compute.metal), in the word order of compute_layout_read and
+// compute_layout_write, from the offsets the compiler reported.
+typedef struct {
+    uint32_t offset;
+    uint32_t width;
+    BOOL isFlag;
+} WMLayoutComponent;
+
+static NSUInteger WMLayoutComponents(const uint32_t *off, WMLayoutComponent *out) {
+    NSUInteger n = 0;
+#define ADD(o, w) out[n++] = (WMLayoutComponent){(o), (w), NO}
+    ADD(off[0], 1);
+    ADD(off[1], 2);
+    ADD(off[2], 2);
+    ADD(off[3], 4);
+    for (int k = 0; k < 2; k++) ADD(off[4] + 4 * k, 4);
+    for (int k = 0; k < 3; k++) ADD(off[5] + 4 * k, 4);
+    for (int k = 0; k < 3; k++) ADD(off[6] + 4 * k, 4);
+    for (int k = 0; k < 3; k++) ADD(off[7] + k, 1);
+    for (int k = 0; k < 3; k++) ADD(off[8] + 2 * k, 2);
+    out[n++] = (WMLayoutComponent){off[9], 1, YES};
+    uint32_t column = off[11] - off[10];
+    for (uint32_t col = 0; col < 3; col++)
+        for (uint32_t row = 0; row < 3; row++) ADD(off[10] + col * column + row * 4, 4);
+    uint32_t inner = off[15] - off[12];
+    for (uint32_t k = 0; k < 2; k++) {
+        uint32_t base = off[12] + k * inner;
+        ADD(base, 1);
+        ADD(base + off[13] - off[12], 2);
+        ADD(base + off[13] - off[12] + 2, 2);
+        ADD(base + off[14] - off[12], 4);
+    }
+    for (int k = 0; k < 3; k++) ADD(off[16] + 2 * k, 2);
+    for (int k = 0; k < 4; k++) ADD(off[17] + 4 * k, 4);
+    ADD(off[18], 2);
+#undef ADD
+    return n;
+}
+
+static uint32_t WMLoadComponent(const uint8_t *record, WMLayoutComponent component) {
+    uint32_t value = 0;
+    memcpy(&value, record + component.offset, component.width);
+    return value;
+}
+
+// Makes every 16-bit half of a word a normal binary16 value and every
+// 32-bit word a normal binary32 value (bit 14 of each half clear, bit 13
+// set), so float and half components never hold NaN, infinity or
+// subnormal bit patterns.
+static void WMNormalizeHalves(void *bytes, size_t length) {
+    uint16_t *halves = bytes;
+    for (size_t i = 0; i < length / 2; i++) halves[i] = (uint16_t)((halves[i] & ~0x4000u) | 0x2000u);
+}
+
+WMREF_CASE(computeMemoryLayout, "compute.memory-layout", "compute.memory-model",
+           "Structure member offsets, sizes and alignments, and component reads and writes through them")
+{
+    id<MTLBuffer> scratch = [c buffer:4096];
+    id<MTLBuffer> offsets = [c buffer:32 * sizeof(uint32_t)];
+    id<MTLComputePipelineState> layout = [c computePipeline:@"compute_layout_offsets"];
+    [c compute:^(id<MTLComputeCommandEncoder> e) {
+        [e setComputePipelineState:layout];
+        [e setBuffer:offsets offset:0 atIndex:0];
+        [e setBuffer:scratch offset:0 atIndex:1];
+        [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+    }];
+    const uint32_t *off = offsets.contents;
+    // Offsets, sizes and alignments are layout data the compiler defines
+    // from the MSL type rules.
+    [c data:@"offsets-sizes-alignments" elem:WMElemU32 bytes:off length:26 * sizeof(uint32_t) rule:WMExact()];
+    uint32_t stride = off[19];
+    if (stride == 0 || stride > 1024) [c fail:@"unexpected record size %u", stride];
+    WMLayoutComponent components[64];
+    NSUInteger count = WMLayoutComponents(off, components);
+    if (count != 44) [c fail:@"component table has %lu entries", (unsigned long)count];
+
+    // Read direction: the CPU writes bytes, the shader reads components.
+    NSUInteger length = 2 * stride;
+    NSMutableData *bytes = [NSMutableData dataWithLength:length];
+    WMPattern(bytes.mutableBytes, length, 51);
+    WMNormalizeHalves(bytes.mutableBytes, length);
+    uint8_t *records = bytes.mutableBytes;
+    // A bool component holds 0 or 1.
+    records[off[9]] = 0;
+    records[stride + off[9]] = 1;
+    id<MTLBuffer> source = [c bufferWithBytes:records length:length];
+    id<MTLBuffer> read = [c buffer:2 * 48 * sizeof(uint32_t)];
+    id<MTLComputePipelineState> reader = [c computePipeline:@"compute_layout_read"];
+    [c compute:^(id<MTLComputeCommandEncoder> e) {
+        [e setComputePipelineState:reader];
+        [e setBuffer:read offset:0 atIndex:0];
+        [e setBuffer:source offset:0 atIndex:1];
+        [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(2, 1, 1)];
+    }];
+    const uint32_t *words = read.contents;
+    NSMutableArray<NSString *> *readMismatches = [NSMutableArray array];
+    for (NSUInteger r = 0; r < 2; r++)
+        for (NSUInteger k = 0; k < count; k++) {
+            uint32_t expected = WMLoadComponent(records + r * stride, components[k]);
+            if (words[r * 48 + k] != expected)
+                [readMismatches addObject:[NSString stringWithFormat:@"record %lu component %lu", (unsigned long)r,
+                                                                     (unsigned long)k]];
+        }
+    [c data:@"read-input" elem:WMElemU8 bytes:records length:length rule:WMExact()];
+    [c data:@"read-components" elem:WMElemU32 bytes:words length:read.length rule:WMExact()];
+    [c value:@"read-mismatches-against-offsets" strings:readMismatches rule:WMExact()];
+
+    // Write direction: the shader stores components one at a time into a
+    // buffer the CPU filled with 0xee.
+    uint32_t input[2 * 48];
+    WMPattern(input, sizeof input, 52);
+    WMNormalizeHalves(input, sizeof input);
+    input[18] = 0;
+    input[48 + 18] = 1;
+    id<MTLBuffer> values = [c bufferWithBytes:input length:sizeof input];
+    id<MTLBuffer> written = [c buffer:length];
+    memset(written.contents, 0xee, length);
+    id<MTLComputePipelineState> writer = [c computePipeline:@"compute_layout_write"];
+    [c compute:^(id<MTLComputeCommandEncoder> e) {
+        [e setComputePipelineState:writer];
+        [e setBuffer:written offset:0 atIndex:0];
+        [e setBuffer:values offset:0 atIndex:1];
+        [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(2, 1, 1)];
+    }];
+    const uint8_t *out = written.contents;
+    uint32_t extracted[2 * 44];
+    uint8_t flags[2];
+    NSMutableArray<NSString *> *writeMismatches = [NSMutableArray array];
+    for (NSUInteger r = 0; r < 2; r++)
+        for (NSUInteger k = 0; k < count; k++) {
+            uint32_t stored = WMLoadComponent(out + r * stride, components[k]);
+            extracted[r * 44 + k] = stored;
+            if (components[k].isFlag) {
+                flags[r] = (uint8_t)stored;
+                continue;
+            }
+            uint32_t mask = components[k].width == 4 ? 0xffffffffu : (1u << (8 * components[k].width)) - 1;
+            if (stored != (input[r * 48 + k] & mask))
+                [writeMismatches addObject:[NSString stringWithFormat:@"record %lu component %lu", (unsigned long)r,
+                                                                      (unsigned long)k]];
+        }
+    // Non-bool components: their bytes equal the stored values.
+    [c value:@"write-mismatches-against-offsets" strings:writeMismatches rule:WMExact()];
+    [c data:@"write-input" elem:WMElemU32 bytes:input length:sizeof input rule:WMExact()];
+    // The flag entries of this array hold the stored bool bytes; the MSL
+    // specification states the values of true and false, not their storage
+    // bytes, so those bytes are also recorded on their own.
+    for (NSUInteger r = 0; r < 2; r++)
+        for (NSUInteger k = 0; k < count; k++)
+            if (components[k].isFlag) extracted[r * 44 + k] = 0;
+    [c data:@"written-components" elem:WMElemU32 bytes:extracted length:sizeof extracted rule:WMExact()];
+    [c data:@"written-bool-bytes" elem:WMElemU8 bytes:flags length:2
+        rule:WMNone(@"MSL 4.1 section 2.1 defines the values of true and false, not the bytes a bool is stored as")];
+    [c data:@"written-record-bytes" elem:WMElemU8 bytes:out length:length
+        rule:WMNone(@"padding bytes after component stores are not defined; the components are compared above")];
+}

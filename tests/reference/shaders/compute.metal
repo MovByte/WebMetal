@@ -182,3 +182,131 @@ kernel void compute_stage_in(StageInRecord in [[stage_in]],
     r[2] = as_type<uint>(in.scale);
     r[3] = gid.y * 0x100u + gid.x;
 }
+
+// Structure layout per MSL 4.1 section 2 (sizes and alignments of scalar,
+// vector, packed vector, matrix and aggregate types).
+struct LayoutInner {
+    char c;
+    packed_short2 ps;
+    float f;
+};
+
+struct LayoutRecord {
+    char a;
+    short b;
+    half h;
+    float f;
+    float2 v2;
+    float3 v3;
+    packed_float3 p3;
+    uchar3 u3;
+    half3 h3;
+    bool flag;
+    float3x3 m;
+    LayoutInner inner[2];
+    packed_half3 ph3;
+    int4 i4;
+    ushort us;
+};
+
+#define LAYOUT_OFFSET(field) uint((device const char *)&r->field - (device const char *)r)
+
+// Member offsets, sizes and alignments as the compiler lays them out.
+kernel void compute_layout_offsets(device uint *out [[buffer(0)]],
+                                   device const LayoutRecord *r [[buffer(1)]])
+{
+    out[0] = LAYOUT_OFFSET(a);
+    out[1] = LAYOUT_OFFSET(b);
+    out[2] = LAYOUT_OFFSET(h);
+    out[3] = LAYOUT_OFFSET(f);
+    out[4] = LAYOUT_OFFSET(v2);
+    out[5] = LAYOUT_OFFSET(v3);
+    out[6] = LAYOUT_OFFSET(p3);
+    out[7] = LAYOUT_OFFSET(u3);
+    out[8] = LAYOUT_OFFSET(h3);
+    out[9] = LAYOUT_OFFSET(flag);
+    out[10] = LAYOUT_OFFSET(m);
+    out[11] = LAYOUT_OFFSET(m[1]);
+    out[12] = LAYOUT_OFFSET(inner[0]);
+    out[13] = LAYOUT_OFFSET(inner[0].ps);
+    out[14] = LAYOUT_OFFSET(inner[0].f);
+    out[15] = LAYOUT_OFFSET(inner[1]);
+    out[16] = LAYOUT_OFFSET(ph3);
+    out[17] = LAYOUT_OFFSET(i4);
+    out[18] = LAYOUT_OFFSET(us);
+    out[19] = sizeof(LayoutRecord);
+    out[20] = alignof(LayoutRecord);
+    out[21] = sizeof(LayoutInner);
+    out[22] = alignof(LayoutInner);
+    out[23] = sizeof(float3x3);
+    out[24] = sizeof(packed_half3);
+    out[25] = sizeof(bool);
+}
+
+// Every scalar component of two records, as its raw bits widened to 32.
+kernel void compute_layout_read(device uint *out [[buffer(0)]],
+                                device const LayoutRecord *records [[buffer(1)]],
+                                uint i [[thread_position_in_grid]])
+{
+    device const LayoutRecord &r = records[i];
+    device uint *o = out + i * 48;
+    o[0] = uint(as_type<uchar>(r.a));
+    o[1] = uint(as_type<ushort>(r.b));
+    o[2] = uint(as_type<ushort>(r.h));
+    o[3] = as_type<uint>(r.f);
+    o[4] = as_type<uint>(r.v2.x); o[5] = as_type<uint>(r.v2.y);
+    o[6] = as_type<uint>(r.v3.x); o[7] = as_type<uint>(r.v3.y); o[8] = as_type<uint>(r.v3.z);
+    o[9] = as_type<uint>(r.p3[0]); o[10] = as_type<uint>(r.p3[1]); o[11] = as_type<uint>(r.p3[2]);
+    o[12] = r.u3.x; o[13] = r.u3.y; o[14] = r.u3.z;
+    o[15] = as_type<ushort>(r.h3.x); o[16] = as_type<ushort>(r.h3.y); o[17] = as_type<ushort>(r.h3.z);
+    o[18] = r.flag ? 1u : 0u;
+    for (uint col = 0; col < 3; col++)
+        for (uint row = 0; row < 3; row++)
+            o[19 + col * 3 + row] = as_type<uint>(r.m[col][row]);
+    for (uint k = 0; k < 2; k++) {
+        o[28 + k * 4] = uint(as_type<uchar>(r.inner[k].c));
+        o[29 + k * 4] = uint(as_type<ushort>(r.inner[k].ps[0]));
+        o[30 + k * 4] = uint(as_type<ushort>(r.inner[k].ps[1]));
+        o[31 + k * 4] = as_type<uint>(r.inner[k].f);
+    }
+    o[36] = as_type<ushort>(r.ph3[0]); o[37] = as_type<ushort>(r.ph3[1]); o[38] = as_type<ushort>(r.ph3[2]);
+    o[39] = as_type<uint>(r.i4.x); o[40] = as_type<uint>(r.i4.y);
+    o[41] = as_type<uint>(r.i4.z); o[42] = as_type<uint>(r.i4.w);
+    o[43] = r.us;
+    o[44] = 0; o[45] = 0; o[46] = 0; o[47] = 0;
+}
+
+// Stores every scalar component of two records from 32-bit source words,
+// one component at a time, truncated to the component's width.
+kernel void compute_layout_write(device LayoutRecord *records [[buffer(0)]],
+                                 device const uint *in [[buffer(1)]],
+                                 uint i [[thread_position_in_grid]])
+{
+    device LayoutRecord &r = records[i];
+    device const uint *s = in + i * 48;
+    r.a = as_type<char>(uchar(s[0]));
+    r.b = as_type<short>(ushort(s[1]));
+    r.h = as_type<half>(ushort(s[2]));
+    r.f = as_type<float>(s[3]);
+    r.v2.x = as_type<float>(s[4]); r.v2.y = as_type<float>(s[5]);
+    r.v3.x = as_type<float>(s[6]); r.v3.y = as_type<float>(s[7]); r.v3.z = as_type<float>(s[8]);
+    r.p3[0] = as_type<float>(s[9]); r.p3[1] = as_type<float>(s[10]); r.p3[2] = as_type<float>(s[11]);
+    r.u3.x = uchar(s[12]); r.u3.y = uchar(s[13]); r.u3.z = uchar(s[14]);
+    r.h3.x = as_type<half>(ushort(s[15])); r.h3.y = as_type<half>(ushort(s[16]));
+    r.h3.z = as_type<half>(ushort(s[17]));
+    r.flag = s[18] != 0u;
+    for (uint col = 0; col < 3; col++)
+        for (uint row = 0; row < 3; row++)
+            r.m[col][row] = as_type<float>(s[19 + col * 3 + row]);
+    for (uint k = 0; k < 2; k++) {
+        r.inner[k].c = as_type<char>(uchar(s[28 + k * 4]));
+        r.inner[k].ps[0] = as_type<short>(ushort(s[29 + k * 4]));
+        r.inner[k].ps[1] = as_type<short>(ushort(s[30 + k * 4]));
+        r.inner[k].f = as_type<float>(s[31 + k * 4]);
+    }
+    r.ph3[0] = as_type<half>(ushort(s[36])); r.ph3[1] = as_type<half>(ushort(s[37]));
+    r.ph3[2] = as_type<half>(ushort(s[38]));
+    r.i4.x = as_type<int>(s[39]); r.i4.y = as_type<int>(s[40]);
+    r.i4.z = as_type<int>(s[41]); r.i4.w = as_type<int>(s[42]);
+    r.us = ushort(s[43]);
+}
