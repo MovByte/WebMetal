@@ -438,19 +438,7 @@ impl Harness {
 
     fn with(blit: bool) -> Harness {
         let gpu = NativeGpu::new();
-        let adapter = gpu
-            .block_on(gpu.request_adapter(&RequestAdapterOptions::new()), WAIT)
-            .unwrap()
-            .unwrap()
-            .expect("an adapter");
-        let descriptor = match negotiate::plan(&adapter.features(), &adapter.limits()) {
-            Ok(plan) => plan.descriptor,
-            // wgpu-native's adapter does not report "core-features-and-limits" (tests/gpu_smoke_known_wgpu-native.txt);
-            // as the smoke test does, the executor then runs on a device with the default features and limits.
-            Err(negotiate::NegotiationError::NotCore) if cfg!(webgpu_native = "wgpu-native") => DeviceDescriptor::new(),
-            Err(e) => panic!("negotiation: {e}"),
-        };
-        let device = gpu.block_on(adapter.request_device(&descriptor), WAIT).unwrap().expect("a device");
+        let device = test_device(&gpu);
         let em = Rc::new(TestEmbedder::new());
         let services = Services {
             control: vec![Box::new(Memory { embedder: em.clone() }) as Box<dyn ControlService<_, _>>],
@@ -570,6 +558,42 @@ impl Harness {
     fn guest(&self, task: TaskId, addr: u64, len: usize) -> Vec<u8> {
         self.em.guest(task, addr, len)
     }
+}
+
+/// A device for an executor.
+fn test_device(gpu: &NativeGpu) -> NativeDevice {
+    let adapter =
+        gpu.block_on(gpu.request_adapter(&RequestAdapterOptions::new()), WAIT).unwrap().unwrap().expect("an adapter");
+    let descriptor = match negotiate::plan(&adapter.features(), &adapter.limits()) {
+        Ok(plan) => plan.descriptor,
+        // wgpu-native's adapter does not report "core-features-and-limits" (tests/gpu_smoke_known_wgpu-native.txt); as
+        // the smoke test does, the executor then runs on a device with the default features and limits.
+        Err(negotiate::NegotiationError::NotCore) if cfg!(webgpu_native = "wgpu-native") => DeviceDescriptor::new(),
+        Err(e) => panic!("negotiation: {e}"),
+    };
+    gpu.block_on(adapter.request_device(&descriptor), WAIT).unwrap().expect("a device")
+}
+
+/// Every control opcode has one owner: services that claim one opcode twice are a wiring defect, refused when the
+/// executor is made.
+#[test]
+#[should_panic(expected = "two control services claim")]
+fn a_second_claim_of_an_opcode_is_refused() {
+    let gpu = NativeGpu::new();
+    let device = test_device(&gpu);
+    let em = Rc::new(TestEmbedder::new());
+    let services = Services {
+        control: vec![
+            Box::new(Memory { embedder: em.clone() }) as Box<dyn ControlService<_, _>>,
+            Box::new(Memory { embedder: em.clone() }),
+        ],
+        render: None,
+        compute: None,
+        blit: None,
+        coherence: None,
+    };
+    let config = Config { scopes: Policy { granularity: Granularity::PerCall, strict: true } };
+    Executor::new(device, em, services, config);
 }
 
 fn blit(encoder: Handle, body: Vec<Command>) -> Vec<Command> {
