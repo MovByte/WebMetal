@@ -4,3 +4,4 @@
 //! [`embed`] is the interface the embedding environment (the kernel side) provides to the executor.
 
 pub mod embed;
+pub mod format;
