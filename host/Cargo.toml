@@ -5,5 +5,12 @@ description = "WebMetal host executor: replays the wire protocol on WebGPU"
 edition.workspace = true
 license.workspace = true
 
+[features]
+# The WebGPU binding over the webgpu.h C API (Dawn or wgpu-native); build.rs describes how one is selected.
+native = ["dep:bindgen"]
+
 [dependencies]
 webmetal-wire = { path = "../wire" }
+
+[build-dependencies]
+bindgen = { version = "0.72", optional = true, default-features = false, features = ["runtime"] }
