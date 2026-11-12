@@ -3,7 +3,7 @@ name = "webmetal-shim-executor"
 version = "0.1.0"
 description = "The WebMetal host executor inside the guest plugin's macOS test shim"
 edition = "2024"
-license = "BSD-2-Clause-Patent"
+license = "AGPL-3.0-only"
 publish = false
 
 # The shim links this library into libWebMetalHostShim.dylib (UniXNU scripts/build-web-metal-plugin.py).
