@@ -1811,6 +1811,10 @@ fn pass_parallel_encoder_order() {
         end(),
         end(),
     ]);
+    // The sub-encoders are render encoders the guest holds: their handles are released like the parallel encoder's.
+    for encoder in [parallel, a, b] {
+        h.ok(Request::Release(Release { object: encoder }));
+    }
     let mut c = Candidate::default();
     record_texture(&h, &mut c, "result", t, "u32", "R32Uint", 8, 8, 4);
     check("pass.parallel-encoder-order", &c);

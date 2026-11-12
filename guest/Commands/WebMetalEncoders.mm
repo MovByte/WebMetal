@@ -497,11 +497,6 @@ using namespace webmetal;
     }
     _encoder = NewEncoderState((WebMetalCommandBuffer *)commandBuffer, stream.get());
     _encoder->own = stream;
-    // The host binds the encoder handles a Commit creates at the top level (host/src/exec/stream.rs, Plan::encoders);
-    // a sub-encoder's handle is named only inside its parallel encoder's records and is never bound, so it is never
-    // released.
-    stream->encoders().clear();
-    _encoder->releases = nullptr;
     wire::BeginParallelSubEncoder record;
     record.parent = parent->_encoder->handle;
     record.encoder = _encoder->handle;

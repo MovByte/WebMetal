@@ -83,7 +83,8 @@ pub enum Step {
 #[derive(Clone, Debug, Default)]
 pub struct Plan {
     pub steps: Vec<Step>,
-    /// The encoders the stream creates, in creation order.
+    /// The encoders the stream creates, in creation order: a parallel render encoder's sub-encoders (render encoders
+    /// the guest holds and releases like any other) follow it.
     pub encoders: Vec<(Handle, EncoderKind)>,
     /// The first record the host does not implement: its offset and failure.
     pub unimplemented: Option<(u64, Failure)>,
@@ -182,6 +183,7 @@ pub fn plan(
                         _ => return Err(fail("BeginParallelSubEncoder outside an open parallel encoder".into())),
                     }
                     created.insert(encoder, EncoderKind::Render);
+                    out.encoders.push((encoder, EncoderKind::Render));
                 }
                 _ => {
                     if open.is_some() {
@@ -470,7 +472,10 @@ mod tests {
                 records: (0..9).collect()
             })]
         );
-        assert_eq!(p.encoders, vec![(h(1), EncoderKind::ParallelRender)]);
+        assert_eq!(
+            p.encoders,
+            vec![(h(1), EncoderKind::ParallelRender), (h(2), EncoderKind::Render), (h(3), EncoderKind::Render)]
+        );
 
         // A render record between sub-encoders, or a parallel record inside one, is misplaced.
         let s = stream(vec![
