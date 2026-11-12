@@ -275,7 +275,6 @@ pub fn commit(command_buffer: Handle, queue: Handle, stream_addr: u64, len: usiz
         label: None,
         retained_references: true,
         error_options: 0,
-        protection_options: 0,
         stream: GuestAddr(stream_addr),
         stream_length: len as u64,
         resources,
