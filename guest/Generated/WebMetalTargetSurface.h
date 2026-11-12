@@ -1134,6 +1134,16 @@ inline constexpr DriverSelector kAGXA10FamilyIndirectArgumentEncoderDriver[] = {
     {SelectorKind::Instance, "setVisibleFunctionTables:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
 };
 
+// Driver-layer selectors of AGXA10FamilyBinaryArchive -> _MTLBinaryArchive -> _MTLObjectWithLabel.
+inline constexpr DriverSelector kAGXA10FamilyBinaryArchiveDriver[] = {
+    {SelectorKind::Instance, "addComputePipelineFunctionsWithDescriptor:error:", "B32@0:8@16^@24", "agx", ""},
+    {SelectorKind::Instance, "addComputePipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32", "agx", ""},
+    {SelectorKind::Instance, "addRenderPipelineFunctionsWithDescriptor:error:", "B32@0:8@16^@24", "agx", ""},
+    {SelectorKind::Instance, "addRenderPipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32", "agx", ""},
+    {SelectorKind::Instance, "addTileRenderPipelineFunctionsWithDescriptor:error:", "B32@0:8@16^@24", "agx", ""},
+    {SelectorKind::Instance, "addTileRenderPipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32", "agx", ""},
+};
+
 inline constexpr Role kRoles[] = {
     {"WebMetalDevice", "AGXA10XDevice", "_MTLDevice", kAGXA10XDeviceDriver, 264},
     {"WebMetalBuffer", "AGXA10FamilyBuffer", "_MTLResource", kAGXA10FamilyBufferDriver, 75},
@@ -1150,6 +1160,7 @@ inline constexpr Role kRoles[] = {
     {"WebMetalComputePipelineState", "AGXA10FamilyComputePipeline", "_MTLComputePipelineState", kAGXA10FamilyComputePipelineDriver, 16},
     {"WebMetalRenderPipelineState", "AGXA10FamilyRenderPipeline", "_MTLRenderPipelineState", kAGXA10FamilyRenderPipelineDriver, 37},
     {"WebMetalArgumentEncoder", "AGXA10FamilyIndirectArgumentEncoder", "_MTLIndirectArgumentEncoder", kAGXA10FamilyIndirectArgumentEncoderDriver, 30},
+    {"WebMetalBinaryArchive", "AGXA10FamilyBinaryArchive", "_MTLBinaryArchive", kAGXA10FamilyBinaryArchiveDriver, 6},
 };
 
 inline constexpr BaseIvar k_MTLAccelerationStructureCommandEncoderIvars[] = {
@@ -1201,7 +1212,36 @@ inline constexpr BaseIvar k_MTLBinaryArchiveIvars[] = {
     {"_newBinary", 704, "Q"},
 };
 inline constexpr BaseSelector k_MTLBinaryArchiveSelectors[] = {
-    {SelectorKind::Instance, nullptr, nullptr},  // none; the count below is 0
+    {SelectorKind::Instance, "addComputePipelineFunctionsWithDescriptor:error:", "B32@0:8@16^@24"},
+    {SelectorKind::Instance, "addComputePipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32"},
+    {SelectorKind::Instance, "addFunctionWithDescriptor:library:error:", "B40@0:8@16@24^@32"},
+    {SelectorKind::Instance, "addLibraryWithDescriptor:error:", "B32@0:8@16^@24"},
+    {SelectorKind::Instance, "addMeshRenderPipelineFunctionsWithDescriptor:error:", "B32@0:8@16^@24"},
+    {SelectorKind::Instance, "addMeshRenderPipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32"},
+    {SelectorKind::Instance, "addRenderPipelineFunctionsWithDescriptor:error:", "B32@0:8@16^@24"},
+    {SelectorKind::Instance, "addRenderPipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32"},
+    {SelectorKind::Instance, "addTileRenderPipelineFunctionsWithDescriptor:error:", "B32@0:8@16^@24"},
+    {SelectorKind::Instance, "addTileRenderPipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32"},
+    {SelectorKind::Instance, "archiveFunctionIds", "@16@0:8"},
+    {SelectorKind::Instance, "device", "@16@0:8"},
+    {SelectorKind::Instance, "enumerateArchivesFromBackingFile:", "B24@0:8@?16"},
+    {SelectorKind::Instance, "enumerateArchivesFromPipelineCollection:", "B24@0:8@?16"},
+    {SelectorKind::Instance, "formattedDescription:", "@24@0:8Q16"},
+    {SelectorKind::Instance, "initMetalScriptWithArchive:", "v24@0:8@16"},
+    {SelectorKind::Instance, "keys", "@16@0:8"},
+    {SelectorKind::Instance, "label", "@16@0:8"},
+    {SelectorKind::Instance, "newPipelineDescriptorAtIndex:pipelineType:error:", "@40@0:8Q16^I24^@32"},
+    {SelectorKind::Instance, "options", "Q16@0:8"},
+    {SelectorKind::Instance, "pipelineCollection", "^v16@0:8"},
+    {SelectorKind::Instance, "recompilablePipelineCount", "Q16@0:8"},
+    {SelectorKind::Instance, "recompileToArchive:error:", "B32@0:8@16^@24"},
+    {SelectorKind::Instance, "serializeToURL:error:", "B32@0:8@16^@24"},
+    {SelectorKind::Instance, "serializeToURL:options:error:", "B40@0:8@16Q24^@32"},
+    {SelectorKind::Instance, "setLabel:", "v24@0:8@16"},
+    {SelectorKind::Instance, "storeComputePipelineDescriptor:", "B24@0:8@16"},
+    {SelectorKind::Instance, "storeMeshRenderPipelineDescriptor:", "B24@0:8@16"},
+    {SelectorKind::Instance, "storeRenderPipelineDescriptor:", "B24@0:8@16"},
+    {SelectorKind::Instance, "storeTileRenderPipelineDescriptor:", "B24@0:8@16"},
 };
 
 inline constexpr BaseIvar k_MTLCommandBufferIvars[] = {
@@ -2983,7 +3023,7 @@ inline constexpr BaseSelector k_MTLSamplerStateSelectors[] = {
 // Metal.framework base classes on 21H461, as guest/Private declares them.
 inline constexpr BaseLayout kBases[] = {
     {"_MTLAccelerationStructureCommandEncoder", "_MTLCommandEncoder", 88, k_MTLAccelerationStructureCommandEncoderIvars, 0, k_MTLAccelerationStructureCommandEncoderSelectors, 0},
-    {"_MTLBinaryArchive", "_MTLObjectWithLabel", 712, k_MTLBinaryArchiveIvars, 39, k_MTLBinaryArchiveSelectors, 0},
+    {"_MTLBinaryArchive", "_MTLObjectWithLabel", 712, k_MTLBinaryArchiveIvars, 39, k_MTLBinaryArchiveSelectors, 30},
     {"_MTLCommandBuffer", "_MTLObjectWithLabel", 488, k_MTLCommandBufferIvars, 54, k_MTLCommandBufferSelectors, 130},
     {"_MTLCommandEncoder", "_MTLObjectWithLabel", 88, k_MTLCommandEncoderIvars, 9, k_MTLCommandEncoderSelectors, 301},
     {"_MTLCommandQueue", "_MTLObjectWithLabel", 345, k_MTLCommandQueueIvars, 31, k_MTLCommandQueueSelectors, 53},

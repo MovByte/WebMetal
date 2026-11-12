@@ -63,3 +63,7 @@ target = "AGXA10FamilyRenderPipeline"
 [[class]]
 name = "WebMetalArgumentEncoder"
 target = "AGXA10FamilyIndirectArgumentEncoder"
+
+[[class]]
+name = "WebMetalBinaryArchive"
+target = "AGXA10FamilyBinaryArchive"
