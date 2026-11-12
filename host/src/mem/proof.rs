@@ -5,9 +5,10 @@
 //! value", and "packed formats and snorm formats may change bit-representation" (WebGPU section 13.3.1, quoted in
 //! `tables/formats.toml` question `6.3-texel-copy-bit-exactness`). Plan section 9 (row 2) settles such latitude per
 //! host with a test that proves each operation. This module is that test for texel copies: it writes every bit
-//! pattern of a format whose preservation the specification leaves open into a texture (`writeTexture`), copies the
-//! texture back to a buffer (`copyTextureToBuffer`), and compares. Only a host on which every such pattern survives
-//! the round trip unchanged moves the format's bits through texel copies; elsewhere the transfers that need it are
+//! pattern of a format whose preservation the specification leaves open into a texture, once with `writeTexture` and
+//! once with `copyBufferToTexture` (the two ways the executor fills textures), copies each texture back to a buffer
+//! (`copyTextureToBuffer`, the way it reads them), and compares. Only a host on which every such pattern survives both
+//! round trips unchanged moves the format's bits through texel copies; elsewhere the transfers that need it are
 //! refused.
 //!
 //! The patterns, by format:
@@ -26,8 +27,8 @@
 
 use crate::format::webgpu::WebGpuFormat;
 use crate::gpu::idl::{
-    CommandBufferDescriptor, CommandEncoderDescriptor, Extent3D, Extent3DDict, MapMode, TexelCopyBufferInfo,
-    TexelCopyBufferLayout, TexelCopyTextureInfo, TextureDescriptor, TextureUsage,
+    BufferDescriptor, BufferUsage, CommandBufferDescriptor, CommandEncoderDescriptor, Extent3D, Extent3DDict, MapMode,
+    TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureDescriptor, TextureUsage,
 };
 use crate::gpu::{Api, Buffer as _, CommandEncoder as _, Device as _, GpuFuture, MappedRange as _, Queue as _, Size64};
 
@@ -168,11 +169,17 @@ pub fn judge(p: &Patterns, sent: &[u8], got: &[u8]) -> Result<(), String> {
 }
 
 impl<A: Api> Memory<A> {
-    /// Run the texel copy test of `format` on this device. The caller records the outcome with
-    /// [`Memory::record_proof`]; the future does not borrow the memory services.
-    pub fn prove_texel_copies(&self, format: WebGpuFormat) -> GpuFuture<Result<Result<(), String>, MemError>> {
-        let device = self.device.clone();
-        let queue = self.queue.clone();
+    /// Run the texel copy test of `format` on `device`. It makes WebGPU calls while it runs, so it runs outside the
+    /// executor's service calls: when the memory services are set up ([`super::service::MemoryServices::new`]) or by
+    /// tools. The caller records the outcome with [`Memory::record_proof`]; the future does not borrow the memory
+    /// services.
+    pub fn prove_texel_copies(
+        &self,
+        device: &A::Device,
+        format: WebGpuFormat,
+    ) -> GpuFuture<Result<Result<(), String>, MemError>> {
+        let device = device.clone();
+        let queue = device.queue();
         Box::pin(async move {
             let p = match patterns(format) {
                 Ok(p) => p,
@@ -193,29 +200,45 @@ impl<A: Api> Memory<A> {
                     TextureUsage::COPY_SRC | TextureUsage::COPY_DST,
                 );
                 td.label = format!("texel copy test {}", format.name());
-                let texture = device.create_texture(&td).map_err(|e| MemError::gpu("GPUDevice.createTexture", e))?;
+                let bytes = Size64::new(data.len() as u64).map_err(|e| MemError::gpu("createBuffer", e))?;
+                let written = device.create_texture(&td).map_err(|e| MemError::gpu("GPUDevice.createTexture", e))?;
+                let copied = device.create_texture(&td).map_err(|e| MemError::gpu("GPUDevice.createTexture", e))?;
                 let layout = TexelCopyBufferLayout {
                     offset: Size64::new_const(0),
                     bytes_per_row: Some(row as u32),
                     rows_per_image: Some(rows),
                 };
                 queue
-                    .write_texture(&TexelCopyTextureInfo::<A>::new(&texture), &data, &layout, &size)
+                    .write_texture(&TexelCopyTextureInfo::<A>::new(&written), &data, &layout, &size)
                     .map_err(|e| MemError::gpu("GPUQueue.writeTexture", e))?;
-                let bytes = Size64::new(data.len() as u64).map_err(|e| MemError::gpu("createBuffer", e))?;
+                let source = device
+                    .create_buffer(&BufferDescriptor::new(bytes, BufferUsage::COPY_SRC | BufferUsage::COPY_DST))
+                    .map_err(|e| MemError::gpu("GPUDevice.createBuffer", e))?;
+                queue
+                    .write_buffer(&source, Size64::new_const(0), &data, Size64::new_const(0), None)
+                    .map_err(|e| MemError::gpu("GPUQueue.writeBuffer", e))?;
                 let staging = device
-                    .create_buffer(&crate::gpu::idl::BufferDescriptor::new(
-                        bytes,
-                        crate::gpu::idl::BufferUsage::MAP_READ | crate::gpu::idl::BufferUsage::COPY_DST,
+                    .create_buffer(&BufferDescriptor::new(
+                        Size64::new(2 * data.len() as u64).map_err(|e| MemError::gpu("createBuffer", e))?,
+                        BufferUsage::MAP_READ | BufferUsage::COPY_DST,
                     ))
                     .map_err(|e| MemError::gpu("GPUDevice.createBuffer", e))?;
                 let encoder = device.create_command_encoder(&CommandEncoderDescriptor::new());
-                let mut dst = TexelCopyBufferInfo::<A>::new(&staging);
-                dst.bytes_per_row = Some(row as u32);
-                dst.rows_per_image = Some(rows);
+                let mut src = TexelCopyBufferInfo::<A>::new(&source);
+                src.bytes_per_row = Some(row as u32);
+                src.rows_per_image = Some(rows);
                 encoder
-                    .copy_texture_to_buffer(&TexelCopyTextureInfo::<A>::new(&texture), &dst, &size)
-                    .map_err(|e| MemError::gpu("GPUCommandEncoder.copyTextureToBuffer", e))?;
+                    .copy_buffer_to_texture(&src, &TexelCopyTextureInfo::<A>::new(&copied), &size)
+                    .map_err(|e| MemError::gpu("GPUCommandEncoder.copyBufferToTexture", e))?;
+                for (i, texture) in [&written, &copied].into_iter().enumerate() {
+                    let mut dst = TexelCopyBufferInfo::<A>::new(&staging);
+                    dst.offset = Size64::new((i * data.len()) as u64).map_err(|e| MemError::gpu("copy", e))?;
+                    dst.bytes_per_row = Some(row as u32);
+                    dst.rows_per_image = Some(rows);
+                    encoder
+                        .copy_texture_to_buffer(&TexelCopyTextureInfo::<A>::new(texture), &dst, &size)
+                        .map_err(|e| MemError::gpu("GPUCommandEncoder.copyTextureToBuffer", e))?;
+                }
                 queue.submit(&[&encoder.finish(&CommandBufferDescriptor::new())]);
                 staging
                     .map_async(MapMode::READ, Size64::new_const(0), None)
@@ -224,12 +247,18 @@ impl<A: Api> Memory<A> {
                 let range = staging
                     .get_mapped_range(Size64::new_const(0), None)
                     .map_err(|e| MemError::gpu("GPUBuffer.getMappedRange", e))?;
-                let mut got = vec![0u8; data.len()];
+                let mut got = vec![0u8; 2 * data.len()];
                 range.read(0, &mut got).map_err(|e| MemError::gpu("ArrayBuffer read", e))?;
                 staging.unmap();
-                crate::gpu::Texture::destroy(&texture);
+                crate::gpu::Texture::destroy(&written);
+                crate::gpu::Texture::destroy(&copied);
+                let (by_write, by_copy) = got.split_at(data.len());
+                if let Err(why) = judge(&p, &data[..part.len()], &by_copy[..part.len()]) {
+                    return Ok(Err(format!("copyBufferToTexture: {why}")));
+                }
+                let got = by_write;
                 if let Err(why) = judge(&p, &data[..part.len()], &got[..part.len()]) {
-                    return Ok(Err(why));
+                    return Ok(Err(format!("writeTexture: {why}")));
                 }
             }
             Ok(Ok(()))

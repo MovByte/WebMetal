@@ -16,8 +16,9 @@ use webmetal_host::format::handling::{self, Dimension, Resolution, Unavailable};
 use webmetal_host::format::pvrtc;
 use webmetal_host::format::table::METAL_FORMATS;
 use webmetal_host::gpu::idl::{CommandBufferDescriptor, CommandEncoderDescriptor};
-use webmetal_host::gpu::{CommandEncoder as _, Device as _};
+use webmetal_host::gpu::{CommandEncoder as _, Device as _, Queue as _};
 use webmetal_host::mem::buffer::{Buffer, Readbacks};
+use webmetal_host::mem::calls::Direct;
 use webmetal_host::mem::layout::{Blocks, RegionArgs, RegionLayout};
 use webmetal_host::mem::texture::{Prepare, Texture, TextureRegion};
 use webmetal_host::mem::{MemError, Memory};
@@ -87,6 +88,7 @@ fn region(o: (u64, u64, u64), s: (u64, u64, u64)) -> Region {
 struct Ctx<'a> {
     g: &'a Gpu,
     mem: Memory<A>,
+    direct: Direct<A>,
     guest: &'a Guest,
     next: std::cell::Cell<u64>,
     handles: std::cell::Cell<u64>,
@@ -96,7 +98,8 @@ impl<'a> Ctx<'a> {
     fn new(g: &'a Gpu, guest: &'a Guest) -> Ctx<'a> {
         Ctx {
             g,
-            mem: Memory::new(g.device.clone(), g.features),
+            mem: Memory::new(&g.device, g.features),
+            direct: Direct::new(&g.device),
             guest,
             next: std::cell::Cell::new(guest.base + 0x1000),
             handles: std::cell::Cell::new(1),
@@ -119,7 +122,7 @@ impl<'a> Ctx<'a> {
     /// Run the texel copy test of every format a texture of `t` needs, recording the outcome.
     fn prove(&self, t: &Texture<A>) {
         if let Some(f) = self.mem.texture_needs_proof(t) {
-            let outcome = self.g.block_on(self.mem.prove_texel_copies(f)).unwrap();
+            let outcome = self.g.block_on(self.mem.prove_texel_copies(&self.g.device, f)).unwrap();
             self.mem.record_proof(f, outcome);
         }
     }
@@ -143,7 +146,7 @@ impl<'a> Ctx<'a> {
             bytes_per_row: bpr,
             bytes_per_image: bpi,
         };
-        self.mem.replace_region_slice(self.guest, TASK, t, &req)
+        self.mem.replace_region_slice(&self.direct, self.guest, TASK, t, &req)
     }
 
     /// `getBytes` into guest memory that holds `fill` bytes first; returns the guest's `span` bytes afterwards.
@@ -166,7 +169,7 @@ impl<'a> Ctx<'a> {
             level,
             slice,
         };
-        let read = self.mem.get_bytes_slice(t, &req)?;
+        let read = self.mem.get_bytes_slice(&self.direct, t, &req)?;
         let bytes = self.g.block_on(read.wait())?;
         bytes.write_guest(&self.mem, self.guest, TASK, addr)?;
         Ok(self.guest.cpu_read(addr, span))
@@ -181,7 +184,7 @@ impl<'a> Ctx<'a> {
             options: 0,
             contents: GuestAddr(contents),
         };
-        self.mem.create_buffer(self.guest, TASK, &r).unwrap()
+        self.mem.create_buffer(&self.direct, self.guest, TASK, &r).unwrap()
     }
 
     fn contents(&self, b: &Buffer<A>) -> Vec<u8> {
@@ -191,8 +194,8 @@ impl<'a> Ctx<'a> {
 
     /// Submit an encoder with the readbacks of `buffers`, wait and merge.
     fn finish(&self, encoder: <A as webmetal_host::gpu::Api>::CommandEncoder, buffers: &[Rc<Buffer<A>>]) {
-        let mut r: Readbacks<A> = self.mem.encode_readbacks(&encoder, buffers).unwrap();
-        self.mem.submit(&[&encoder.finish(&CommandBufferDescriptor::new())], &mut r);
+        let r: Readbacks<A> = self.mem.encode_readbacks(&self.direct, &encoder, buffers).unwrap();
+        self.g.device.queue().submit(&[&encoder.finish(&CommandBufferDescriptor::new())]);
         let arrived = self.g.block_on(r.wait()).unwrap();
         arrived.merge(&self.mem, self.guest).unwrap();
     }
@@ -203,17 +206,18 @@ impl<'a> Ctx<'a> {
         let src = self.shared_buffer(bytes);
         let dst = self.shared_buffer(&vec![0u8; bytes.len()]);
         let mut encoder = self.g.device.create_command_encoder(&CommandEncoderDescriptor::new());
-        self.mem.encode_buffer_to_texture(&encoder, (&src, 0), t, r)?;
-        if self.mem.prepare_texture(&encoder, t)? == Prepare::Decode {
+        self.mem.encode_buffer_to_texture(&self.direct, &encoder, (&src, 0), t, r)?;
+        if self.mem.prepare_texture(&self.direct, &encoder, t)? == Prepare::Decode {
             // A decoded format rebuilds its stored texels from the blocks on the CPU before the next GPU use.
+            let reads = self.mem.refresh_decoded(&self.direct, &encoder, t)?;
             self.finish(encoder, &[]);
-            for read in self.mem.refresh_decoded(t)? {
+            for read in reads {
                 let blocks = self.g.block_on(read.wait())?;
-                self.mem.finish_refresh(t, blocks)?;
+                self.mem.finish_refresh(&self.direct, t, blocks)?;
             }
             encoder = self.g.device.create_command_encoder(&CommandEncoderDescriptor::new());
         }
-        self.mem.encode_texture_to_buffer(&encoder, t, r, (&dst, 0))?;
+        self.mem.encode_texture_to_buffer(&self.direct, &encoder, t, r, (&dst, 0))?;
         self.finish(encoder, std::slice::from_ref(&dst));
         Ok(self.contents(&dst))
     }
@@ -326,7 +330,7 @@ fn upload_readback_matrix() {
             } else {
                 let t = ctx
                     .mem
-                    .create_texture(TASK, ctx.handle(), &descriptor(2, value, (w, h, 1), 1, 1, SHARED, 0))
+                    .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, value, (w, h, 1), 1, 1, SHARED, 0))
                     .unwrap();
                 ctx.prove(&t);
                 let expected = golden.bytes("getbytes").or_else(|| golden.bytes("readback")).unwrap();
@@ -341,7 +345,7 @@ fn upload_readback_matrix() {
             let private = {
                 let t = ctx
                     .mem
-                    .create_texture(TASK, ctx.handle(), &descriptor(2, value, (w, h, 1), 1, 1, PRIVATE, 0))
+                    .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, value, (w, h, 1), 1, 1, PRIVATE, 0))
                     .unwrap();
                 ctx.prove(&t);
                 let pv = blocks.and_then(|b| b.pvrtc);
@@ -393,7 +397,7 @@ fn upload_readback_matrix() {
             // Memoryless: only a render target; it has no contents to transfer.
             let memoryless = {
                 let d = descriptor(2, value, (w, h, 1), 1, 1, MEMORYLESS, 0x4);
-                match ctx.mem.create_texture(TASK, ctx.handle(), &d) {
+                match ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &d) {
                     Ok(t) => {
                         let replace = ctx.replace(&t, (0, 0), region((0, 0, 0), (w, h, 1)), &input, (bpr, 0));
                         assert!(matches!(replace, Err(MemError::Undefined { .. })), "{name}: {replace:?}");
@@ -528,7 +532,12 @@ fn texture_types_and_regions() {
                 }
                 let t = ctx
                     .mem
-                    .create_texture(TASK, ctx.handle(), &descriptor(kind, format, (w, h, d), array, mips, SHARED, 1))
+                    .create_texture(
+                        &ctx.direct,
+                        TASK,
+                        ctx.handle(),
+                        &descriptor(kind, format, (w, h, d), array, mips, SHARED, 1),
+                    )
                     .unwrap();
                 ctx.prove(&t);
                 let geo = t.geometry;
@@ -645,7 +654,10 @@ fn replace_region_ordering_matches_metal() {
     let g = Gpu::new(true);
     let guest = Guest::new(16 << 20, None);
     let ctx = Ctx::new(&g, &guest);
-    let t = ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, 73, (8, 8, 1), 1, 1, SHARED, 1)).unwrap();
+    let t = ctx
+        .mem
+        .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 73, (8, 8, 1), 1, 1, SHARED, 1))
+        .unwrap();
     let (first, second) = (wm_pattern(256, 101), wm_pattern(256, 102));
     ctx.replace(&t, (0, 0), region((0, 0, 0), (8, 8, 1)), &first, (32, 0)).unwrap();
     let out = ctx.shared_buffer(&[0u8; 256]);
@@ -657,7 +669,7 @@ fn replace_region_ordering_matches_metal() {
         slice: 0,
         layout: RegionLayout::new("blit", &t.geometry, t.blocks.unwrap(), &a).unwrap(),
     };
-    ctx.mem.encode_texture_to_buffer(&encoder, &t, &r, (&out, 0)).unwrap();
+    ctx.mem.encode_texture_to_buffer(&ctx.direct, &encoder, &t, &r, (&out, 0)).unwrap();
     ctx.replace(&t, (0, 0), region((0, 0, 0), (8, 8, 1)), &second, (32, 0)).unwrap();
     ctx.finish(encoder, std::slice::from_ref(&out));
     assert_eq!(ctx.contents(&out), golden.bytes("copied").unwrap());
@@ -688,7 +700,10 @@ fn get_bytes_after_gpu_write_matches_metal() {
     let guest = Guest::new(16 << 20, None);
     let ctx = Ctx::new(&g, &guest);
     // RGBA32Uint, shader read and write.
-    let t = ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, 123, (8, 4, 1), 1, 1, SHARED, 3)).unwrap();
+    let t = ctx
+        .mem
+        .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 123, (8, 4, 1), 1, 1, SHARED, 3))
+        .unwrap();
     let input = ctx.shared_buffer(&values);
     let module = g.device.create_shader_module(&ShaderModuleDescriptor::new(WRITE_TEXTURE.to_string()));
     let pipeline = g.device.create_compute_pipeline(&ComputePipelineDescriptor::new(
@@ -704,7 +719,7 @@ fn get_bytes_after_gpu_write_matches_metal() {
             BindGroupEntry::new(1, BindingResource::Buffer(input.gpu())),
         ],
     ));
-    ctx.mem.upload_buffer(&guest, &input).unwrap();
+    ctx.mem.upload_buffer(&ctx.direct, &guest, &input).unwrap();
     let encoder = g.device.create_command_encoder(&CommandEncoderDescriptor::new());
     let pass =
         encoder.begin_compute_pass(&ComputePassDescriptor { label: String::new(), timestamp_writes: None }).unwrap();
@@ -728,7 +743,10 @@ fn stored_reads_after_gpu_writes() {
     let g = Gpu::new(true);
     let guest = Guest::new(16 << 20, None);
     let ctx = Ctx::new(&g, &guest);
-    let t = ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, 115, (8, 4, 1), 1, 1, SHARED, 0)).unwrap();
+    let t = ctx
+        .mem
+        .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 115, (8, 4, 1), 1, 1, SHARED, 0))
+        .unwrap();
     assert!(t.has_twin());
     // Before the proof: the transfer is refused loudly.
     let early = ctx.replace(&t, (0, 0), region((0, 0, 0), (8, 4, 1)), &input, (64, 0));
@@ -758,8 +776,10 @@ fn decoded_textures_refresh_after_blits() {
     {
         let golden = Golden::load(case);
         let (input, w, h, bpr) = golden_input(&golden).unwrap();
-        let t =
-            ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, format, (w, h, 1), 1, 1, PRIVATE, 1)).unwrap();
+        let t = ctx
+            .mem
+            .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, format, (w, h, 1), 1, 1, PRIVATE, 1))
+            .unwrap();
         let Resolution::Emulated(e @ Emulation { .. }) = t.resolution else {
             panic!("{case} is decoded on a host without the feature")
         };
@@ -799,13 +819,14 @@ fn decoded_textures_refresh_after_blits() {
         let src = ctx.shared_buffer(&bytes);
         let encoder = g.device.create_command_encoder(&CommandEncoderDescriptor::new());
         let r = TextureRegion { level: 0, slice: 0, layout };
-        ctx.mem.encode_buffer_to_texture(&encoder, (&src, 0), &t, &r).unwrap();
+        ctx.mem.encode_buffer_to_texture(&ctx.direct, &encoder, (&src, 0), &t, &r).unwrap();
         assert!(!t.stored_current(0, 0));
-        assert_eq!(ctx.mem.prepare_texture(&encoder, &t).unwrap(), Prepare::Decode);
+        assert_eq!(ctx.mem.prepare_texture(&ctx.direct, &encoder, &t).unwrap(), Prepare::Decode);
+        let reads = ctx.mem.refresh_decoded(&ctx.direct, &encoder, &t).unwrap();
         ctx.finish(encoder, &[]);
-        for read in ctx.mem.refresh_decoded(&t).unwrap() {
+        for read in reads {
             let blocks = g.block_on(read.wait()).unwrap();
-            ctx.mem.finish_refresh(&t, blocks).unwrap();
+            ctx.mem.finish_refresh(&ctx.direct, &t, blocks).unwrap();
         }
         assert!(t.stored_current(0, 0));
         // Read the stored texels directly and compare with the decode of the blocks.
@@ -828,7 +849,6 @@ fn decoded_textures_refresh_after_blits() {
                 &webmetal_host::gpu::idl::Extent3D::Sequence(vec![w as u32, h as u32, 1]),
             )
             .unwrap();
-        use webmetal_host::gpu::Queue as _;
         g.device.queue().submit(&[&encoder.finish(&CommandBufferDescriptor::new())]);
         g.block_on(staging.map_async(MapMode::READ, Size64::new_const(0), None)).unwrap();
         let mut got = vec![0u8; (row * h) as usize];
@@ -849,12 +869,18 @@ fn texture_error_paths() {
     let guest = Guest::new(16 << 20, None);
     let ctx = Ctx::new(&g, &guest);
     let data = vec![1u8; 4096];
-    let private = ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 1, PRIVATE, 1)).unwrap();
+    let private = ctx
+        .mem
+        .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 1, PRIVATE, 1))
+        .unwrap();
     assert!(matches!(
         ctx.replace(&private, (0, 0), region((0, 0, 0), (8, 8, 1)), &data, (32, 0)),
         Err(MemError::Undefined { .. })
     ));
-    let shared = ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 2, SHARED, 1)).unwrap();
+    let shared = ctx
+        .mem
+        .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 2, SHARED, 1))
+        .unwrap();
     for (o, s, bpr, why) in [
         ((4, 0, 0), (8, 8, 1), 32, "outside the level"),
         ((0, 0, 0), (8, 8, 1), 16, "short rows"),
@@ -883,25 +909,31 @@ fn texture_error_paths() {
     );
     let mut msaa = descriptor(4, 70, (8, 8, 1), 1, 1, PRIVATE, 4);
     msaa.sample_count = 4;
-    assert!(ctx.mem.create_texture(TASK, ctx.handle(), &msaa).is_ok());
+    assert!(ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &msaa).is_ok());
     msaa.sample_count = 2;
-    assert!(matches!(ctx.mem.create_texture(TASK, ctx.handle(), &msaa), Err(MemError::HostUnsupported { .. })));
+    assert!(matches!(
+        ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &msaa),
+        Err(MemError::HostUnsupported { .. })
+    ));
     // A texture buffer comes from a buffer; 2D multisample arrays are not on the A10X.
     assert!(matches!(
-        ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(9, 70, (8, 1, 1), 1, 1, SHARED, 1)),
+        ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(9, 70, (8, 1, 1), 1, 1, SHARED, 1)),
         Err(MemError::Undefined { .. })
     ));
     assert!(matches!(
-        ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(8, 70, (8, 8, 1), 2, 1, PRIVATE, 4)),
+        ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(8, 70, (8, 8, 1), 2, 1, PRIVATE, 4)),
         Err(MemError::Undefined { .. })
     ));
     // Too many levels.
     assert!(matches!(
-        ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 5, SHARED, 1)),
+        ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 5, SHARED, 1)),
         Err(MemError::Undefined { .. })
     ));
     // An R8 blit whose rows start off a 4-byte boundary needs a shader re-pitch.
-    let r8 = ctx.mem.create_texture(TASK, ctx.handle(), &descriptor(2, 10, (3, 3, 1), 1, 1, PRIVATE, 1)).unwrap();
+    let r8 = ctx
+        .mem
+        .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 10, (3, 3, 1), 1, 1, PRIVATE, 1))
+        .unwrap();
     let a = RegionArgs { origin: (0, 0, 0), size: (3, 3, 1), level: 0, slice: 0, bytes_per_row: 3, bytes_per_image: 0 };
     let r = TextureRegion {
         level: 0,
@@ -911,7 +943,7 @@ fn texture_error_paths() {
     let src = ctx.shared_buffer(&[7u8; 12]);
     let encoder = g.device.create_command_encoder(&CommandEncoderDescriptor::new());
     assert!(matches!(
-        ctx.mem.encode_buffer_to_texture(&encoder, (&src, 0), &r8, &r),
+        ctx.mem.encode_buffer_to_texture(&ctx.direct, &encoder, (&src, 0), &r8, &r),
         Err(MemError::Unimplemented { .. })
     ));
     g.assert_no_errors();

@@ -22,11 +22,12 @@
 //! the GPU work was committed, which is the race Metal forbids, and the CPU's value is the one kept.
 //!
 //! **Alignment.** WebGPU writes buffers in 4-byte units (`writeBuffer` offset and size, WebGPU section 21.2.1, and the
-//! buffer-copy rules of `tables/limits.toml` question `6.3-copy-alignment`). A changed run is widened to whole words;
-//! the bytes added are ones the guest did not change, so writing the guest's value of them is exact as long as no GPU
-//! work that could change them is still pending. When some is, [`Shadow::plan_upload`] reports
-//! [`UploadPlan::Blocked`] instead: the caller first completes those readbacks, after which the widened bytes hold
-//! their final values in the shadow and the guest alike.
+//! buffer-copy rules of `tables/limits.toml` question `6.3-copy-alignment`). With no readback pending, a changed run
+//! is widened to whole words: the bytes added are ones the guest did not change, so the shadow holds the guest's value
+//! of them and, every GPU write having been merged, the GPU's too. While GPU work that may write the memory is pending,
+//! the GPU copy of those bytes may differ from the shadow, so a word the guest changed only in part becomes a
+//! [`MaskedWord`]: a write of only its changed bytes, which the caller performs on the GPU (a shader that merges the
+//! bytes under a mask into the word as the GPU holds it at that point of the queue).
 
 use std::collections::BTreeSet;
 
@@ -44,14 +45,34 @@ pub struct UploadWrite {
     pub bytes: Vec<u8>,
 }
 
-/// What [`Shadow::plan_upload`] decided.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum UploadPlan {
-    /// Write these runs (possibly none).
-    Writes(Vec<UploadWrite>),
-    /// A run had to be widened over bytes that pending GPU work may write; complete the readbacks with these
-    /// sequence numbers, then plan again.
-    Blocked(Vec<u64>),
+/// A write of some bytes of one word: the bytes of `value` whose `mask` entry is set replace the GPU's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaskedWord {
+    /// 4-byte aligned.
+    pub offset: u64,
+    pub value: [u8; 4],
+    pub mask: [bool; 4],
+}
+
+impl MaskedWord {
+    /// The value and the mask as little-endian words.
+    pub fn words(&self) -> (u32, u32) {
+        let mask = self.mask.iter().enumerate().fold(0u32, |m, (i, &b)| if b { m | (0xff << (8 * i)) } else { m });
+        (u32::from_le_bytes(self.value), mask)
+    }
+}
+
+/// What [`Shadow::plan_upload`] decided: whole words to write, and words to write in part.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UploadPlan {
+    pub writes: Vec<UploadWrite>,
+    pub masked: Vec<MaskedWord>,
+}
+
+impl UploadPlan {
+    pub fn is_empty(&self) -> bool {
+        self.writes.is_empty() && self.masked.is_empty()
+    }
 }
 
 /// A run to write into the guest after a readback: `new` replaces the bytes of the guest where it differs from
@@ -146,50 +167,81 @@ impl Shadow {
     pub fn plan_upload(&self, chunks: &[(u64, &[u8])]) -> UploadPlan {
         let runs = self.changed_runs(chunks);
         if runs.is_empty() {
-            return UploadPlan::Writes(Vec::new());
+            return UploadPlan::default();
         }
-        // Widen to whole words and join runs that then touch or overlap.
-        let mut words: Vec<Run> = Vec::new();
-        for r in &runs {
-            let w = Run { start: r.start & !3, end: r.end.next_multiple_of(4) };
-            match words.last_mut() {
-                Some(last) if w.start <= last.end => last.end = last.end.max(w.end),
-                _ => words.push(w),
-            }
-        }
-        let widened: u64 = words.iter().map(|w| w.end - w.start).sum::<u64>();
-        let changed: u64 = runs.iter().map(|r| r.end - r.start).sum::<u64>();
-        if widened != changed && !self.pending.is_empty() {
-            return UploadPlan::Blocked(self.pending.iter().copied().collect());
-        }
-        // The guest's value of each byte of a word: changed bytes come from the chunks, the bytes widening added are
-        // unchanged, so the shadow holds the guest's value of them.
-        let mut writes = Vec::with_capacity(words.len());
-        for w in words {
-            let mut bytes = self.bytes[w.start as usize..w.end as usize].to_vec();
-            for &(offset, guest) in chunks {
-                let lo = offset.max(w.start);
-                let hi = (offset + guest.len() as u64).min(w.end);
-                if lo < hi {
-                    bytes[(lo - w.start) as usize..(hi - w.start) as usize]
-                        .copy_from_slice(&guest[(lo - offset) as usize..(hi - offset) as usize]);
+        let guest_byte = |at: u64| {
+            chunks
+                .iter()
+                .find(|(o, g)| at >= *o && at < *o + g.len() as u64)
+                .map(|(o, g)| g[(at - o) as usize])
+                .expect("a changed byte lies in a chunk")
+        };
+        if self.pending.is_empty() {
+            // Widen to whole words and join runs that then touch or overlap.
+            let mut words: Vec<Run> = Vec::new();
+            for r in &runs {
+                let w = Run { start: r.start & !3, end: r.end.next_multiple_of(4) };
+                match words.last_mut() {
+                    Some(last) if w.start <= last.end => last.end = last.end.max(w.end),
+                    _ => words.push(w),
                 }
             }
-            writes.push(UploadWrite { offset: w.start, bytes });
+            let writes = words
+                .into_iter()
+                .map(|w| {
+                    let mut bytes = self.bytes[w.start as usize..w.end as usize].to_vec();
+                    for r in runs.iter().filter(|r| r.start < w.end && w.start < r.end) {
+                        for at in r.start.max(w.start)..r.end.min(w.end) {
+                            bytes[(at - w.start) as usize] = guest_byte(at);
+                        }
+                    }
+                    UploadWrite { offset: w.start, bytes }
+                })
+                .collect();
+            return UploadPlan { writes, masked: Vec::new() };
         }
-        UploadPlan::Writes(writes)
+        // Readbacks are pending: whole words go as writes, partly changed ones as masked words.
+        let mut words: std::collections::BTreeMap<u64, ([u8; 4], [bool; 4])> = std::collections::BTreeMap::new();
+        for r in &runs {
+            for at in r.start..r.end {
+                let e = words.entry(at & !3).or_insert(([0; 4], [false; 4]));
+                e.0[(at & 3) as usize] = guest_byte(at);
+                e.1[(at & 3) as usize] = true;
+            }
+        }
+        let mut plan = UploadPlan::default();
+        for (offset, (value, mask)) in words {
+            if mask == [true; 4] {
+                match plan.writes.last_mut() {
+                    Some(w) if w.offset + w.bytes.len() as u64 == offset => w.bytes.extend_from_slice(&value),
+                    _ => plan.writes.push(UploadWrite { offset, bytes: value.to_vec() }),
+                }
+            } else {
+                plan.masked.push(MaskedWord { offset, value, mask });
+            }
+        }
+        plan
     }
 
-    /// Record that `writes` were issued to the GPU at queue position `seq`, after every readback still pending.
-    pub fn apply_upload(&mut self, writes: &[UploadWrite], seq: u64) {
+    /// Record that `plan` was carried out on the GPU at queue position `seq`, after every readback still pending.
+    pub fn apply_upload(&mut self, plan: &UploadPlan, seq: u64) {
         let logging = !self.pending.is_empty();
         debug_assert!(self.pending.iter().all(|&p| p < seq), "an upload must follow the pending readbacks");
-        for w in writes {
+        for w in &plan.writes {
             let (start, end) = (w.offset as usize, w.offset as usize + w.bytes.len());
             if logging {
                 self.log.push(Logged { seq, offset: start, replaced: self.bytes[start..end].to_vec() });
             }
             self.bytes[start..end].copy_from_slice(&w.bytes);
+        }
+        for m in &plan.masked {
+            for i in (0..4).filter(|&i| m.mask[i]) {
+                let at = m.offset as usize + i;
+                if logging {
+                    self.log.push(Logged { seq, offset: at, replaced: vec![self.bytes[at]] });
+                }
+                self.bytes[at] = m.value[i];
+            }
         }
     }
 
@@ -260,11 +312,11 @@ mod tests {
     fn upload_widens_to_words() {
         let s = Shadow::new(10, None);
         let guest = [0, 0, 0, 0, 0, 7, 0, 0, 0, 9];
-        let UploadPlan::Writes(w) = s.plan_upload(&[(0, &guest)]) else { panic!() };
+        let w = s.plan_upload(&[(0, &guest)]).writes;
         // Words 4..8 and 8..12 touch, so they go as one write.
         assert_eq!(w, vec![UploadWrite { offset: 4, bytes: vec![0, 7, 0, 0, 0, 9, 0, 0] }]);
         let guest = [0, 0, 1, 0, 0, 0, 0, 0, 0, 9];
-        let UploadPlan::Writes(w) = s.plan_upload(&[(0, &guest)]) else { panic!() };
+        let w = s.plan_upload(&[(0, &guest)]).writes;
         assert_eq!(
             w,
             vec![
@@ -278,17 +330,24 @@ mod tests {
     fn upload_from_dirty_chunks() {
         let s = Shadow::new(16, Some(&[1; 16]));
         // Only bytes 8..12 were reported written; byte 9 changed.
-        let UploadPlan::Writes(w) = s.plan_upload(&[(8, &[1, 5, 1, 1])]) else { panic!() };
+        let w = s.plan_upload(&[(8, &[1, 5, 1, 1])]).writes;
         assert_eq!(w, vec![UploadWrite { offset: 8, bytes: vec![1, 5, 1, 1] }]);
     }
 
     #[test]
-    fn widening_waits_for_pending_writers() {
+    fn partial_words_are_masked_while_writers_are_pending() {
         let mut s = Shadow::new(8, None);
         s.begin_readback(1);
-        // An aligned change can go; an unaligned one must wait for readback 1.
-        assert!(matches!(s.plan_upload(&[(0, &[1, 2, 3, 4, 0, 0, 0, 0])]), UploadPlan::Writes(_)));
-        assert_eq!(s.plan_upload(&[(0, &[0, 0, 0, 0, 0, 6, 0, 0])]), UploadPlan::Blocked(vec![1]));
+        // A whole word is written; a word changed in one byte is written under a mask.
+        let p = s.plan_upload(&[(0, &[1, 2, 3, 4, 0, 6, 0, 0])]);
+        assert_eq!(p.writes, vec![UploadWrite { offset: 0, bytes: vec![1, 2, 3, 4] }]);
+        assert_eq!(p.masked, vec![MaskedWord { offset: 4, value: [0, 6, 0, 0], mask: [false, true, false, false] }]);
+        assert_eq!(p.masked[0].words(), (0x0600, 0xff00));
+        s.apply_upload(&p, 2);
+        // The GPU work of 1 wrote byte 4; the masked write kept it, and the merge carries it.
+        let g = s.merge_readback(1, 0, &[0, 0, 0, 0, 9, 0, 0, 0]);
+        assert_eq!(g, vec![GuestWrite { offset: 4, new: vec![9], old: vec![0] }]);
+        assert_eq!(s.bytes(), &[1, 2, 3, 4, 9, 6, 0, 0]);
     }
 
     #[test]
@@ -297,8 +356,8 @@ mod tests {
         // Command buffer 1 writes bytes 0..4 and is read back at 2; before its data arrive the CPU changes bytes 4..8
         // and they are uploaded at 3.
         s.begin_readback(2);
-        let UploadPlan::Writes(w) = s.plan_upload(&[(0, &[0, 0, 0, 0, 9, 9, 9, 9])]) else { panic!() };
-        s.apply_upload(&w, 3);
+        let p = s.plan_upload(&[(0, &[0, 0, 0, 0, 9, 9, 9, 9])]);
+        s.apply_upload(&p, 3);
         // The readback holds the GPU work's bytes and the old bytes 4..8.
         let g = s.merge_readback(2, 0, &[5, 5, 5, 5, 0, 0, 0, 0]);
         assert_eq!(g, vec![GuestWrite { offset: 0, new: vec![5; 4], old: vec![0; 4] }]);
@@ -320,8 +379,8 @@ mod tests {
     fn racing_bytes_keep_the_cpu_value() {
         let mut s = Shadow::new(4, None);
         s.begin_readback(1);
-        let UploadPlan::Writes(w) = s.plan_upload(&[(0, &[3, 3, 3, 3])]) else { panic!() };
-        s.apply_upload(&w, 2);
+        let p = s.plan_upload(&[(0, &[3, 3, 3, 3])]);
+        s.apply_upload(&p, 2);
         // The GPU work of 1 also wrote these bytes: the race is resolved in favour of the later CPU write.
         assert!(s.merge_readback(1, 0, &[7, 7, 7, 7]).is_empty());
         assert_eq!(s.bytes(), &[3, 3, 3, 3]);
@@ -336,7 +395,7 @@ mod tests {
         }
         eprintln!("shadow property test: {stats:?}");
         // The programs exercise the paths that make the protocol exact, not only the easy ones.
-        assert!(stats.blocked > 100, "{stats:?}");
+        assert!(stats.masked_words > 100, "{stats:?}");
         assert!(stats.merges_after_later_uploads > 100, "{stats:?}");
         assert!(stats.unaligned_writes > 1000, "{stats:?}");
     }
@@ -371,13 +430,14 @@ mod tests {
                 end: usize,
                 value: u8,
             },
+            Masked(MaskedWord),
             /// The GPU copy's bytes `lo..hi` are read back at a sequence number.
             Readback(u64, usize, usize),
         }
 
         #[derive(Debug, Default)]
         pub struct Stats {
-            pub blocked: u64,
+            pub masked_words: u64,
             pub merges_after_later_uploads: u64,
             pub unaligned_writes: u64,
         }
@@ -405,6 +465,11 @@ mod tests {
                         match op {
                             GpuOp::Write(w) => {
                                 gpu[w.offset as usize..w.offset as usize + w.bytes.len()].copy_from_slice(&w.bytes)
+                            }
+                            GpuOp::Masked(m) => {
+                                for i in (0..4).filter(|&i| m.mask[i]) {
+                                    gpu[m.offset as usize + i] = m.value[i];
+                                }
                             }
                             GpuOp::Add { start, end, delta } => {
                                 for b in &mut gpu[start..end] {
@@ -465,26 +530,13 @@ mod tests {
                         if in_flight.iter().any(|c| start < c.end && c.start < end) {
                             continue;
                         }
-                        // Upload, completing pending readbacks first when the plan asks for it.
-                        let writes = loop {
-                            match shadow.plan_upload(&[(0, &guest)]) {
-                                UploadPlan::Writes(w) => break w,
-                                UploadPlan::Blocked(_) => {
-                                    stats.blocked += 1;
-                                    stats.merges_after_later_uploads += complete_oldest(
-                                        &mut queue,
-                                        &mut gpu,
-                                        &mut readbacks,
-                                        &mut in_flight,
-                                        &mut shadow,
-                                        &mut guest,
-                                    ) as u64;
-                                }
-                            }
-                        };
+                        // Upload: whole words, and partly changed words under a mask while readbacks are pending.
+                        let plan = shadow.plan_upload(&[(0, &guest)]);
+                        stats.masked_words += plan.masked.len() as u64;
                         seq += 1;
-                        shadow.apply_upload(&writes, seq);
-                        queue.extend(writes.into_iter().map(GpuOp::Write));
+                        shadow.apply_upload(&plan, seq);
+                        queue.extend(plan.writes.into_iter().map(GpuOp::Write));
+                        queue.extend(plan.masked.into_iter().map(GpuOp::Masked));
                         if rng.below(2) == 0 {
                             let delta = 1 + rng.below(250) as u8;
                             queue.push(GpuOp::Add { start, end, delta });
@@ -532,10 +584,11 @@ mod tests {
             }
             assert_eq!(guest, model, "seed {seed}: guest memory after every command buffer completed");
             // The next use uploads the CPU's last writes; the GPU copy then equals the model too.
-            let UploadPlan::Writes(writes) = shadow.plan_upload(&[(0, &guest)]) else { panic!("nothing is pending") };
+            let plan = shadow.plan_upload(&[(0, &guest)]);
+            assert!(plan.masked.is_empty(), "nothing is pending");
             seq += 1;
-            shadow.apply_upload(&writes, seq);
-            queue.extend(writes.into_iter().map(GpuOp::Write));
+            shadow.apply_upload(&plan, seq);
+            queue.extend(plan.writes.into_iter().map(GpuOp::Write));
             run_gpu(&mut queue, &mut gpu, &mut readbacks, usize::MAX);
             assert_eq!(shadow.bytes(), &model[..], "seed {seed}: shadow");
             assert_eq!(gpu[..len], model[..], "seed {seed}: GPU copy");

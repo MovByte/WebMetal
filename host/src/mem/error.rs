@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use webmetal_wire::status;
+use webmetal_wire::{Failure, status};
 
 use crate::embed::{GuestMemoryError, SurfaceError};
 use crate::format::handling::Refusal;
@@ -11,8 +11,9 @@ use crate::gpu::Exception;
 /// A failed memory operation. Every variant names what failed; none is ever turned into a success.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MemError {
-    /// Metal returns `nil` for this call (for example a heap that is full). The wire's control channel carries the
-    /// outcome; the message states the rule.
+    /// Metal returns `nil` without an `NSError` for this call (for example a heap that is full). The wire protocol has
+    /// no encoding for a nil result yet, so it is reported as not implemented (as the executor reports a creation
+    /// that runs out of memory, `exec::failure`).
     Nil { reason: String },
     /// Metal leaves the call's behavior undefined (validation class 2 of plan section 6.10): reported through the
     /// not-implemented channel with the rule it breaks, never given a substitute behavior.
@@ -58,15 +59,20 @@ impl MemError {
     }
 
     /// The wire status (`webmetal_wire::status`) a reply or a command-buffer completion reports this failure with.
-    /// [`MemError::Nil`] has no NSError of its own: the caller completes the request with the `nil` result the
-    /// request's Metal method returns.
     pub fn status(&self) -> u32 {
         match self {
-            MemError::Nil { .. } => status::METAL_ERROR,
-            MemError::Undefined { .. } | MemError::Unimplemented { .. } | MemError::Gpu { .. } => status::UNIMPLEMENTED,
+            MemError::Nil { .. }
+            | MemError::Undefined { .. }
+            | MemError::Unimplemented { .. }
+            | MemError::Gpu { .. } => status::UNIMPLEMENTED,
             MemError::HostUnsupported { .. } => status::HOST_UNSUPPORTED,
             MemError::Invalid { .. } | MemError::Guest(_) | MemError::Surface(_) => status::INVALID,
         }
+    }
+
+    /// The failure a reply or a command-buffer completion carries.
+    pub fn failure(&self) -> Failure {
+        Failure { status: self.status(), domain: None, code: 0, message: self.to_string() }
     }
 }
 

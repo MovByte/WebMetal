@@ -46,11 +46,13 @@ use crate::gpu::{
 use webmetal_wire::{GetBytes, GetBytesSlice, Handle, ReplaceRegion, ReplaceRegionSlice, TextureDescriptor};
 
 use super::buffer::{Buffer, label};
+use super::calls::Calls;
 use super::error::MemError;
 use super::layout::{Blocks, Geometry, RegionArgs, RegionLayout, StagingPitch, TextureType};
 use super::memory::Memory;
 use super::options::{ResourceOptions, StorageMode};
 use super::purgeable::Purgeable;
+use super::surface::SurfacePlane;
 
 /// `MTLTextureUsage` bits (`MTLTexture.h`).
 pub mod usage {
@@ -94,9 +96,13 @@ struct State {
     /// Per subresource: the twin holds the current contents.
     twin: Vec<bool>,
     purgeable: Purgeable,
+    /// For an IOSurface texture: the plane version the texture holds, and whether GPU work wrote it since its last
+    /// write-back.
+    surface_version: u64,
+    surface_written: bool,
 }
 
-/// A Metal texture.
+/// A Metal texture: the payload of a texture handle in the executor's object table.
 pub struct Texture<A: Api> {
     /// `MTLPixelFormat`.
     pub format: u32,
@@ -107,6 +113,9 @@ pub struct Texture<A: Api> {
     pub usage: u64,
     /// The format's blocks, `None` for formats whose bytes move one aspect at a time (combined depth-stencil).
     pub blocks: Option<Blocks>,
+    /// The IOSurface plane whose memory the texture is, for `newTextureWithDescriptor:iosurface:plane:`.
+    pub surface: Option<Rc<SurfacePlane>>,
+    pub label: String,
     stored: A::Texture,
     twins: Vec<A::Texture>,
     state: RefCell<State>,
@@ -142,6 +151,17 @@ impl<A: Api> Texture<A> {
 
     pub fn purgeable(&self) -> Purgeable {
         self.state.borrow().purgeable
+    }
+
+    pub(crate) fn surface_state(&self) -> (u64, bool) {
+        let st = self.state.borrow();
+        (st.surface_version, st.surface_written)
+    }
+
+    pub(crate) fn set_surface_state(&self, version: u64, written: bool) {
+        let mut st = self.state.borrow_mut();
+        st.surface_version = version;
+        st.surface_written = written;
     }
 }
 
@@ -188,19 +208,34 @@ impl<A: Api> Memory<A> {
     /// `newTextureWithDescriptor:` (CreateTexture).
     pub fn create_texture(
         &self,
+        g: &impl Calls<A>,
         task: TaskId,
         handle: Handle,
         d: &TextureDescriptor,
     ) -> Result<Rc<Texture<A>>, MemError> {
-        self.texture_from_descriptor("-[MTLDevice newTextureWithDescriptor:]", task, handle, d)
+        self.texture_from_descriptor(g, "-[MTLDevice newTextureWithDescriptor:]", task, handle, d)
     }
 
     pub(crate) fn texture_from_descriptor(
         &self,
+        g: &impl Calls<A>,
         call: &'static str,
         task: TaskId,
         handle: Handle,
         d: &TextureDescriptor,
+    ) -> Result<Rc<Texture<A>>, MemError> {
+        self.build_texture(g, call, (task, handle), d, None)
+    }
+
+    /// Make a texture. A texture over an IOSurface plane (`surface`) keeps no twin: its bytes are the plane's, held in
+    /// the plane's shadow, and move between it and the stored texture on the CPU.
+    pub(crate) fn build_texture(
+        &self,
+        g: &impl Calls<A>,
+        call: &'static str,
+        (task, handle): (TaskId, Handle),
+        d: &TextureDescriptor,
+        surface: Option<Rc<SurfacePlane>>,
     ) -> Result<Rc<Texture<A>>, MemError> {
         let kind = TextureType::from_value(d.texture_type, call)?;
         let storage = StorageMode::from_value(d.storage_mode, call)?;
@@ -314,10 +349,12 @@ impl<A: Api> Memory<A> {
                 _ => TextureViewDimension::D2,
             });
         }
-        let stored = self.device.create_texture(&desc).map_err(gpu_err("GPUDevice.createTexture"))?;
+        let stored = g
+            .call("GPUDevice.createTexture", &desc.label, |d| d.create_texture(&desc))
+            .map_err(gpu_err("GPUDevice.createTexture"))?;
         let blocks = Blocks::of(resolution);
         let mut twins = Vec::new();
-        if storage != StorageMode::Memoryless && needs_twin(resolution) && !multisampled {
+        if storage != StorageMode::Memoryless && needs_twin(resolution) && !multisampled && surface.is_none() {
             let b = blocks.expect("formats with twins have blocks");
             let tf = twin_format(b.bytes).ok_or_else(|| MemError::unimplemented(format!("{}-byte blocks", b.bytes)))?;
             for level in 0..geometry.mip_levels {
@@ -330,12 +367,21 @@ impl<A: Api> Memory<A> {
                     TextureUsage::COPY_SRC | TextureUsage::COPY_DST,
                 );
                 td.label = format!("{} bytes of level {level}", desc.label);
-                twins.push(self.device.create_texture(&td).map_err(gpu_err("GPUDevice.createTexture"))?);
+                twins.push(
+                    g.call("GPUDevice.createTexture", &td.label, |d| d.create_texture(&td))
+                        .map_err(gpu_err("GPUDevice.createTexture"))?,
+                );
             }
         }
         let subs = (geometry.mip_levels * if kind.is_3d() { 1 } else { geometry.slices() }) as usize;
-        let state =
-            State { stored: vec![true; subs], twin: vec![!twins.is_empty(); subs], purgeable: Purgeable::NonVolatile };
+        let state = State {
+            stored: vec![true; subs],
+            twin: vec![!twins.is_empty(); subs],
+            purgeable: Purgeable::NonVolatile,
+            surface_version: 0,
+            surface_written: false,
+        };
+        let label = desc.label.clone();
         Ok(Rc::new(Texture {
             format,
             resolution,
@@ -343,6 +389,8 @@ impl<A: Api> Memory<A> {
             storage,
             usage: d.usage,
             blocks,
+            surface,
+            label,
             stored,
             twins,
             state: RefCell::new(state),
@@ -356,6 +404,12 @@ impl<A: Api> Memory<A> {
         t: &Texture<A>,
         a: &RegionArgs,
     ) -> Result<(RegionLayout, Blocks), MemError> {
+        if t.surface.is_some() {
+            return Err(MemError::unimplemented(format!(
+                "{call} of an IOSurface texture: the CPU's bytes are the surface's, which the kernel's IOSurface \
+                 implementation serves"
+            )));
+        }
         match t.storage {
             StorageMode::Shared => {}
             StorageMode::Private => {
@@ -420,6 +474,7 @@ impl<A: Api> Memory<A> {
 
     fn write_texture(
         &self,
+        g: &impl Calls<A>,
         texture: &A::Texture,
         p: &Placement,
         aspect: TextureAspect,
@@ -434,9 +489,10 @@ impl<A: Api> Memory<A> {
             bytes_per_row: Some(u32::try_from(p.row_bytes).map_err(|_| MemError::host("row too long"))?),
             rows_per_image: Some(p.rows),
         };
-        self.queue
-            .write_texture(&dst, data, &layout, &extent(p.extent.0, p.extent.1, p.extent.2))
-            .map_err(gpu_err("GPUQueue.writeTexture"))
+        g.call("GPUQueue.writeTexture", "", |_| {
+            g.queue().write_texture(&dst, data, &layout, &extent(p.extent.0, p.extent.1, p.extent.2))
+        })
+        .map_err(gpu_err("GPUQueue.writeTexture"))
     }
 
     /// The stored texture's bytes of a region from Metal's tight bytes: the same bytes, red and blue exchanged
@@ -502,6 +558,7 @@ impl<A: Api> Memory<A> {
     /// `replaceRegion:mipmapLevel:withBytes:bytesPerRow:` (ReplaceRegion).
     pub fn replace_region(
         &self,
+        g: &impl Calls<A>,
         e: &dyn Embedder,
         task: TaskId,
         t: &Texture<A>,
@@ -515,12 +572,14 @@ impl<A: Api> Memory<A> {
             bytes_per_row: r.bytes_per_row,
             bytes_per_image: 0,
         };
-        self.replace("-[MTLTexture replaceRegion:mipmapLevel:withBytes:bytesPerRow:]", e, task, t, &a, r.pixel_bytes.0)
+        let call = "-[MTLTexture replaceRegion:mipmapLevel:withBytes:bytesPerRow:]";
+        self.replace(g, call, e, t, &a, (task, r.pixel_bytes.0))
     }
 
     /// `replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:` (ReplaceRegionSlice).
     pub fn replace_region_slice(
         &self,
+        g: &impl Calls<A>,
         e: &dyn Embedder,
         task: TaskId,
         t: &Texture<A>,
@@ -535,34 +594,34 @@ impl<A: Api> Memory<A> {
             bytes_per_image: r.bytes_per_image,
         };
         let call = "-[MTLTexture replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:]";
-        self.replace(call, e, task, t, &a, r.pixel_bytes.0)
+        self.replace(g, call, e, t, &a, (task, r.pixel_bytes.0))
     }
 
     /// Metal applies `replaceRegion` immediately, even before uncommitted command buffers that use the texture run;
     /// here the writes are queue operations, ordered before every later submission (plan section 6.2).
     fn replace(
         &self,
+        g: &impl Calls<A>,
         call: &'static str,
         e: &dyn Embedder,
-        task: TaskId,
         t: &Texture<A>,
         a: &RegionArgs,
-        pixel_bytes: u64,
+        (task, pixel_bytes): (TaskId, u64),
     ) -> Result<(), MemError> {
         let (l, _) = self.cpu_region(call, t, a)?;
         let mut metal = vec![0u8; l.span as usize];
         e.read_guest(task, pixel_bytes, &mut metal)?;
-        self.upload_region(call, t, &l, a.level as u32, a.slice as u32, &l.pack(&metal))
+        self.upload_region(g, call, t, &l, (a.level as u32, a.slice as u32), &l.pack(&metal))
     }
 
     /// Write a region's tight bytes into every current copy of the subresource.
     pub(crate) fn upload_region(
         &self,
+        g: &impl Calls<A>,
         call: &'static str,
         t: &Texture<A>,
         l: &RegionLayout,
-        level: u32,
-        slice: u32,
+        (level, slice): (u32, u32),
         tight: &[u8],
     ) -> Result<(), MemError> {
         let layer = if t.geometry.kind.is_3d() { 0 } else { slice };
@@ -577,16 +636,16 @@ impl<A: Api> Memory<A> {
             }
             self.check_stored_transfer(t, call, true)?;
             let data = self.stored_bytes(t, l, tight, level)?;
-            self.write_texture(&t.stored, &sp, TextureAspect::All, &data)?;
+            self.write_texture(g, &t.stored, &sp, TextureAspect::All, &data)?;
         }
         if twin_now {
             match t.blocks.and_then(|b| b.pvrtc) {
                 Some(bpp) if l.pvrtc => {
                     let (w, h, _) = t.geometry.level_extent(level);
                     let rows = pvrtc_row_linear(bpp, w, h, tight)?;
-                    self.write_texture(&t.twins[level as usize], &tp, TextureAspect::All, &rows)?;
+                    self.write_texture(g, &t.twins[level as usize], &tp, TextureAspect::All, &rows)?;
                 }
-                _ => self.write_texture(&t.twins[level as usize], &tp, TextureAspect::All, tight)?,
+                _ => self.write_texture(g, &t.twins[level as usize], &tp, TextureAspect::All, tight)?,
             }
         }
         Ok(())
@@ -594,7 +653,7 @@ impl<A: Api> Memory<A> {
 
     /// `getBytes:bytesPerRow:fromRegion:mipmapLevel:` (GetBytes): encode and submit the read of the region. The read
     /// is ordered after every command buffer already submitted, so it sees their writes.
-    pub fn get_bytes(&self, t: &Rc<Texture<A>>, r: &GetBytes) -> Result<TextureRead<A>, MemError> {
+    pub fn get_bytes(&self, g: &impl Calls<A>, t: &Rc<Texture<A>>, r: &GetBytes) -> Result<TextureRead<A>, MemError> {
         let a = RegionArgs {
             origin: (r.region.origin.x, r.region.origin.y, r.region.origin.z),
             size: (r.region.size.width, r.region.size.height, r.region.size.depth),
@@ -603,11 +662,16 @@ impl<A: Api> Memory<A> {
             bytes_per_row: r.bytes_per_row,
             bytes_per_image: 0,
         };
-        self.read_region("-[MTLTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:]", t, &a)
+        self.read_region(g, "-[MTLTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:]", t, &a)
     }
 
     /// `getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:` (GetBytesSlice).
-    pub fn get_bytes_slice(&self, t: &Rc<Texture<A>>, r: &GetBytesSlice) -> Result<TextureRead<A>, MemError> {
+    pub fn get_bytes_slice(
+        &self,
+        g: &impl Calls<A>,
+        t: &Rc<Texture<A>>,
+        r: &GetBytesSlice,
+    ) -> Result<TextureRead<A>, MemError> {
         let a = RegionArgs {
             origin: (r.region.origin.x, r.region.origin.y, r.region.origin.z),
             size: (r.region.size.width, r.region.size.height, r.region.size.depth),
@@ -616,14 +680,23 @@ impl<A: Api> Memory<A> {
             bytes_per_row: r.bytes_per_row,
             bytes_per_image: r.bytes_per_image,
         };
-        self.read_region("-[MTLTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:]", t, &a)
+        self.read_region(g, "-[MTLTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:]", t, &a)
     }
 
-    fn read_region(&self, call: &'static str, t: &Rc<Texture<A>>, a: &RegionArgs) -> Result<TextureRead<A>, MemError> {
+    fn read_region(
+        &self,
+        g: &impl Calls<A>,
+        call: &'static str,
+        t: &Rc<Texture<A>>,
+        a: &RegionArgs,
+    ) -> Result<TextureRead<A>, MemError> {
         let (l, _) = self.cpu_region(call, t, a)?;
-        let encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::new());
-        let read = self.encode_read(call, &encoder, t, &l, a.level as u32, a.slice as u32)?;
-        self.queue.submit(&[&encoder.finish(&CommandBufferDescriptor::new())]);
+        let encoder = g.call("GPUDevice.createCommandEncoder", call, |d| {
+            d.create_command_encoder(&CommandEncoderDescriptor::new())
+        });
+        let read = self.encode_read(g, call, &encoder, t, &l, (a.level as u32, a.slice as u32))?;
+        let cb = g.call("GPUCommandEncoder.finish", call, |_| encoder.finish(&CommandBufferDescriptor::new()));
+        g.call("GPUQueue.submit", call, |_| g.queue().submit(&[&cb]));
         Ok(read)
     }
 
@@ -663,27 +736,28 @@ impl<A: Api> Memory<A> {
         Ok((&t.stored, sp, convert))
     }
 
-    fn encode_read(
+    pub(crate) fn encode_read(
         &self,
+        g: &impl Calls<A>,
         call: &'static str,
         encoder: &A::CommandEncoder,
         t: &Texture<A>,
         l: &RegionLayout,
-        level: u32,
-        slice: u32,
+        (level, slice): (u32, u32),
     ) -> Result<TextureRead<A>, MemError> {
         let (texture, p, convert) = self.read_source(call, t, l, level, slice)?;
         let pitch = StagingPitch::new(p.row_bytes, u64::from(p.rows), u64::from(p.extent.2));
-        let staging = self.staging.take(&self.device, pitch.size())?;
+        let staging = self.staging.take(g, pitch.size())?;
         let mut src = TexelCopyTextureInfo::<A>::new(texture);
         src.mip_level = p.level;
         src.origin = origin(p.origin.0, p.origin.1, p.origin.2);
         let mut dst = TexelCopyBufferInfo::<A>::new(&staging);
         dst.bytes_per_row = Some(pitch.bytes_per_row as u32);
         dst.rows_per_image = Some(p.rows);
-        encoder
-            .copy_texture_to_buffer(&src, &dst, &extent(p.extent.0, p.extent.1, p.extent.2))
-            .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
+        g.call("GPUCommandEncoder.copyTextureToBuffer", "", |_| {
+            encoder.copy_texture_to_buffer(&src, &dst, &extent(p.extent.0, p.extent.1, p.extent.2))
+        })
+        .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
         Ok(TextureRead { staging, pitch, convert, layout: *l, refresh: None })
     }
 
@@ -701,19 +775,22 @@ impl<A: Api> Memory<A> {
                 }
             }
         }
+        if t.surface.is_some() {
+            st.surface_written = true;
+        }
     }
 
     /// `setPurgeableState:` of a texture that is not in a heap. Emptying zero-fills the contents (plan section 6.2):
     /// a write of zero blocks to every subresource of every copy.
-    pub fn set_texture_purgeable(&self, t: &Texture<A>, state: u64) -> Result<u64, MemError> {
+    pub fn set_texture_purgeable(&self, g: &impl Calls<A>, t: &Texture<A>, state: u64) -> Result<u64, MemError> {
         let tr = t.state.borrow_mut().purgeable.set(state, "-[MTLResource setPurgeableState:]")?;
         if tr.discard && t.storage != StorageMode::Memoryless {
-            self.zero_texture(t)?;
+            self.zero_texture(g, t)?;
         }
         Ok(tr.previous)
     }
 
-    fn zero_texture(&self, t: &Texture<A>) -> Result<(), MemError> {
+    fn zero_texture(&self, g: &impl Calls<A>, t: &Texture<A>) -> Result<(), MemError> {
         let Some(b) = t.blocks else {
             return Err(MemError::unimplemented("discarding the contents of a combined depth-stencil texture"));
         };
@@ -732,9 +809,9 @@ impl<A: Api> Memory<A> {
                 tp.extent.2 = t.geometry.slices();
             }
             let bytes = |p: &Placement| vec![0u8; (p.row_bytes * u64::from(p.rows) * u64::from(p.extent.2)) as usize];
-            self.write_texture(&t.stored, &sp, TextureAspect::All, &bytes(&sp))?;
+            self.write_texture(g, &t.stored, &sp, TextureAspect::All, &bytes(&sp))?;
             if let Some(twin) = t.twins.get(level as usize) {
-                self.write_texture(twin, &tp, TextureAspect::All, &bytes(&tp))?;
+                self.write_texture(g, twin, &tp, TextureAspect::All, &bytes(&tp))?;
             }
         }
         let mut st = t.state.borrow_mut();
@@ -745,10 +822,11 @@ impl<A: Api> Memory<A> {
     }
 
     /// A buffer the executor uses as a GPU-side staging area for re-pitched copies.
-    fn copy_staging(&self, size: u64) -> Result<A::Buffer, MemError> {
+    fn copy_staging(&self, g: &impl Calls<A>, size: u64) -> Result<A::Buffer, MemError> {
         let d =
             BufferDescriptor::new(size64(size.max(4), "createBuffer")?, BufferUsage::COPY_SRC | BufferUsage::COPY_DST);
-        self.device.create_buffer(&d).map_err(gpu_err("GPUDevice.createBuffer"))
+        g.call("GPUDevice.createBuffer", "webmetal copy staging", |dev| dev.create_buffer(&d))
+            .map_err(gpu_err("GPUDevice.createBuffer"))
     }
 
     /// Encode a blit of a region from a buffer into a texture (`copyFromBuffer:...toTexture:`): `l` lays the bytes out
@@ -758,6 +836,7 @@ impl<A: Api> Memory<A> {
     /// 4-byte boundary; other layouts are refused until a shader re-pitch exists.
     pub fn encode_buffer_to_texture(
         &self,
+        g: &impl Calls<A>,
         encoder: &A::CommandEncoder,
         (src, offset): (&Buffer<A>, u64),
         t: &Texture<A>,
@@ -793,7 +872,7 @@ impl<A: Api> Memory<A> {
             }
             (&t.stored, sp)
         };
-        self.encode_bytes_to_texture(encoder, (src.gpu(), offset), l, texture, &p)?;
+        self.encode_bytes_to_texture(g, encoder, (src.gpu(), offset), l, texture, &p)?;
         let mut st = t.state.borrow_mut();
         let i = t.sub(level, layer);
         if t.has_twin() {
@@ -802,11 +881,15 @@ impl<A: Api> Memory<A> {
         } else {
             st.stored[i] = true;
         }
+        if t.surface.is_some() {
+            st.surface_written = true;
+        }
         Ok(())
     }
 
     fn encode_bytes_to_texture(
         &self,
+        g: &impl Calls<A>,
         encoder: &A::CommandEncoder,
         (src, offset): (&A::Buffer, u64),
         l: &RegionLayout,
@@ -828,12 +911,12 @@ impl<A: Api> Memory<A> {
             s.bytes_per_row = Some(l.bytes_per_row as u32);
             s.rows_per_image =
                 Some(if l.images == 1 { l.blocks.1 } else { (l.bytes_per_image / l.bytes_per_row) as u32 });
-            return encoder
-                .copy_buffer_to_texture(&s, &dst, &size)
+            return g
+                .call("GPUCommandEncoder.copyBufferToTexture", "", |_| encoder.copy_buffer_to_texture(&s, &dst, &size))
                 .map_err(gpu_err("GPUCommandEncoder.copyBufferToTexture"));
         }
         let pitch = StagingPitch::new(l.row_bytes, rows, u64::from(l.images));
-        let staging = self.copy_staging(pitch.size())?;
+        let staging = self.copy_staging(g, pitch.size())?;
         let chunk = l.row_bytes.next_multiple_of(4);
         for i in 0..u64::from(l.images) {
             for r in 0..rows {
@@ -845,19 +928,21 @@ impl<A: Api> Memory<A> {
                     )));
                 }
                 let to = (i * rows + r) * pitch.bytes_per_row;
-                encoder.copy_buffer_to_buffer_with_offsets(
-                    src,
+                let (a, b, n) = (
                     size64(from, "copyBufferToBuffer")?,
-                    &staging,
                     size64(to, "copyBufferToBuffer")?,
-                    Some(size64(chunk, "copyBufferToBuffer")?),
+                    size64(chunk, "copyBufferToBuffer")?,
                 );
+                g.call("GPUCommandEncoder.copyBufferToBuffer", "", |_| {
+                    encoder.copy_buffer_to_buffer_with_offsets(src, a, &staging, b, Some(n))
+                });
             }
         }
         let mut s = TexelCopyBufferInfo::<A>::new(&staging);
         s.bytes_per_row = Some(pitch.bytes_per_row as u32);
         s.rows_per_image = Some(l.blocks.1);
-        encoder.copy_buffer_to_texture(&s, &dst, &size).map_err(gpu_err("GPUCommandEncoder.copyBufferToTexture"))
+        g.call("GPUCommandEncoder.copyBufferToTexture", "", |_| encoder.copy_buffer_to_texture(&s, &dst, &size))
+            .map_err(gpu_err("GPUCommandEncoder.copyBufferToTexture"))
     }
 
     /// Encode a blit of a region from a texture into a buffer (`copyFromTexture:...toBuffer:`), laid out at `offset`
@@ -866,6 +951,7 @@ impl<A: Api> Memory<A> {
     /// would overwrite the bytes beside it.
     pub fn encode_texture_to_buffer(
         &self,
+        g: &impl Calls<A>,
         encoder: &A::CommandEncoder,
         t: &Texture<A>,
         r: &TextureRegion,
@@ -887,16 +973,17 @@ impl<A: Api> Memory<A> {
         }
         let rows = u64::from(l.blocks.1);
         let pitch = StagingPitch::new(l.row_bytes, rows, u64::from(l.images));
-        let staging = self.copy_staging(pitch.size())?;
+        let staging = self.copy_staging(g, pitch.size())?;
         let mut src = TexelCopyTextureInfo::<A>::new(texture);
         src.mip_level = p.level;
         src.origin = origin(p.origin.0, p.origin.1, p.origin.2);
         let mut sd = TexelCopyBufferInfo::<A>::new(&staging);
         sd.bytes_per_row = Some(pitch.bytes_per_row as u32);
         sd.rows_per_image = Some(p.rows);
-        encoder
-            .copy_texture_to_buffer(&src, &sd, &extent(p.extent.0, p.extent.1, p.extent.2))
-            .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
+        g.call("GPUCommandEncoder.copyTextureToBuffer", "", |_| {
+            encoder.copy_texture_to_buffer(&src, &sd, &extent(p.extent.0, p.extent.1, p.extent.2))
+        })
+        .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
         for i in 0..u64::from(l.images) {
             for r in 0..rows {
                 let to = offset + i * l.bytes_per_image + r * l.bytes_per_row;
@@ -907,13 +994,14 @@ impl<A: Api> Memory<A> {
                         l.row_bytes
                     )));
                 }
-                encoder.copy_buffer_to_buffer_with_offsets(
-                    &staging,
+                let (a, b, n) = (
                     size64((i * rows + r) * pitch.bytes_per_row, "copyBufferToBuffer")?,
-                    dst.gpu(),
                     size64(to, "copyBufferToBuffer")?,
-                    Some(size64(l.row_bytes, "copyBufferToBuffer")?),
+                    size64(l.row_bytes, "copyBufferToBuffer")?,
                 );
+                g.call("GPUCommandEncoder.copyBufferToBuffer", "", |_| {
+                    encoder.copy_buffer_to_buffer_with_offsets(&staging, a, dst.gpu(), b, Some(n))
+                });
             }
         }
         self.note_buffer_write(dst, Some((offset, offset + l.span)));
@@ -923,7 +1011,12 @@ impl<A: Api> Memory<A> {
     /// Bring the stored texture up to date with the twin where a blit left it stale, before the next GPU use of the
     /// texture. Formats WebGPU holds natively are copied on the GPU (encoded into `encoder`); decoded formats need the
     /// blocks on the CPU, which [`Memory::refresh_decoded`] does: this returns [`Prepare::Decode`] for them.
-    pub fn prepare_texture(&self, encoder: &A::CommandEncoder, t: &Texture<A>) -> Result<Prepare, MemError> {
+    pub fn prepare_texture(
+        &self,
+        g: &impl Calls<A>,
+        encoder: &A::CommandEncoder,
+        t: &Texture<A>,
+    ) -> Result<Prepare, MemError> {
         let stale: Vec<usize> =
             t.state.borrow().stored.iter().enumerate().filter(|(_, c)| !**c).map(|(i, _)| i).collect();
         if stale.is_empty() {
@@ -941,35 +1034,39 @@ impl<A: Api> Memory<A> {
             let (bx, by) = b.count(w, h);
             let images = if t.geometry.kind.is_3d() { d } else { 1 };
             let pitch = StagingPitch::new(u64::from(bx) * u64::from(b.bytes), u64::from(by), u64::from(images));
-            let staging = self.copy_staging(pitch.size())?;
+            let staging = self.copy_staging(g, pitch.size())?;
             let mut src = TexelCopyTextureInfo::<A>::new(&t.twins[level as usize]);
             src.origin = origin(0, 0, layer);
             let mut sd = TexelCopyBufferInfo::<A>::new(&staging);
             sd.bytes_per_row = Some(pitch.bytes_per_row as u32);
             sd.rows_per_image = Some(by);
-            encoder
-                .copy_texture_to_buffer(&src, &sd, &extent(bx, by, images))
-                .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
+            g.call("GPUCommandEncoder.copyTextureToBuffer", "", |_| {
+                encoder.copy_texture_to_buffer(&src, &sd, &extent(bx, by, images))
+            })
+            .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
             let mut dst = TexelCopyTextureInfo::<A>::new(&t.stored);
             dst.mip_level = level;
             dst.origin = origin(0, 0, layer);
             let size = if b.compressed() { extent(bx * b.width, by * b.height, images) } else { extent(w, h, images) };
-            encoder
-                .copy_buffer_to_texture(&sd, &dst, &size)
+            g.call("GPUCommandEncoder.copyBufferToTexture", "", |_| encoder.copy_buffer_to_texture(&sd, &dst, &size))
                 .map_err(gpu_err("GPUCommandEncoder.copyBufferToTexture"))?;
             t.state.borrow_mut().stored[i] = true;
         }
         Ok(Prepare::Ready)
     }
 
-    /// Decode the twin's blocks of every stale subresource of a decoded texture into its stored texture. The blocks
-    /// are read back after every submitted command buffer, so the decode sees the blits that made them stale.
-    pub fn refresh_decoded(&self, t: &Rc<Texture<A>>) -> Result<Vec<TextureRead<A>>, MemError> {
+    /// Encode into `encoder` the read of the twin's blocks of every stale subresource of a decoded texture. Once the
+    /// GPU has run it ([`TextureRead::wait`]), [`Memory::finish_refresh`] decodes the blocks into the stored texture.
+    pub fn refresh_decoded(
+        &self,
+        g: &impl Calls<A>,
+        encoder: &A::CommandEncoder,
+        t: &Rc<Texture<A>>,
+    ) -> Result<Vec<TextureRead<A>>, MemError> {
         let b = t.blocks.expect("decoded textures have blocks");
         let stale: Vec<usize> =
             t.state.borrow().stored.iter().enumerate().filter(|(_, c)| !**c).map(|(i, _)| i).collect();
         let mut reads = Vec::new();
-        let encoder = self.device.create_command_encoder(&CommandEncoderDescriptor::new());
         for i in stale {
             let level = i as u32 / t.per_level();
             let layer = i as u32 % t.per_level();
@@ -991,21 +1088,20 @@ impl<A: Api> Memory<A> {
                 }
             }
             let l = RegionLayout::new("refresh", &t.geometry, b, &a)?;
-            let mut read = self.encode_read("refresh", &encoder, t, &l, level, layer)?;
+            let mut read = self.encode_read(g, "refresh", encoder, t, &l, (level, layer))?;
             read.refresh = Some((level, layer));
             reads.push(read);
         }
-        self.queue.submit(&[&encoder.finish(&CommandBufferDescriptor::new())]);
         Ok(reads)
     }
 
     /// Finish [`Memory::refresh_decoded`] with the blocks read back: decode and upload them.
-    pub fn finish_refresh(&self, t: &Texture<A>, blocks: TextureBytes<A>) -> Result<(), MemError> {
+    pub fn finish_refresh(&self, g: &impl Calls<A>, t: &Texture<A>, blocks: TextureBytes<A>) -> Result<(), MemError> {
         let (level, layer) = blocks.refresh.expect("a refresh read");
         let l = blocks.layout;
         let data = self.stored_bytes(t, &l, &blocks.tight, level)?;
         let (sp, _) = self.placements(t, &l, level, layer);
-        self.write_texture(&t.stored, &sp, TextureAspect::All, &data)?;
+        self.write_texture(g, &t.stored, &sp, TextureAspect::All, &data)?;
         self.staging.give_back(blocks.staging);
         t.state.borrow_mut().stored[t.sub(level, layer)] = true;
         Ok(())

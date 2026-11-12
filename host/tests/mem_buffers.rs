@@ -15,9 +15,11 @@ use webmetal_host::gpu::idl::{
     ProgrammableStage, ShaderModuleDescriptor,
 };
 use webmetal_host::gpu::{
-    BindingCommands as _, CommandEncoder as _, ComputePassEncoder as _, Device as _, PipelineBase as _, Size64,
+    BindingCommands as _, CommandEncoder as _, ComputePassEncoder as _, Device as _, PipelineBase as _, Queue as _,
+    Size64,
 };
-use webmetal_host::mem::buffer::{Buffer, Readbacks, Upload};
+use webmetal_host::mem::buffer::{Buffer, Readbacks};
+use webmetal_host::mem::calls::Direct;
 use webmetal_host::mem::{MemError, Memory};
 use webmetal_wire::{CreateBuffer, CreateBufferNoCopy, CreateBufferWithBytes, GuestAddr, Handle};
 
@@ -84,6 +86,7 @@ impl Kernels {
 struct Executor<'a> {
     g: &'a Gpu,
     mem: Memory<A>,
+    direct: Direct<A>,
     kernels: Kernels,
     guest: &'a Guest,
     /// Submitted command buffers with the byte range their work writes.
@@ -94,25 +97,17 @@ impl<'a> Executor<'a> {
     fn new(g: &'a Gpu, guest: &'a Guest) -> Executor<'a> {
         Executor {
             g,
-            mem: Memory::new(g.device.clone(), g.features),
+            mem: Memory::new(&g.device, g.features),
+            direct: Direct::new(&g.device),
             kernels: Kernels::new(g),
             guest,
             in_flight: Vec::new(),
         }
     }
 
-    /// Upload, completing the command buffers the protocol says it must wait for.
+    /// Upload the guest's changes, as the commit of a command buffer that uses the buffer does.
     fn upload(&mut self, b: &Buffer<A>) {
-        loop {
-            match self.mem.upload_buffer(self.guest, b).unwrap() {
-                Upload::Done => return,
-                Upload::Wait(seqs) => {
-                    while self.in_flight.iter().any(|(r, _)| r.seq().is_some_and(|s| seqs.contains(&s))) {
-                        self.complete_oldest();
-                    }
-                }
-            }
-        }
+        self.mem.upload_buffer(&self.direct, self.guest, b).unwrap();
     }
 
     fn commit(&mut self, b: &Rc<Buffer<A>>, first: u64, count: u64, fill: Option<u32>) {
@@ -128,7 +123,6 @@ impl<'a> Executor<'a> {
             webmetal_host::gpu::idl::BufferUsage::STORAGE | webmetal_host::gpu::idl::BufferUsage::COPY_DST,
         ));
         let value = value.unwrap();
-        use webmetal_host::gpu::Queue as _;
         self.g
             .device
             .queue()
@@ -151,9 +145,9 @@ impl<'a> Executor<'a> {
         pass.dispatch_workgroups(count.div_ceil(64) as u32, 1, 1);
         pass.end();
         self.mem.note_buffer_write(b, Some((first * 4, (first + count) * 4)));
-        let mut readbacks = self.mem.encode_readbacks(&encoder, std::slice::from_ref(b)).unwrap();
+        let readbacks = self.mem.encode_readbacks(&self.direct, &encoder, std::slice::from_ref(b)).unwrap();
         let cb = encoder.finish(&CommandBufferDescriptor::new());
-        self.mem.submit(&[&cb], &mut readbacks);
+        self.g.device.queue().submit(&[&cb]);
         self.in_flight.push((readbacks, (first * 4, (first + count) * 4)));
     }
 
@@ -168,8 +162,8 @@ impl<'a> Executor<'a> {
     fn submit_readback(&mut self, b: &Rc<Buffer<A>>) {
         self.mem.note_buffer_write(b, None);
         let encoder = self.g.device.create_command_encoder(&CommandEncoderDescriptor::new());
-        let mut r = self.mem.encode_readbacks(&encoder, std::slice::from_ref(b)).unwrap();
-        self.mem.submit(&[&encoder.finish(&CommandBufferDescriptor::new())], &mut r);
+        let r = self.mem.encode_readbacks(&self.direct, &encoder, std::slice::from_ref(b)).unwrap();
+        self.g.device.queue().submit(&[&encoder.finish(&CommandBufferDescriptor::new())]);
         self.in_flight.push((r, (0, b.length)));
     }
 
@@ -198,7 +192,7 @@ fn coherence_interleaving(g: &Gpu, page: Option<u64>) {
     let seeds = [101u32, 202];
     for (program, &seed) in seeds.iter().enumerate() {
         let contents = guest.base + 0x1000 * program as u64;
-        let b = ex.mem.create_buffer(&guest, TASK, &create(1, (WORDS * 4) as u64, 0, contents)).unwrap();
+        let b = ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(1, (WORDS * 4) as u64, 0, contents)).unwrap();
         let mut busy = 0u32;
         let mut state = seed;
         let mut snapshot = 0;
@@ -285,7 +279,7 @@ fn random_programs_match_shared_memory() {
         };
         const LEN: u64 = 4096;
         let contents = guest.base + 0x2000;
-        let b = ex.mem.create_buffer(&guest, TASK, &create(1, LEN, 0, contents)).unwrap();
+        let b = ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(1, LEN, 0, contents)).unwrap();
         let mut model = vec![0u8; LEN as usize];
         for _ in 0..300 {
             match next() % 6 {
@@ -333,6 +327,9 @@ fn random_programs_match_shared_memory() {
         }
         ex.wait_all();
         assert_eq!(guest.cpu_read(contents, LEN as usize), model, "{}: round {round}", g.name());
+        // The programs write words in part while GPU work is pending, which goes through the masked shader write.
+        assert!(ex.mem.masked_words() > 0, "{}: round {round} wrote no masked word", g.name());
+        eprintln!("{}: round {round}: {} masked words", g.name(), ex.mem.masked_words());
     }
     g.assert_no_errors();
 }
@@ -347,33 +344,42 @@ fn creation_forms() {
     let pattern: Vec<u8> = (0..37u8).map(|i| i.wrapping_mul(29)).collect();
     guest.cpu_write(source, &pattern);
     let contents = guest.base + 0x1000;
-    let b = ex.mem.create_buffer_with_bytes(&guest, TASK, &with_bytes(2, source, 37, 0, contents)).unwrap();
+    let b = ex.mem.create_buffer_with_bytes(&ex.direct, &guest, TASK, &with_bytes(2, source, 37, 0, contents)).unwrap();
     assert_eq!(guest.cpu_read(contents, 37), pattern);
     ex.submit_readback(&b);
     ex.wait_all();
     assert_eq!(b.shadow_bytes().unwrap(), pattern);
     // Private storage with bytes: no CPU copy.
-    let p = ex.mem.create_buffer_with_bytes(&guest, TASK, &with_bytes(3, source, 37, 0x20, 0)).unwrap();
+    let p = ex.mem.create_buffer_with_bytes(&ex.direct, &guest, TASK, &with_bytes(3, source, 37, 0x20, 0)).unwrap();
     assert!(p.shadow_bytes().is_none());
     // A buffer whose contents already hold bytes uploads them at creation.
     let pre = guest.base + 0x3000;
     guest.cpu_write(pre, &[9; 64]);
-    let c = ex.mem.create_buffer(&guest, TASK, &create(4, 64, 0, pre)).unwrap();
+    let c = ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(4, 64, 0, pre)).unwrap();
     assert_eq!(c.shadow_bytes().unwrap(), vec![9; 64]);
     // No-copy buffers need minBufferNoCopyAlignmentBytes alignment.
     let aligned = guest.base + 0x4000;
-    assert!(ex.mem.create_buffer_no_copy(&guest, TASK, &no_copy(5, aligned, 4096)).is_ok());
+    assert!(ex.mem.create_buffer_no_copy(&ex.direct, &guest, TASK, &no_copy(5, aligned, 4096)).is_ok());
     assert!(matches!(
-        ex.mem.create_buffer_no_copy(&guest, TASK, &no_copy(6, aligned + 16, 4096)),
+        ex.mem.create_buffer_no_copy(&ex.direct, &guest, TASK, &no_copy(6, aligned + 16, 4096)),
         Err(MemError::Undefined { .. })
     ));
-    assert!(matches!(ex.mem.create_buffer(&guest, TASK, &create(7, 0, 0, contents)), Err(MemError::Undefined { .. })));
-    assert!(matches!(ex.mem.create_buffer(&guest, TASK, &create(8, 16, 0x30, 0)), Err(MemError::Undefined { .. })));
     assert!(matches!(
-        ex.mem.create_buffer(&guest, TASK, &create(9, 16, 0x10, contents)),
+        ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(7, 0, 0, contents)),
         Err(MemError::Undefined { .. })
     ));
-    assert!(matches!(ex.mem.create_buffer(&guest, TASK, &create(10, 16, 0, 0)), Err(MemError::Invalid { .. })));
+    assert!(matches!(
+        ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(8, 16, 0x30, 0)),
+        Err(MemError::Undefined { .. })
+    ));
+    assert!(matches!(
+        ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(9, 16, 0x10, contents)),
+        Err(MemError::Undefined { .. })
+    ));
+    assert!(matches!(
+        ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(10, 16, 0, 0)),
+        Err(MemError::Invalid { .. })
+    ));
     g.assert_no_errors();
 }
 
@@ -383,17 +389,18 @@ fn purgeable_empty_discards() {
     let guest = Guest::new(1 << 16, None);
     let mut ex = Executor::new(&g, &guest);
     let contents = guest.base + 0x1000;
-    let b = ex.mem.create_buffer(&guest, TASK, &create(1, 256, 0, contents)).unwrap();
+    let b = ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(1, 256, 0, contents)).unwrap();
     guest.cpu_write(contents, &[7; 256]);
     ex.commit(&b, 0, 64, None);
     // Empty while the readback is pending: zeroing waits for it.
-    assert_eq!(ex.mem.set_buffer_purgeable(&guest, &b, 4).unwrap(), 2);
+    assert_eq!(ex.mem.set_buffer_purgeable(&ex.direct, &guest, &b, 4).unwrap(), 2);
     ex.wait_all();
     assert_eq!(guest.cpu_read(contents, 256), vec![0; 256]);
     assert_eq!(b.shadow_bytes().unwrap(), vec![0; 256]);
-    assert_eq!(ex.mem.set_buffer_purgeable(&guest, &b, 1).unwrap(), 4);
-    assert_eq!(ex.mem.set_buffer_purgeable(&guest, &b, 2).unwrap(), 4);
-    // The GPU copy is zero too: a readback of the whole buffer changes nothing.
+    assert_eq!(ex.mem.set_buffer_purgeable(&ex.direct, &guest, &b, 1).unwrap(), 4);
+    assert_eq!(ex.mem.set_buffer_purgeable(&ex.direct, &guest, &b, 2).unwrap(), 4);
+    // The GPU copy is zeroed before its next use (the next commit's upload): a readback after it changes nothing.
+    ex.upload(&b);
     ex.submit_readback(&b);
     ex.wait_all();
     assert_eq!(guest.cpu_read(contents, 256), vec![0; 256]);

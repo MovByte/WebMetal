@@ -96,6 +96,7 @@ pub struct Guest {
     dirty: RefCell<BTreeSet<u64>>,
     pub surfaces: RefCell<Vec<(SurfaceDesc, Vec<u8>)>>,
     pub surface_writes: RefCell<Vec<(SurfaceId, u32)>>,
+    pub posted: RefCell<Vec<Event>>,
 }
 
 impl Guest {
@@ -107,6 +108,7 @@ impl Guest {
             dirty: RefCell::new(BTreeSet::new()),
             surfaces: RefCell::new(Vec::new()),
             surface_writes: RefCell::new(Vec::new()),
+            posted: RefCell::new(Vec::new()),
         }
     }
 
@@ -122,6 +124,18 @@ impl Guest {
                 a += p;
             }
         }
+    }
+
+    /// A write by the guest's CPU into a surface (between lock and unlock): the seed changes.
+    pub fn surface_cpu_write(&self, id: SurfaceId, offset: usize, bytes: &[u8]) {
+        let mut s = self.surfaces.borrow_mut();
+        let (d, mem) = s.iter_mut().find(|(d, _)| d.id == id).expect("surface");
+        mem[offset..offset + bytes.len()].copy_from_slice(bytes);
+        d.seed = d.seed.wrapping_add(1);
+    }
+
+    pub fn surface_bytes(&self, id: SurfaceId) -> Vec<u8> {
+        self.surfaces.borrow().iter().find(|(d, _)| d.id == id).expect("surface").1.clone()
     }
 
     pub fn cpu_read(&self, addr: u64, len: usize) -> Vec<u8> {
@@ -192,6 +206,9 @@ impl Embedder for Guest {
     }
     fn surface_note_gpu_write(&self, id: SurfaceId, plane: u32) {
         self.surface_writes.borrow_mut().push((id, plane));
+        if let Some((d, _)) = self.surfaces.borrow_mut().iter_mut().find(|(d, _)| d.id == id) {
+            d.seed = d.seed.wrapping_add(1);
+        }
     }
     fn shared_event_resolve(&self, task: TaskId, port: u32) -> Result<SharedEventId, SharedEventError> {
         Err(SharedEventError::NotAnEvent { task, port })
@@ -203,7 +220,9 @@ impl Embedder for Guest {
         Err(SharedEventError::Gone(event))
     }
     fn shared_event_release(&self, _: SharedEventId) {}
-    fn post(&self, _: TaskId, _: Option<Handle>, _: Event) {}
+    fn post(&self, _: TaskId, _: Option<Handle>, event: Event) {
+        self.posted.borrow_mut().push(event);
+    }
     fn present(&self, frame: &PresentedFrame) -> Result<(), PresentError> {
         Err(PresentError::UnknownDisplay(frame.display))
     }
@@ -281,6 +300,16 @@ impl Golden {
         let line = self.record(name)?;
         let layout = &line[line.find("\"layout\":{")?..];
         Self::field(layout, key)?.parse().ok()
+    }
+
+    /// A `value` record of type `u64`.
+    pub fn value_u64(&self, name: &str) -> Option<u64> {
+        Self::field(self.record(name)?, "value")?.parse().ok()
+    }
+
+    /// A `value` record of type `bool`.
+    pub fn value_bool(&self, name: &str) -> Option<bool> {
+        Self::field(self.record(name)?, "value")?.parse().ok()
     }
 
     /// The strings of a `value` record of type `strings`.

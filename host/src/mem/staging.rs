@@ -10,6 +10,8 @@ use std::cell::RefCell;
 use crate::gpu::idl::{BufferDescriptor, BufferUsage};
 use crate::gpu::{Api, Buffer as _, Device as _, Object as _, Size64};
 
+use super::calls::Calls;
+
 use super::error::MemError;
 
 /// The smallest staging buffer.
@@ -30,7 +32,7 @@ impl<A: Api> Default for StagingArena<A> {
 
 impl<A: Api> StagingArena<A> {
     /// A staging buffer of at least `size` bytes.
-    pub fn take(&self, device: &A::Device, size: u64) -> Result<A::Buffer, MemError> {
+    pub fn take(&self, g: &impl Calls<A>, size: u64) -> Result<A::Buffer, MemError> {
         let class = size.max(MIN_CLASS).next_power_of_two();
         let mut free = self.free.borrow_mut();
         if let Some(i) = free.iter().position(|b| b.size() == class) {
@@ -38,8 +40,9 @@ impl<A: Api> StagingArena<A> {
         }
         drop(free);
         let size = Size64::new(class).map_err(|e| MemError::gpu("GPUDevice.createBuffer", e))?;
-        let b = device
-            .create_buffer(&BufferDescriptor::new(size, BufferUsage::MAP_READ | BufferUsage::COPY_DST))
+        let d = BufferDescriptor::new(size, BufferUsage::MAP_READ | BufferUsage::COPY_DST);
+        let b = g
+            .call("GPUDevice.createBuffer", "webmetal staging", |dev| dev.create_buffer(&d))
             .map_err(|e| MemError::gpu("GPUDevice.createBuffer", e))?;
         b.set_label("webmetal staging");
         Ok(b)
