@@ -10,6 +10,9 @@ WEBMETAL_SMOKE_REPORT).
 Usage: gpu_web_smoke.py [--browser PATH] [--browser-arg ARG ...] [--cargo CARGO] [--out REPORT]
                         [--compare REPORT] [--timeout SECONDS] [--keep DIR]
 
+--browser is Google Chrome by default; a Chromium-based browser or Firefox (by its executable name) may be named
+instead. Each runs headless with a fresh profile.
+
 The wasm-bindgen CLI on PATH (or --wasm-bindgen) must be the version host/Cargo.toml pins. Exit status 0 when the
 report conforms to the expectations, 1 when it does not, 2 when the run could not complete.
 """
@@ -145,8 +148,12 @@ def main():
     httpd = serve(page_dir, results, done)
     url = "http://127.0.0.1:%d/index.html" % httpd.server_address[1]
     profile = tempfile.mkdtemp(prefix="webmetal-smoke-profile-")
-    cmd = [args.browser, "--headless=new", "--no-first-run", "--no-default-browser-check",
-           "--user-data-dir=" + profile] + args.browser_arg + [url]
+    if "firefox" in os.path.basename(args.browser).lower():
+        cmd = [args.browser, "--headless", "--no-remote", "--profile", profile] + args.browser_arg + [url]
+    else:
+        # Chromium-based browsers.
+        cmd = [args.browser, "--headless=new", "--no-first-run", "--no-default-browser-check",
+               "--user-data-dir=" + profile] + args.browser_arg + [url]
     browser = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
         finished = done.wait(args.timeout)
