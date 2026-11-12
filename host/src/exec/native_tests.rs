@@ -40,6 +40,8 @@ type Regions = Vec<(u64, Vec<u8>)>;
 /// Guest memory, shared events, posted events and the clock of a test.
 struct TestEmbedder {
     start: Instant,
+    /// Time the test has moved the clock forward by, in nanoseconds.
+    skipped: Cell<u64>,
     memory: RefCell<HashMap<TaskId, Regions>>,
     next_addr: Cell<u64>,
     /// Shared event kernel objects: value by id.
@@ -55,6 +57,7 @@ impl TestEmbedder {
     fn new() -> TestEmbedder {
         TestEmbedder {
             start: Instant::now(),
+            skipped: Cell::new(0),
             memory: RefCell::new(HashMap::new()),
             next_addr: Cell::new(0x1_0000_0000),
             events: RefCell::new(HashMap::new()),
@@ -163,7 +166,7 @@ impl Embedder for TestEmbedder {
     }
     fn now(&self) -> MonotonicNanos {
         // Positive from the first reading, as Metal's times are once set.
-        MonotonicNanos(self.start.elapsed().as_nanos() as u64 + 1)
+        MonotonicNanos(self.start.elapsed().as_nanos() as u64 + 1 + self.skipped.get())
     }
 }
 
@@ -1120,6 +1123,88 @@ fn event_values() {
     for cb in [w, zero, same] {
         assert_completed(&completion(&posted, cb));
     }
+}
+
+fn wait_timeout(event: Handle, value: u64, timeout: u32) -> Command {
+    Command::EncodeWaitForEventTimeout(EncodeWaitForEventTimeout { event: Some(event), value, timeout })
+}
+
+const SECOND: u64 = 1_000_000_000;
+
+/// The kernel's timeout of a wait: `encodeWaitForEvent:value:` gives up after 5 seconds and
+/// `encodeWaitForEvent:value:timeout:` after its own, counted from when the queue reaches the wait. The command buffer
+/// stops at the wait, is scheduled and completes with the kernel's timeout status, and the queue goes on.
+#[test]
+fn waits_time_out() {
+    let x = Harness::new();
+    x.open(T1);
+    let q = x.queue(T1);
+    let e = x.event(T1);
+    let (target, addr) = x.buffer(T1, 256);
+    let before = blit(x.handle(), vec![fill(target, 8, 0x11)]);
+    let after = blit(x.handle(), vec![fill(target, 256, 0x22)]);
+    let records = [before, vec![wait(e, 1)], after].concat();
+    let cb = x.commit(T1, q, &records, &[target, e]);
+    let next = x.commit(T1, q, &blit(x.handle(), vec![fill(target, 4, 0x33)]), &[target]);
+    x.idle();
+    assert!(x.em.take_posted().is_empty(), "the queue waits");
+    let deadline = x.exec.next_deadline().expect("a wait is blocked").0;
+    assert!(deadline > x.em.now().0 + 4 * SECOND && deadline <= x.em.now().0 + 5 * SECOND, "5 s from the wait");
+    x.em.skipped.set(x.em.skipped.get() + 4 * SECOND);
+    x.idle();
+    assert!(x.em.take_posted().is_empty(), "still within 5 s");
+    x.em.skipped.set(x.em.skipped.get() + SECOND);
+    x.idle();
+    assert!(x.exec.next_deadline().is_none());
+    let posted = x.em.take_posted();
+    let c = completion(&posted, cb);
+    assert_eq!(c.status, command_buffer_status::ERROR);
+    assert_eq!(c.failure.status, status::METAL_ERROR);
+    assert_eq!(c.failure.domain.as_deref(), Some(failure::IOGPU_COMMAND_QUEUE_ERROR_DOMAIN));
+    assert_eq!(c.failure.code, failure::kernel_status::TIMEOUT);
+    let mut bytes = Vec::new();
+    for r in &records[..3] {
+        r.encode(&mut bytes).unwrap();
+    }
+    assert_eq!(c.failed_offset, bytes.len() as u64, "the wait's record");
+    let Some(Event::CommandBufferScheduled(s)) =
+        posted.iter().map(|p| &p.2).find(|e| matches!(e, Event::CommandBufferScheduled(s) if s.command_buffer == cb))
+    else {
+        panic!("scheduled")
+    };
+    assert_eq!(s.failure, c.failure, "the scheduled notification carries the status");
+    // The work before the wait ran, the work after it did not, and the next command buffer ran.
+    assert_completed(&completion(&posted, next));
+    let mut expected = [vec![0x33; 4], vec![0x11; 4]].concat();
+    expected.resize(256, 0);
+    assert_eq!(x.guest(T1, addr, 256), expected);
+}
+
+/// `encodeWaitForEvent:value:timeout:` with timeout 0 fails at once when the value is not reached, and passes when it
+/// is; a wait whose value arrives within the timeout passes.
+#[test]
+fn wait_timeouts_count_from_the_wait() {
+    let x = Harness::new();
+    x.open(T1);
+    let (q1, q2) = (x.queue(T1), x.queue(T1));
+    let e = x.event(T1);
+    let zero = x.commit(T1, q1, &[wait_timeout(e, 1, 0)], &[e]);
+    x.idle();
+    let c = completion(&x.em.take_posted(), zero);
+    assert_eq!(c.failure.domain.as_deref(), Some(failure::IOGPU_COMMAND_QUEUE_ERROR_DOMAIN));
+    assert_eq!(c.failure.code, failure::kernel_status::TIMEOUT);
+    let waits = x.commit(T1, q1, &[wait_timeout(e, 1, 3)], &[e]);
+    x.idle();
+    x.em.skipped.set(x.em.skipped.get() + 2 * SECOND);
+    x.idle();
+    let signals = x.commit(T1, q2, &[signal(e, 1)], &[e]);
+    x.idle();
+    let posted = x.em.take_posted();
+    assert_completed(&completion(&posted, signals));
+    assert_completed(&completion(&posted, waits));
+    let reached = x.commit(T1, q1, &[wait_timeout(e, 1, 0)], &[e]);
+    x.idle();
+    assert_completed(&completion(&x.em.take_posted(), reached));
 }
 
 /// Reference case `event.shared-cpu-signal`: a CPU signal releases a GPU wait only at the awaited value; the GPU signal

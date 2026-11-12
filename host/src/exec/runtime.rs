@@ -101,6 +101,32 @@ enum ActionKind<E: Embedder> {
     Complete,
 }
 
+/// How long the kernel waits for a shared event's earlier signals before a wait on it (IOGPUFamily 0xfffffff005bc1d58:
+/// `clock_interval_to_deadline(5, NSEC_PER_SEC)`), in nanoseconds.
+const PRIOR_SIGNALS_TIMEOUT: u64 = 5_000_000_000;
+
+/// Where a run blocked on a wait stands. The kernel's wait on a shared event (IOGPUFamily,
+/// `kIOGPUKernelCommandWaitSharedEvent`) first waits, for at most [`PRIOR_SIGNALS_TIMEOUT`], until no signal of the
+/// event that the queue processed earlier is still pending, then for the value until the wait's own timeout; an
+/// `MTLEvent` wait has only the second. A timed-out first wait does not end the second; either failing fails the
+/// command buffer.
+struct WaitClock {
+    /// The step the clock belongs to.
+    cursor: usize,
+    /// The deadline of the wait for earlier signals, while it lasts.
+    prior: Option<u64>,
+    /// The deadline of the wait for the value, once it has begun.
+    value: Option<u64>,
+    /// The failure of a wait that timed out.
+    timed_out: Option<Failure>,
+}
+
+impl WaitClock {
+    fn deadline(&self) -> Option<u64> {
+        self.prior.or(self.value)
+    }
+}
+
 /// Something a run does once every job it started before the action has finished.
 struct Action<E: Embedder> {
     after: u64,
@@ -130,6 +156,8 @@ struct Run<A: Api, E: Embedder> {
     /// The completion action ran; CommandBufferCompleted is posted once every earlier command buffer of the queue has
     /// completed.
     complete: bool,
+    /// The wait the run is blocked on.
+    wait: Option<WaitClock>,
 }
 
 impl<A: Api, E: Embedder> Run<A, E> {
@@ -661,6 +689,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
             outstanding: BTreeSet::new(),
             actions: VecDeque::new(),
             complete: false,
+            wait: None,
         };
         if let Some(f) = settle(&self.scopes, &self.calls) {
             add_job(&mut self.jobs, &mut run, id, settled(f));
@@ -676,6 +705,11 @@ impl<A: Api, E: Embedder> Core<A, E> {
 
     /// Fire ready actions, post completions in queue order, and replay runnable command buffers, until nothing
     /// changes. Returns whether anything changed.
+    /// The earliest time a wait some command buffer is blocked on times out.
+    pub(crate) fn next_deadline(&self) -> Option<u64> {
+        self.runs.values().filter_map(|r| r.wait.as_ref()?.deadline()).min()
+    }
+
     pub(crate) fn settle_state(&mut self) -> bool {
         let mut any = false;
         loop {
@@ -723,6 +757,19 @@ impl<A: Api, E: Embedder> Core<A, E> {
     /// Replay one command buffer until it blocks on an event or all its work is submitted.
     fn step(&mut self, id: RunId) -> bool {
         let now = self.now();
+        // The shared events with signals still pending from the command buffers the queue processed before this one.
+        let earlier_signals: Vec<SharedEventId> = {
+            let run = &self.runs[&id];
+            self.runs
+                .range(..id)
+                .filter(|(_, r)| r.task == run.task && r.queue == run.queue)
+                .flat_map(|(_, r)| r.actions.iter())
+                .filter_map(|a| match &a.kind {
+                    ActionKind::SignalShared(e, ..) => Some(e.id),
+                    ActionKind::Complete => None,
+                })
+                .collect()
+        };
         let run = self.runs.get_mut(&id).expect("run");
         let state = self.tasks.get(&run.task).expect("task");
         let gpu = gpu!(self);
@@ -765,31 +812,96 @@ impl<A: Api, E: Embedder> Core<A, E> {
                         break;
                     }
                 }
-                Step::Wait { event, value, offset } => {
-                    let reached = match run.events.get(&event).expect("event") {
-                        EventRef::Local(v) => Ok(v.get() >= value),
-                        EventRef::Shared(s) => self.embedder.shared_event_value(s.id).map(|v| v >= value),
+                Step::Wait { event, value, timeout, offset } => {
+                    let shared = match run.events.get(&event).expect("event") {
+                        EventRef::Local(_) => None,
+                        EventRef::Shared(s) => Some(s.id),
                     };
-                    match reached {
-                        Ok(true) => {}
-                        Ok(false) => {
-                            // The work before the wait runs now; the queue waits here (measured on Apple M4, macOS
-                            // 27.0.1: work encoded before a wait completes before the signal, and the command buffer
-                            // and every later one of its queue stay unscheduled until the event reaches the value).
-                            if run.recording.submit(&gpu) {
-                                run.gpu_start.get_or_insert(now);
+                    let cursor = run.cursor;
+                    let clock = match &mut run.wait {
+                        Some(c) if c.cursor == cursor => c,
+                        slot => slot.insert(WaitClock {
+                            cursor,
+                            prior: shared.map(|_| now.saturating_add(PRIOR_SIGNALS_TIMEOUT)),
+                            value: None,
+                            timed_out: None,
+                        }),
+                    };
+                    let timed_out = |what: String| {
+                        failure::kernel(
+                            failure::kernel_status::TIMEOUT,
+                            format!("{what} (kIOGPUCommandBufferCallbackErrorTimeout)"),
+                        )
+                    };
+                    let mut blocked = false;
+                    if let (Some(deadline), Some(shared)) = (clock.prior, shared) {
+                        let pending = earlier_signals.contains(&shared)
+                            || run
+                                .actions
+                                .iter()
+                                .any(|a| matches!(&a.kind, ActionKind::SignalShared(e, ..) if e.id == shared));
+                        if pending && now < deadline {
+                            blocked = true;
+                        } else {
+                            if pending {
+                                clock.timed_out = Some(timed_out(format!(
+                                    "EncodeWaitForEvent: the shared event's signals encoded earlier on this queue did \
+                                     not arrive within {} s",
+                                    PRIOR_SIGNALS_TIMEOUT / 1_000_000_000
+                                )));
                             }
-                            if let Some(f) = settle(&self.scopes, &self.calls) {
-                                add_job(&mut self.jobs, run, id, settled(f));
+                            clock.prior = None;
+                        }
+                    }
+                    if !blocked {
+                        let reached = match run.events.get(&event).expect("event") {
+                            EventRef::Local(v) => Ok(v.get() >= value),
+                            EventRef::Shared(s) => self.embedder.shared_event_value(s.id).map(|v| v >= value),
+                        };
+                        let deadline =
+                            *clock.value.get_or_insert(now.saturating_add(u64::from(timeout) * 1_000_000_000));
+                        match reached {
+                            Ok(true) => {}
+                            Ok(false) if now < deadline => blocked = true,
+                            Ok(false) => {
+                                if clock.timed_out.is_none() {
+                                    clock.timed_out = Some(timed_out(format!(
+                                        "EncodeWaitForEvent: the event did not reach {value} within {timeout} s"
+                                    )));
+                                }
                             }
-                            return progress;
+                            Err(e) => {
+                                run.wait = None;
+                                run.recording.discard();
+                                run.fail(failure::invalid(format!("EncodeWaitForEvent: {e}")), offset);
+                                run.cursor = run.steps.len();
+                                break;
+                            }
                         }
-                        Err(e) => {
-                            run.recording.discard();
-                            run.fail(failure::invalid(format!("EncodeWaitForEvent: {e}")), offset);
-                            run.cursor = run.steps.len();
-                            break;
+                    }
+                    if blocked {
+                        // The work before the wait runs now; the queue waits here (measured on Apple M4, macOS
+                        // 27.0.1: work encoded before a wait completes before the signal, and the command buffer and
+                        // every later one of its queue stay unscheduled until the event reaches the value), until the
+                        // wait times out.
+                        if run.recording.submit(&gpu) {
+                            run.gpu_start.get_or_insert(now);
                         }
+                        if let Some(f) = settle(&self.scopes, &self.calls) {
+                            add_job(&mut self.jobs, run, id, settled(f));
+                        }
+                        return progress;
+                    }
+                    let failed = run.wait.take().and_then(|c| c.timed_out);
+                    if let Some(f) = failed {
+                        // A wait the kernel times out stops its command buffer there: the kernel processes no further
+                        // command of it. The work before the wait was submitted when the wait was reached.
+                        if run.recording.submit(&gpu) {
+                            run.gpu_start.get_or_insert(now);
+                        }
+                        run.fail(f, offset);
+                        run.cursor = run.steps.len();
+                        break;
                     }
                 }
                 Step::Signal { event, value, offset } => {
@@ -887,6 +999,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
                 command_buffer: run.info.command_buffer,
                 kernel_start_time: run.kernel_start,
                 kernel_end_time: run.kernel_end,
+                failure: run.failure.as_ref().map_or_else(failure::ok, |(f, _)| f.clone()),
             }),
         );
         if self.lost.is_none() {

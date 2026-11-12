@@ -11,6 +11,8 @@
 
 #import <objc/runtime.h>
 
+#include <algorithm>
+
 #pragma clang diagnostic ignored "-Wprotocol"
 #pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
@@ -308,7 +310,11 @@ using namespace webmetal;
     wire::EncodeWaitForEventTimeout record;
     record.event = eventReference(self, _cmd, event);
     record.value = value;
-    record.timeout = timeout;
+    // The event encodes the kernel command's arguments: -[_MTLSharedEvent(IOGPUFamilySupport)
+    // _encodeIOGPUKernelWaitEventCommandArgs:value:timeout:] (0x1fcb36920) no more than 0xffff seconds,
+    // -[IOGPUMTLEvent _encodeIOGPUKernelWaitEventCommandArgs:value:timeout:] (0x1fcb3bbe8) the timeout as given.
+    static Class sharedEventClass = objc_getClass("_MTLSharedEvent");
+    record.timeout = [(id)event isKindOfClass:sharedEventClass] ? std::min<uint32_t>(timeout, 0xffff) : timeout;
     EmitCommandBufferRecord(self, _cmd, record);
 }
 

@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: aff9cf5c8aae43f24ddc8c0359e4fa418f16b944782e573c3938a2c2c3c2865c
+// Schema SHA-256: 867bcaeebe7b19d0454abf70c8473668275454692d2bf537bd55e12ccac3b093
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0xaf, 0xf9, 0xcf, 0x5c, 0x8a, 0xae, 0x43, 0xf2, 0x4d, 0xdc, 0x8c, 0x03, 0x59, 0xe4, 0xfa, 0x41, 0x8f, 0x16, 0xb9, 0x44, 0x78, 0x2e, 0x57, 0x3c, 0x39, 0x38, 0xa2, 0xc2, 0xc3, 0xc2, 0x86, 0x5c};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0x86, 0x7b, 0xca, 0xee, 0xbe, 0x7b, 0x19, 0xd0, 0x45, 0x4a, 0xbf, 0x70, 0xc8, 0x47, 0x36, 0x68, 0x27, 0x54, 0x54, 0x69, 0x2d, 0x2b, 0xf5, 0x37, 0xbd, 0x55, 0xe1, 0x2c, 0xca, 0xc3, 0xb0, 0x93};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -5235,7 +5235,9 @@ inline bool encode(Writer& w, const EncodeSignalEvent& v) {
     return w.finish(start);
 }
 
-// 0x100b stream record. Metal methods: -[MTLCommandBuffer encodeWaitForEvent:value:].
+// 0x100b stream record. Metal methods: -[MTLCommandBuffer encodeWaitForEvent:value:]. IOGPU encodes
+// encodeWaitForEvent:value: as encodeWaitForEvent:value:timeout: with a timeout of 5: the host applies
+// EncodeWaitForEventTimeout's rules with timeout 5.
 struct EncodeWaitForEvent {
     static constexpr uint16_t kOpcode = 0x100b;
     uint64_t event = 0;  // wire type `Event?`.
@@ -5283,7 +5285,13 @@ inline bool encode(Writer& w, const EncodeSignalEventAgentMask& v) {
     return w.finish(start);
 }
 
-// 0x100d stream record. Metal methods: -[MTLCommandBufferSPI encodeWaitForEvent:value:timeout:].
+// 0x100d stream record. Metal methods: -[MTLCommandBufferSPI encodeWaitForEvent:value:timeout:]. The kernel's wait
+// (IOGPUFamily, kIOGPUKernelCommandWaitSharedEvent and the MTLEvent waits): timeout is in seconds, counted from when
+// the host reaches the wait; the guest sends it as IOGPU encodes it (no more than 65535 for a shared event). For a
+// shared event the host first waits, for at most 5 seconds, until the event's signals that the queue's command
+// buffers encoded before the wait have reached the event. When a wait times out the command buffer stops at the wait
+// (nothing after it runs) and fails with the kernel status kIOGPUCommandBufferCallbackErrorTimeout: domain
+// IOGPUCommandQueueErrorDomain, code 2.
 struct EncodeWaitForEventTimeout {
     static constexpr uint16_t kOpcode = 0x100d;
     uint64_t event = 0;  // wire type `Event?`.
@@ -12126,15 +12134,19 @@ inline bool encode(Writer& w, const ParallelSetStencilStoreActionOptions& v) {
 }
 
 // 0x7001 event record. The command buffer's stream was accepted and all its work submitted to the host GPU queue.
-// kernel_start_time is when the host began processing the command buffer and kernel_end_time when it had submitted
-// all its work, the two times the kernel's scheduled notification carries (IOGPUFamily's IOGPUCommandQueue reads the
-// clock when it begins a submission and again once the command buffer is processed and submitted, and IOGPU passes
-// both to didScheduleWithStartTime:endTime:error:, which stores kernelStartTime and kernelEndTime).
+// failure is the command buffer's failure at that point (status 0 when none), as the kernel's scheduled notification
+// carries the status of processing the command buffer and IOGPU passes the error to
+// didScheduleWithStartTime:endTime:error:; CommandBufferCompleted carries it again. kernel_start_time is when the
+// host began processing the command buffer and kernel_end_time when it had submitted all its work, the two times the
+// kernel's scheduled notification carries (IOGPUFamily's IOGPUCommandQueue reads the clock when it begins a
+// submission and again once the command buffer is processed and submitted, and IOGPU passes both to
+// didScheduleWithStartTime:endTime:error:, which stores kernelStartTime and kernelEndTime).
 struct CommandBufferScheduled {
     static constexpr uint16_t kOpcode = 0x7001;
     uint64_t commandBuffer = 0;  // wire type `CommandBuffer`.
     uint64_t kernelStartTime = 0;  // wire type `u64`.
     uint64_t kernelEndTime = 0;  // wire type `u64`.
+    Failure failure{};  // wire type `Failure`.
 };
 
 inline bool decodeFields(Reader& r, CommandBufferScheduled& v) {
@@ -12142,6 +12154,7 @@ inline bool decodeFields(Reader& r, CommandBufferScheduled& v) {
     if (v.commandBuffer == 0) return r.fail(DecodeError::NullHandle);
     if (!r.u64(v.kernelStartTime)) return false;
     if (!r.u64(v.kernelEndTime)) return false;
+    if (!decodeFields(r, v.failure)) return false;
     return true;
 }
 

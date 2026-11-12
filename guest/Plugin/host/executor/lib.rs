@@ -8,7 +8,8 @@
 //! requires, and IOSurfaces are this Mac's own, found by their IDs.
 //!
 //! The executor and its WebGPU device belong to one thread, started by [`webmetal_shim_executor_start`]. Requests from
-//! any thread queue to it and wait for their replies. Between requests the thread keeps the executor's GPU work moving.
+//! any thread queue to it and wait for their replies. Between requests the thread keeps the executor's GPU work moving,
+//! and wakes it when a wait it is blocked on times out ([`Executor::next_deadline`]).
 //!
 //! The executor serves the memory module's requests and coherence, the state service's sampler states, the pipeline
 //! service's functions, pipelines and binary archives, the render path's depth-stencil states, and records render,
@@ -28,19 +29,19 @@ use std::sync::{Mutex, OnceLock};
 use std::task::Context;
 use std::time::Duration;
 
+use webmetal_host::blit::BlitService;
+use webmetal_host::compute::ComputeService;
 use webmetal_host::embed::{
     Embedder, GuestMemoryError, GuestMemoryErrorKind, MonotonicNanos, PresentError, PresentedFrame, SharedEventError,
     SharedEventId, SurfaceDesc, SurfaceError, SurfacePlane, TaskId,
 };
 use webmetal_host::exec::{Config, ControlService, Executor, Services, fetch_events_reply};
 use webmetal_host::format::webgpu::{Feature, HostFeatures};
+use webmetal_host::gpu::ExceptionKind;
 use webmetal_host::gpu::idl::{DeviceDescriptor, FeatureName, RequestAdapterOptions};
 use webmetal_host::gpu::native::{Native, NativeGpu};
 use webmetal_host::gpu::scope::{Granularity, Policy};
 use webmetal_host::gpu::{Adapter as _, Device as _, Gpu as _, negotiate};
-use webmetal_host::blit::BlitService;
-use webmetal_host::compute::ComputeService;
-use webmetal_host::gpu::ExceptionKind;
 use webmetal_host::mem::service::MemoryServices;
 use webmetal_host::pipeline::{self, PipelineServices};
 use webmetal_host::render::RenderServices;
@@ -473,6 +474,12 @@ fn run(gpu: NativeGpu, exec: Exec, embedder: Rc<InProcess>, jobs: Receiver<Job>)
         let job = if busy {
             gpu.process_events();
             match jobs.recv_timeout(Duration::from_millis(1)) {
+                Ok(job) => job,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        } else if let Some(deadline) = exec.next_deadline() {
+            match jobs.recv_timeout(Duration::from_nanos(deadline.0.saturating_sub(embedder.now().0))) {
                 Ok(job) => job,
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return,

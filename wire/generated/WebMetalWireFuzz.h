@@ -4241,12 +4241,14 @@ inline void random(Gen& g, CommandBufferScheduled& v) {
     v.commandBuffer = g.handle();
     v.kernelStartTime = g.u64();
     v.kernelEndTime = g.u64();
+    random(g, v.failure);
 }
 
 inline bool same(const CommandBufferScheduled& a, const CommandBufferScheduled& b) {
     return a.commandBuffer == b.commandBuffer &&
            a.kernelStartTime == b.kernelStartTime &&
-           a.kernelEndTime == b.kernelEndTime;
+           a.kernelEndTime == b.kernelEndTime &&
+           same(a.failure, b.failure);
 }
 
 inline void random(Gen& g, CommandBufferCompleted& v) {

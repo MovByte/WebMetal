@@ -31,7 +31,9 @@
 //! # Events
 //!
 //! A wait (`encodeWaitForEvent:value:`) holds its queue until the event's value is at least the value; the work before
-//! it is submitted first. A signal splits the submission: an `MTLEvent`'s value (kept here, starting at 0, never
+//! it is submitted first. As the kernel's, the wait times out (after 5 seconds for `encodeWaitForEvent:value:`, after
+//! its own timeout for `encodeWaitForEvent:value:timeout:`): its command buffer then stops there and fails with the
+//! kernel's timeout status, and the queue goes on. A signal splits the submission: an `MTLEvent`'s value (kept here, starting at 0, never
 //! decreasing) is set as soon as the work before the signal is on the queue, since only GPU work submitted later can
 //! observe it; an `MTLSharedEvent` (a kernel object reached through the embedder) is signalled once that work has
 //! completed and been written back, because the CPU observes it. Each rule is measured on real Metal; the comments at
@@ -64,7 +66,7 @@ use std::task::{Context, Poll};
 
 use webmetal_wire::{DecodeError, EncodeError, Event, Failure, FetchEventsReply, Handle, Reply};
 
-use crate::embed::{Embedder, SharedEventId, TaskId};
+use crate::embed::{Embedder, MonotonicNanos, SharedEventId, TaskId};
 use crate::gpu::scope::Policy;
 use crate::gpu::{Api, GpuFuture};
 use runtime::{Core, Pending};
@@ -158,8 +160,9 @@ impl<A: Api, E: Embedder + 'static> Executor<A, E> {
     }
 
     /// Make all the progress that is possible without waiting: collect finished GPU work, signal events, post
-    /// completions and replay unblocked command buffers. Returns whether GPU work or write-backs are still
-    /// outstanding (command buffers waiting on an event do not count: only a signal moves them).
+    /// completions, replay unblocked command buffers and fail those whose wait has timed out. Returns whether GPU work
+    /// or write-backs are still outstanding (command buffers waiting on an event do not count: a signal moves them, or
+    /// their timeout, which [`Executor::next_deadline`] names).
     pub fn pump(&self, cx: &mut Context<'_>) -> bool {
         loop {
             let mut changed = false;
@@ -195,6 +198,12 @@ impl<A: Api, E: Embedder + 'static> Executor<A, E> {
                 return core.has_jobs();
             }
         }
+    }
+
+    /// When the earliest wait a command buffer is blocked on times out, on the embedder's clock: the embedder calls
+    /// [`Executor::pump`] again at or after that time even if nothing else happens.
+    pub fn next_deadline(&self) -> Option<MonotonicNanos> {
+        self.core.borrow().next_deadline().map(MonotonicNanos)
     }
 
     /// Resolves once nothing is outstanding but command buffers waiting on events.

@@ -8,6 +8,10 @@
 //! - WebGPU device loss: status 2 with refusal `device-removed` (`tables/refusals.md`). iOS defines no command-buffer
 //!   error code for a lost GPU (`tables/limits.toml`, question `6.1-device-removed-code`), so none is chosen until one
 //!   is measured.
+//! - A command buffer the kernel would fail with one of its command-buffer statuses (`kIOGPUCommandBufferCallbackError*`,
+//!   such as a wait that times out): `IOGPUCommandQueueErrorDomain` with the status as the code ([`kernel`]). The
+//!   guest makes of it the `NSError` IOGPU makes (`-[NSError(IOGPUMetalErrors) initWithIOGPUError:]`), in
+//!   `MTLCommandBufferErrorDomain` with this one as its underlying error.
 //! - A `GPUOutOfMemoryError` while a command buffer executes: `MTLCommandBufferErrorDomain`,
 //!   `MTLCommandBufferErrorOutOfMemory` (8); `MTLCommandBuffer.h`: "Insufficient memory was available to execute this
 //!   command buffer."
@@ -30,6 +34,17 @@ use crate::gpu::{DeviceLostInfo, GpuError};
 /// `MTLCommandBufferErrorDomain`: the value of the exported `NSErrorDomain` constant (read on macOS 27.0.1, where the
 /// constant's string is its own name).
 pub const COMMAND_BUFFER_ERROR_DOMAIN: &str = "MTLCommandBufferErrorDomain";
+
+/// `IOGPUCommandQueueErrorDomain`: the domain IOGPU gives the kernel's command-buffer status (21H461's IOGPU,
+/// `-[NSError(IOGPUMetalErrors) initWithIOGPUError:]`).
+pub const IOGPU_COMMAND_QUEUE_ERROR_DOMAIN: &str = "IOGPUCommandQueueErrorDomain";
+
+/// The kernel's command-buffer statuses (IOGPUFamily's `kIOGPUCommandBufferCallbackError*`, as IOGPU's error tables
+/// name them).
+pub mod kernel_status {
+    /// `kIOGPUCommandBufferCallbackErrorTimeout`.
+    pub const TIMEOUT: i64 = 2;
+}
 
 /// `MTLCommandBufferStatus` (iPhoneOS SDK, `MTLCommandBuffer.h`).
 pub mod command_buffer_status {
@@ -67,6 +82,11 @@ pub fn ok() -> Failure {
 /// An `NSError` Metal returns.
 pub fn metal(domain: &str, code: i64, message: impl Into<String>) -> Failure {
     Failure { status: status::METAL_ERROR, domain: Some(domain.to_string()), code, message: message.into() }
+}
+
+/// A command buffer the kernel fails with its command-buffer status `status`.
+pub fn kernel(status: i64, message: impl Into<String>) -> Failure {
+    metal(IOGPU_COMMAND_QUEUE_ERROR_DOMAIN, status, message)
 }
 
 /// Not implemented by the host; the guest reports it through the not-implemented channel.

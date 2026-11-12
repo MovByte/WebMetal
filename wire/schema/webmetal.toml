@@ -292,7 +292,9 @@ name = "StructMemberReflection"
 fields = ["name: str", "offset: u64", "data_type: u64 (MTLDataType)", "type: u32", "argument_index: u64"]
 
 # Failure detail carried by replies and command-buffer completion. status: 0 Ok, 1 MetalError (domain and code are the
-# NSError Metal itself returns for this case), 2 Unimplemented (the host does not implement this; the guest reports it
+# NSError Metal itself returns for this case; for a command buffer, domain IOGPUCommandQueueErrorDomain carries the
+# kernel's command-buffer status (kIOGPUCommandBufferCallbackError*) as the code, which the guest turns into the NSError
+# IOGPU makes of it, -[NSError(IOGPUMetalErrors) initWithIOGPUError:]), 2 Unimplemented (the host does not implement this; the guest reports it
 # through the not-implemented channel), 3 HostUnsupported (the host cannot honor a capability the device advertises;
 # reported the same way, naming the limit or feature), 4 Invalid (malformed request, unknown handle, protocol violation).
 [[struct]]
@@ -1472,6 +1474,7 @@ name = "EncodeWaitForEvent"
 channel = "stream"
 methods = ["MTLCommandBuffer encodeWaitForEvent:value:"]
 args = ["event: Event?", "value: u64"]
+doc = "IOGPU encodes encodeWaitForEvent:value: as encodeWaitForEvent:value:timeout: with a timeout of 5: the host applies EncodeWaitForEventTimeout's rules with timeout 5."
 
 [[op]]
 code = 0x100c
@@ -1486,6 +1489,7 @@ name = "EncodeWaitForEventTimeout"
 channel = "stream"
 methods = ["MTLCommandBufferSPI encodeWaitForEvent:value:timeout:"]
 args = ["event: Event?", "value: u64", "timeout: u32"]
+doc = "The kernel's wait (IOGPUFamily, kIOGPUKernelCommandWaitSharedEvent and the MTLEvent waits): timeout is in seconds, counted from when the host reaches the wait; the guest sends it as IOGPU encodes it (no more than 65535 for a shared event). For a shared event the host first waits, for at most 5 seconds, until the event's signals that the queue's command buffers encoded before the wait have reached the event. When a wait times out the command buffer stops at the wait (nothing after it runs) and fails with the kernel status kIOGPUCommandBufferCallbackErrorTimeout: domain IOGPUCommandQueueErrorDomain, code 2."
 
 [[op]]
 code = 0x100e
@@ -3330,8 +3334,8 @@ args = ["store_action_options: u64 (MTLStoreActionOptions)"]
 code = 0x7001
 name = "CommandBufferScheduled"
 channel = "event"
-args = ["command_buffer: CommandBuffer", "kernel_start_time: u64", "kernel_end_time: u64"]
-doc = "The command buffer's stream was accepted and all its work submitted to the host GPU queue. kernel_start_time is when the host began processing the command buffer and kernel_end_time when it had submitted all its work, the two times the kernel's scheduled notification carries (IOGPUFamily's IOGPUCommandQueue reads the clock when it begins a submission and again once the command buffer is processed and submitted, and IOGPU passes both to didScheduleWithStartTime:endTime:error:, which stores kernelStartTime and kernelEndTime)."
+args = ["command_buffer: CommandBuffer", "kernel_start_time: u64", "kernel_end_time: u64", "failure: Failure"]
+doc = "The command buffer's stream was accepted and all its work submitted to the host GPU queue. failure is the command buffer's failure at that point (status 0 when none), as the kernel's scheduled notification carries the status of processing the command buffer and IOGPU passes the error to didScheduleWithStartTime:endTime:error:; CommandBufferCompleted carries it again. kernel_start_time is when the host began processing the command buffer and kernel_end_time when it had submitted all its work, the two times the kernel's scheduled notification carries (IOGPUFamily's IOGPUCommandQueue reads the clock when it begins a submission and again once the command buffer is processed and submitted, and IOGPU passes both to didScheduleWithStartTime:endTime:error:, which stores kernelStartTime and kernelEndTime)."
 
 [[op]]
 code = 0x7002

@@ -120,8 +120,8 @@ template <class Record> void EmitEncoderRecord(id self, SEL cmd, EncoderState &e
         WMLoudMethod(self, cmd, "the arguments break a rule of the wire format");
 }
 
-// The NSError a failed command buffer completes with, from the host's failure. Statuses 2 to 4 are reported through
-// the not-implemented channel first.
-NSError *CommandBufferError(const wire::Failure &failure, const char *what);
+// The NSError a failed command buffer completes with, from the host's failure. With `report`, statuses 2 to 4 are
+// reported through the not-implemented channel first.
+NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool report = true);
 
 }  // namespace webmetal

@@ -99,11 +99,15 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
                 WMReport("CommandBufferScheduled", "the host scheduled a command buffer this queue has not committed");
                 continue;
             }
-            // The kernel's scheduled notification carries the start and the end of its submission, and IOGPU passes
-            // both.
+            // The kernel's scheduled notification carries the start and the end of its submission and the status of
+            // processing the command buffer, and IOGPU passes the times and the error it makes of the status. The
+            // failure is reported once, with the completion that carries it again.
+            NSError *error = scheduled->failure.status == 0
+                                 ? nil
+                                 : webmetal::CommandBufferError(scheduled->failure, "-[MTLCommandBuffer commit]", false);
             [buffer didScheduleWithStartTime:webmetal::MachTicksFromNanoseconds(scheduled->kernelStartTime)
                                      endTime:webmetal::MachTicksFromNanoseconds(scheduled->kernelEndTime)
-                                       error:nil];
+                                       error:error];
         } else if (auto *completed = std::get_if<webmetal::wire::CommandBufferCompleted>(&event)) {
             WebMetalCommandBuffer *buffer = nil;
             {
@@ -155,11 +159,60 @@ bool watchQueue(WebMetalCommandQueue *queue, dispatch_queue_t on)
     return true;
 }
 
+// The error IOGPU makes of the kernel's command-buffer status: -[NSError(IOGPUMetalErrors) initWithIOGPUError:]
+// (0x1fcb3661c). Statuses up to 18 index IOGPU's tables of MTLCommandBufferError codes (0x1fcb48638), status names
+// (0x229637740) and descriptions (0x2296377d8); any other status is "Internal Error" with code 1. The description is
+// "<description> (<status as %08x>:<name>)", and the underlying error is the status in IOGPUCommandQueueErrorDomain.
+NSError *iogpuError(int64_t status)
+{
+    struct Entry {
+        NSInteger code;
+        const char *name;
+        const char *description;
+    };
+    static const Entry kEntries[] = {
+        {0, "kIOReturnSuccess", "No Error"},
+        {1, "Internal Error", "Internal Error"},
+        {2, "kIOGPUCommandBufferCallbackErrorTimeout", "Caused GPU Timeout Error"},
+        {2, "kIOGPUCommandBufferCallbackErrorHang", "Caused GPU Hang Error"},
+        {4, "kIOGPUCommandBufferCallbackErrorSubmissionsIgnored", "Ignored (for causing prior/excessive GPU errors)"},
+        {1, "kIOGPUCommandBufferCallbackErrorInnocentVictim", "Discarded (victim of GPU error/recovery)"},
+        {7, "kIOGPUCommandBufferCallbackErrorBackgroundExecutionNotPermitted",
+         "Insufficient Permission (to submit GPU work from background)"},
+        {7, "kIOGPUCommandBufferCallbackErrorNotPermitted", "Insufficient Permission"},
+        {8, "kIOGPUCommandBufferCallbackErrorOutOfMemory", "Insufficient Memory"},
+        {9, "kIOGPUCommandBufferCallbackErrorInvalidResource", "Invalid Resource"},
+        {1, "Internal Error", "Internal Error"},
+        {3, "kIOGPUCommandBufferCallbackErrorPageFault", "Caused GPU Address Fault Error"},
+        {10, "kIOGPUCommandBufferCallbackErrorExceededHardwareLimit",
+         "Too many unique viewports, scissor rectangles or depth-bias values to support memoryless render pass "
+         "attachments."},
+        {10, "kIOGPUCommandBufferCallbackErrorOutOfMemoryForParameterBuffer",
+         "Too much geometry to support memoryless render pass attachments."},
+        {1, "Internal Error", "Internal Error"},
+        {1, "kIOGPUCommandBufferCallbackErrorDeviceRemoved", "Device Removed"},
+        {16, "kIOGPUCommandBufferCallbackErrorProtectionViolation", "Protection Violation"},
+        {12, "kIOGPUCommandBufferCallbackErrorStackOverflow",
+         "GPU Command Buffer execution stopped due to Stack Overflow Exception. Please check the "
+         "[MTLComputePipelineDescriptor maxCallStackDepth] setting."},
+        {17, "kIOGPUCommandBufferCallbackErrorConditionalEventAbort",
+         "GPU Command Buffer execution stopped due to conditional event abort request."},
+    };
+    static const Entry kOther = {1, "Internal Error", "Internal Error"};
+    const Entry &entry = (uint64_t)status < sizeof kEntries / sizeof kEntries[0] ? kEntries[status] : kOther;
+    NSString *description =
+        [NSString stringWithFormat:@"%s (%08x:%s)", entry.description, (unsigned)status, entry.name];
+    NSError *underlying = [NSError errorWithDomain:@"IOGPUCommandQueueErrorDomain" code:status userInfo:nil];
+    return [[NSError alloc] initWithDomain:MTLCommandBufferErrorDomain
+                                      code:entry.code
+                                  userInfo:@{NSLocalizedDescriptionKey : description, NSUnderlyingErrorKey : underlying}];
+}
+
 }  // namespace
 
 namespace webmetal {
 
-NSError *CommandBufferError(const wire::Failure &failure, const char *what)
+NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool report)
 {
     NSString *message = [[NSString alloc] initWithBytes:failure.message.data()
                                                  length:failure.message.size()
@@ -168,13 +221,17 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what)
         NSString *domain = [[NSString alloc] initWithBytes:failure.domain->data()
                                                     length:failure.domain->size()
                                                   encoding:NSUTF8StringEncoding];
+        // The kernel's command-buffer status (wire schema, Failure): the error IOGPU makes of it.
+        if ([domain isEqualToString:@"IOGPUCommandQueueErrorDomain"])
+            return iogpuError(failure.code);
         return [NSError errorWithDomain:domain
                                    code:(NSInteger)failure.code
                                userInfo:@{NSLocalizedDescriptionKey : message ?: @""}];
     }
     // Statuses 2 (not implemented by the host), 3 (a capability the host cannot honor) and 4 (a protocol violation)
     // are no Metal results: they are reported, and the command buffer completes with an error that says so.
-    WMReport(what, failure.message.c_str());
+    if (report)
+        WMReport(what, failure.message.c_str());
     return [NSError errorWithDomain:@"WebMetalErrorDomain"
                                code:(NSInteger)failure.status
                            userInfo:@{NSLocalizedDescriptionKey : message ?: @""}];

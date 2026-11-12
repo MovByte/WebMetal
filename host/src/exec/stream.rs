@@ -59,10 +59,11 @@ pub struct Segment {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
     Encoder(Segment),
-    /// `encodeWaitForEvent:value:`.
+    /// `encodeWaitForEvent:value:timeout:` (`encodeWaitForEvent:value:` with [`WAIT_TIMEOUT`]); `timeout` in seconds.
     Wait {
         event: Handle,
         value: u64,
+        timeout: u32,
         offset: u64,
     },
     /// `encodeSignalEvent:value:`.
@@ -78,6 +79,10 @@ pub enum Step {
     /// `-[MTLCommandBuffer popDebugGroup]`.
     PopDebugGroup,
 }
+
+/// The timeout of `encodeWaitForEvent:value:`, in seconds: 21H461's `-[IOGPUMetalCommandBuffer encodeWaitForEvent:value:]`
+/// (0x1fcb328e0) sends `encodeWaitForEvent:value:timeout:` with 5.
+pub const WAIT_TIMEOUT: u32 = 5;
 
 /// A stream that obeys the protocol.
 #[derive(Clone, Debug, Default)]
@@ -329,7 +334,12 @@ fn command_buffer_record(record: &Command, offset: u64, out: &mut Plan) -> Resul
             out.steps.push(Step::Signal { event: event(r.event, "EncodeSignalEvent")?, value: r.value, offset });
         }
         Command::EncodeWaitForEvent(r) => {
-            out.steps.push(Step::Wait { event: event(r.event, "EncodeWaitForEvent")?, value: r.value, offset });
+            let event = event(r.event, "EncodeWaitForEvent")?;
+            out.steps.push(Step::Wait { event, value: r.value, timeout: WAIT_TIMEOUT, offset });
+        }
+        Command::EncodeWaitForEventTimeout(r) => {
+            let event = event(r.event, "EncodeWaitForEventTimeout")?;
+            out.steps.push(Step::Wait { event, value: r.value, timeout: r.timeout, offset });
         }
         Command::CommandBufferPushDebugGroup(r) => {
             // A nil string is an empty group name; the name is not observable by Metal programs.
@@ -350,14 +360,10 @@ fn command_buffer_record(record: &Command, offset: u64, out: &mut Plan) -> Resul
                 ));
             }
         }
-        // MTLCommandBufferSPI records whose behavior is not established: the agent mask of a signal, the timeout of a
-        // wait, a signal at scheduling time, cache hints and resource groups.
+        // MTLCommandBufferSPI records whose behavior is not established: the agent mask of a signal, a signal at
+        // scheduling time, cache hints and resource groups.
         Command::EncodeSignalEventAgentMask(r) => {
             event(r.event, "EncodeSignalEventAgentMask")?;
-            note_unimplemented(out, offset, record);
-        }
-        Command::EncodeWaitForEventTimeout(r) => {
-            event(r.event, "EncodeWaitForEventTimeout")?;
             note_unimplemented(out, offset, record);
         }
         Command::EncodeSignalEventScheduled(r) => {
@@ -454,7 +460,7 @@ mod tests {
             p.steps,
             vec![
                 Step::PushDebugGroup { label: "outer".into() },
-                Step::Wait { event: h(2), value: 1, offset: s[1].0 as u64 },
+                Step::Wait { event: h(2), value: 1, timeout: WAIT_TIMEOUT, offset: s[1].0 as u64 },
                 // The fence records are not part of the segment.
                 Step::Encoder(Segment { kind: EncoderKind::Blit, encoder: h(10), records: vec![2, 4, 6] }),
                 Step::Signal { event: h(2), value: 2, offset: s[7].0 as u64 },
@@ -466,7 +472,8 @@ mod tests {
     #[test]
     fn protection_options_other_than_zero_are_not_implemented() {
         let t = table(&[(1, Kind::Buffer)]);
-        let options = |options| Command::CommandBufferSetProtectionOptions(CommandBufferSetProtectionOptions { options });
+        let options =
+            |options| Command::CommandBufferSetProtectionOptions(CommandBufferSetProtectionOptions { options });
         // Setting 0 again is the kernel's state at the start of every command buffer.
         let s = stream(vec![options(0), Command::BeginBlit(BeginBlit { encoder: h(10) }), fill(1), end()]);
         let p = plan(&s, &t, &[h(1)], &all).unwrap();
