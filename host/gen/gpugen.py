@@ -1062,7 +1062,9 @@ def emit_web(model, types, spec_ver):
     out.append("//! is left out (not present); every other member is set, defaulted ones to their value, which WebIDL treats")
     out.append("//! the same as a missing member that takes the default.")
     out.append("")
-    out.append("#![allow(clippy::needless_borrow, clippy::redundant_closure, unused_variables)]")
+    out.append("// Every dictionary has a conversion; the ones that are only inherited from, or only serve canvas presentation, are")
+    out.append("// not called by the binding.")
+    out.append("#![allow(dead_code, clippy::needless_borrow, clippy::redundant_closure)]")
     out.append("")
     out.append("use js_sys::{Array, Object};")
     out.append("use wasm_bindgen::JsValue;")
@@ -1091,6 +1093,12 @@ def emit_web(model, types, spec_ver):
         rn = rust_name(name) + ("<'_, Web>" if generic else "")
         out.append("/// `%s` as a JavaScript object." % name)
         out.append("pub(crate) fn %s(d: &%s) -> Object {" % (dict_fn(name), rn))
+        if not model.dict_members(name):
+            out.append("    let _ = d;")
+            out.append("    Object::new()")
+            out.append("}")
+            out.append("")
+            continue
         out.append("    let o = Object::new();")
         for mem in model.dict_members(name):
             f = snake(mem["name"])
@@ -1099,7 +1107,10 @@ def emit_web(model, types, spec_ver):
                 out.append('        set(&o, "%s", &%s);' % (mem["name"], js_value("v", mem["type"], types, model, 1)))
                 out.append("    }")
             else:
-                out.append('    set(&o, "%s", &%s);' % (mem["name"], js_value("(&d.%s)" % f, mem["type"], types, model, 1)))
+                out.append("    {")
+                out.append("        let v = &d.%s;" % f)
+                out.append('        set(&o, "%s", &%s);' % (mem["name"], js_value("v", mem["type"], types, model, 1)))
+                out.append("    }")
         out.append("    o")
         out.append("}")
         out.append("")

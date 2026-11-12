@@ -6,7 +6,9 @@
 //! is left out (not present); every other member is set, defaulted ones to their value, which WebIDL treats
 //! the same as a missing member that takes the default.
 
-#![allow(clippy::needless_borrow, clippy::redundant_closure, unused_variables)]
+// Every dictionary has a conversion; the ones that are only inherited from, or only serve canvas presentation, are
+// not called by the binding.
+#![allow(dead_code, clippy::needless_borrow, clippy::redundant_closure)]
 
 use js_sys::{Array, Object};
 use wasm_bindgen::JsValue;
@@ -84,53 +86,113 @@ pub(crate) fn union_texture_or_view(u: &TextureOrView<'_, Web>) -> JsValue {
 /// `GPUObjectDescriptorBase` as a JavaScript object.
 pub(crate) fn dict_object_descriptor_base(d: &ObjectDescriptorBase) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
     o
 }
 
 /// `GPURequestAdapterOptions` as a JavaScript object.
 pub(crate) fn dict_request_adapter_options(d: &RequestAdapterOptions) -> Object {
     let o = Object::new();
-    set(&o, "featureLevel", &JsValue::from_str((&d.feature_level)));
+    {
+        let v = &d.feature_level;
+        set(&o, "featureLevel", &JsValue::from_str(v));
+    }
     if let Some(v) = &d.power_preference {
         set(&o, "powerPreference", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "forceFallbackAdapter", &JsValue::from_bool(*(&d.force_fallback_adapter)));
-    set(&o, "xrCompatible", &JsValue::from_bool(*(&d.xr_compatible)));
+    {
+        let v = &d.force_fallback_adapter;
+        set(&o, "forceFallbackAdapter", &JsValue::from_bool(*v));
+    }
+    {
+        let v = &d.xr_compatible;
+        set(&o, "xrCompatible", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUDeviceDescriptor` as a JavaScript object.
 pub(crate) fn dict_device_descriptor(d: &DeviceDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "requiredFeatures", &{ let arr = Array::new(); for v1 in (&d.required_features).iter() { arr.push(&JsValue::from_str(v1.as_str())); } JsValue::from(arr) });
-    set(&o, "requiredLimits", &{ let rec = Object::new(); for (k, v1) in (&d.required_limits).iter() { set(&rec, k, &match v1 { Some(v1) => JsValue::from_f64(v1.get() as f64), None => JsValue::UNDEFINED }); } JsValue::from(rec) });
-    set(&o, "defaultQueue", &JsValue::from(dict_queue_descriptor((&d.default_queue))));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.required_features;
+        set(&o, "requiredFeatures", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&JsValue::from_str(v1.as_str())); } JsValue::from(arr) });
+    }
+    {
+        let v = &d.required_limits;
+        set(&o, "requiredLimits", &{ let rec = Object::new(); for (k, v1) in v.iter() { set(&rec, k, &match v1 { Some(v1) => JsValue::from_f64(v1.get() as f64), None => JsValue::UNDEFINED }); } JsValue::from(rec) });
+    }
+    {
+        let v = &d.default_queue;
+        set(&o, "defaultQueue", &JsValue::from(dict_queue_descriptor(v)));
+    }
     o
 }
 
 /// `GPUBufferDescriptor` as a JavaScript object.
 pub(crate) fn dict_buffer_descriptor(d: &BufferDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "size", &JsValue::from_f64((&d.size).get() as f64));
-    set(&o, "usage", &JsValue::from_f64(f64::from(*(&d.usage))));
-    set(&o, "mappedAtCreation", &JsValue::from_bool(*(&d.mapped_at_creation)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.size;
+        set(&o, "size", &JsValue::from_f64(v.get() as f64));
+    }
+    {
+        let v = &d.usage;
+        set(&o, "usage", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.mapped_at_creation;
+        set(&o, "mappedAtCreation", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUTextureDescriptor` as a JavaScript object.
 pub(crate) fn dict_texture_descriptor(d: &TextureDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "size", &union_extent_3d((&d.size)));
-    set(&o, "mipLevelCount", &JsValue::from_f64(f64::from(*(&d.mip_level_count))));
-    set(&o, "sampleCount", &JsValue::from_f64(f64::from(*(&d.sample_count))));
-    set(&o, "dimension", &JsValue::from_str((&d.dimension).as_str()));
-    set(&o, "format", &JsValue::from_str((&d.format).as_str()));
-    set(&o, "usage", &JsValue::from_f64(f64::from(*(&d.usage))));
-    set(&o, "viewFormats", &{ let arr = Array::new(); for v1 in (&d.view_formats).iter() { arr.push(&JsValue::from_str(v1.as_str())); } JsValue::from(arr) });
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.size;
+        set(&o, "size", &union_extent_3d(v));
+    }
+    {
+        let v = &d.mip_level_count;
+        set(&o, "mipLevelCount", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.sample_count;
+        set(&o, "sampleCount", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.dimension;
+        set(&o, "dimension", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.format;
+        set(&o, "format", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.usage;
+        set(&o, "usage", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.view_formats;
+        set(&o, "viewFormats", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&JsValue::from_str(v1.as_str())); } JsValue::from(arr) });
+    }
     if let Some(v) = &d.texture_binding_view_dimension {
         set(&o, "textureBindingViewDimension", &JsValue::from_str(v.as_str()));
     }
@@ -140,68 +202,137 @@ pub(crate) fn dict_texture_descriptor(d: &TextureDescriptor) -> Object {
 /// `GPUTextureViewDescriptor` as a JavaScript object.
 pub(crate) fn dict_texture_view_descriptor(d: &TextureViewDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
     if let Some(v) = &d.format {
         set(&o, "format", &JsValue::from_str(v.as_str()));
     }
     if let Some(v) = &d.dimension {
         set(&o, "dimension", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "usage", &JsValue::from_f64(f64::from(*(&d.usage))));
-    set(&o, "aspect", &JsValue::from_str((&d.aspect).as_str()));
-    set(&o, "baseMipLevel", &JsValue::from_f64(f64::from(*(&d.base_mip_level))));
+    {
+        let v = &d.usage;
+        set(&o, "usage", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.aspect;
+        set(&o, "aspect", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.base_mip_level;
+        set(&o, "baseMipLevel", &JsValue::from_f64(f64::from(*v)));
+    }
     if let Some(v) = &d.mip_level_count {
         set(&o, "mipLevelCount", &JsValue::from_f64(f64::from(*v)));
     }
-    set(&o, "baseArrayLayer", &JsValue::from_f64(f64::from(*(&d.base_array_layer))));
+    {
+        let v = &d.base_array_layer;
+        set(&o, "baseArrayLayer", &JsValue::from_f64(f64::from(*v)));
+    }
     if let Some(v) = &d.array_layer_count {
         set(&o, "arrayLayerCount", &JsValue::from_f64(f64::from(*v)));
     }
-    set(&o, "swizzle", &JsValue::from_str((&d.swizzle)));
+    {
+        let v = &d.swizzle;
+        set(&o, "swizzle", &JsValue::from_str(v));
+    }
     o
 }
 
 /// `GPUExternalTextureDescriptor` as a JavaScript object.
 pub(crate) fn dict_external_texture_descriptor(d: &ExternalTextureDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "source", &JsValue::from((&d.source).js()));
-    set(&o, "colorSpace", &JsValue::from_str((&d.color_space).as_str()));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.source;
+        set(&o, "source", &JsValue::from(v.js()));
+    }
+    {
+        let v = &d.color_space;
+        set(&o, "colorSpace", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUSamplerDescriptor` as a JavaScript object.
 pub(crate) fn dict_sampler_descriptor(d: &SamplerDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "addressModeU", &JsValue::from_str((&d.address_mode_u).as_str()));
-    set(&o, "addressModeV", &JsValue::from_str((&d.address_mode_v).as_str()));
-    set(&o, "addressModeW", &JsValue::from_str((&d.address_mode_w).as_str()));
-    set(&o, "magFilter", &JsValue::from_str((&d.mag_filter).as_str()));
-    set(&o, "minFilter", &JsValue::from_str((&d.min_filter).as_str()));
-    set(&o, "mipmapFilter", &JsValue::from_str((&d.mipmap_filter).as_str()));
-    set(&o, "lodMinClamp", &JsValue::from_f64(f64::from((&d.lod_min_clamp).get())));
-    set(&o, "lodMaxClamp", &JsValue::from_f64(f64::from((&d.lod_max_clamp).get())));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.address_mode_u;
+        set(&o, "addressModeU", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.address_mode_v;
+        set(&o, "addressModeV", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.address_mode_w;
+        set(&o, "addressModeW", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.mag_filter;
+        set(&o, "magFilter", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.min_filter;
+        set(&o, "minFilter", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.mipmap_filter;
+        set(&o, "mipmapFilter", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.lod_min_clamp;
+        set(&o, "lodMinClamp", &JsValue::from_f64(f64::from(v.get())));
+    }
+    {
+        let v = &d.lod_max_clamp;
+        set(&o, "lodMaxClamp", &JsValue::from_f64(f64::from(v.get())));
+    }
     if let Some(v) = &d.compare {
         set(&o, "compare", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "maxAnisotropy", &JsValue::from_f64(f64::from(*(&d.max_anisotropy))));
+    {
+        let v = &d.max_anisotropy;
+        set(&o, "maxAnisotropy", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPUBindGroupLayoutDescriptor` as a JavaScript object.
 pub(crate) fn dict_bind_group_layout_descriptor(d: &BindGroupLayoutDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "entries", &{ let arr = Array::new(); for v1 in (&d.entries).iter() { arr.push(&JsValue::from(dict_bind_group_layout_entry(v1))); } JsValue::from(arr) });
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.entries;
+        set(&o, "entries", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&JsValue::from(dict_bind_group_layout_entry(v1))); } JsValue::from(arr) });
+    }
     o
 }
 
 /// `GPUBindGroupLayoutEntry` as a JavaScript object.
 pub(crate) fn dict_bind_group_layout_entry(d: &BindGroupLayoutEntry) -> Object {
     let o = Object::new();
-    set(&o, "binding", &JsValue::from_f64(f64::from(*(&d.binding))));
-    set(&o, "visibility", &JsValue::from_f64(f64::from(*(&d.visibility))));
+    {
+        let v = &d.binding;
+        set(&o, "binding", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.visibility;
+        set(&o, "visibility", &JsValue::from_f64(f64::from(*v)));
+    }
     if let Some(v) = &d.buffer {
         set(&o, "buffer", &JsValue::from(dict_buffer_binding_layout(v)));
     }
@@ -223,65 +354,116 @@ pub(crate) fn dict_bind_group_layout_entry(d: &BindGroupLayoutEntry) -> Object {
 /// `GPUBufferBindingLayout` as a JavaScript object.
 pub(crate) fn dict_buffer_binding_layout(d: &BufferBindingLayout) -> Object {
     let o = Object::new();
-    set(&o, "type", &JsValue::from_str((&d.r#type).as_str()));
-    set(&o, "hasDynamicOffset", &JsValue::from_bool(*(&d.has_dynamic_offset)));
-    set(&o, "minBindingSize", &JsValue::from_f64((&d.min_binding_size).get() as f64));
+    {
+        let v = &d.r#type;
+        set(&o, "type", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.has_dynamic_offset;
+        set(&o, "hasDynamicOffset", &JsValue::from_bool(*v));
+    }
+    {
+        let v = &d.min_binding_size;
+        set(&o, "minBindingSize", &JsValue::from_f64(v.get() as f64));
+    }
     o
 }
 
 /// `GPUSamplerBindingLayout` as a JavaScript object.
 pub(crate) fn dict_sampler_binding_layout(d: &SamplerBindingLayout) -> Object {
     let o = Object::new();
-    set(&o, "type", &JsValue::from_str((&d.r#type).as_str()));
+    {
+        let v = &d.r#type;
+        set(&o, "type", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUTextureBindingLayout` as a JavaScript object.
 pub(crate) fn dict_texture_binding_layout(d: &TextureBindingLayout) -> Object {
     let o = Object::new();
-    set(&o, "sampleType", &JsValue::from_str((&d.sample_type).as_str()));
-    set(&o, "viewDimension", &JsValue::from_str((&d.view_dimension).as_str()));
-    set(&o, "multisampled", &JsValue::from_bool(*(&d.multisampled)));
+    {
+        let v = &d.sample_type;
+        set(&o, "sampleType", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.view_dimension;
+        set(&o, "viewDimension", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.multisampled;
+        set(&o, "multisampled", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUStorageTextureBindingLayout` as a JavaScript object.
 pub(crate) fn dict_storage_texture_binding_layout(d: &StorageTextureBindingLayout) -> Object {
     let o = Object::new();
-    set(&o, "access", &JsValue::from_str((&d.access).as_str()));
-    set(&o, "format", &JsValue::from_str((&d.format).as_str()));
-    set(&o, "viewDimension", &JsValue::from_str((&d.view_dimension).as_str()));
+    {
+        let v = &d.access;
+        set(&o, "access", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.format;
+        set(&o, "format", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.view_dimension;
+        set(&o, "viewDimension", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUExternalTextureBindingLayout` as a JavaScript object.
 pub(crate) fn dict_external_texture_binding_layout(d: &ExternalTextureBindingLayout) -> Object {
-    let o = Object::new();
-    o
+    let _ = d;
+    Object::new()
 }
 
 /// `GPUBindGroupDescriptor` as a JavaScript object.
 pub(crate) fn dict_bind_group_descriptor(d: &BindGroupDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "layout", &JsValue::from((&d.layout).js()));
-    set(&o, "entries", &{ let arr = Array::new(); for v1 in (&d.entries).iter() { arr.push(&JsValue::from(dict_bind_group_entry(v1))); } JsValue::from(arr) });
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.layout;
+        set(&o, "layout", &JsValue::from(v.js()));
+    }
+    {
+        let v = &d.entries;
+        set(&o, "entries", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&JsValue::from(dict_bind_group_entry(v1))); } JsValue::from(arr) });
+    }
     o
 }
 
 /// `GPUBindGroupEntry` as a JavaScript object.
 pub(crate) fn dict_bind_group_entry(d: &BindGroupEntry<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "binding", &JsValue::from_f64(f64::from(*(&d.binding))));
-    set(&o, "resource", &union_binding_resource((&d.resource)));
+    {
+        let v = &d.binding;
+        set(&o, "binding", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.resource;
+        set(&o, "resource", &union_binding_resource(v));
+    }
     o
 }
 
 /// `GPUBufferBinding` as a JavaScript object.
 pub(crate) fn dict_buffer_binding(d: &BufferBinding<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "buffer", &JsValue::from((&d.buffer).js()));
-    set(&o, "offset", &JsValue::from_f64((&d.offset).get() as f64));
+    {
+        let v = &d.buffer;
+        set(&o, "buffer", &JsValue::from(v.js()));
+    }
+    {
+        let v = &d.offset;
+        set(&o, "offset", &JsValue::from_f64(v.get() as f64));
+    }
     if let Some(v) = &d.size {
         set(&o, "size", &JsValue::from_f64(v.get() as f64));
     }
@@ -291,25 +473,46 @@ pub(crate) fn dict_buffer_binding(d: &BufferBinding<'_, Web>) -> Object {
 /// `GPUPipelineLayoutDescriptor` as a JavaScript object.
 pub(crate) fn dict_pipeline_layout_descriptor(d: &PipelineLayoutDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "bindGroupLayouts", &{ let arr = Array::new(); for v1 in (&d.bind_group_layouts).iter() { arr.push(&match v1 { Some(v1) => JsValue::from(v1.js()), None => JsValue::NULL }); } JsValue::from(arr) });
-    set(&o, "immediateSize", &JsValue::from_f64(f64::from(*(&d.immediate_size))));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.bind_group_layouts;
+        set(&o, "bindGroupLayouts", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&match v1 { Some(v1) => JsValue::from(v1.js()), None => JsValue::NULL }); } JsValue::from(arr) });
+    }
+    {
+        let v = &d.immediate_size;
+        set(&o, "immediateSize", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPUShaderModuleDescriptor` as a JavaScript object.
 pub(crate) fn dict_shader_module_descriptor(d: &ShaderModuleDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "code", &JsValue::from_str((&d.code)));
-    set(&o, "compilationHints", &{ let arr = Array::new(); for v1 in (&d.compilation_hints).iter() { arr.push(&JsValue::from(dict_shader_module_compilation_hint(v1))); } JsValue::from(arr) });
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.code;
+        set(&o, "code", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.compilation_hints;
+        set(&o, "compilationHints", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&JsValue::from(dict_shader_module_compilation_hint(v1))); } JsValue::from(arr) });
+    }
     o
 }
 
 /// `GPUShaderModuleCompilationHint` as a JavaScript object.
 pub(crate) fn dict_shader_module_compilation_hint(d: &ShaderModuleCompilationHint<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "entryPoint", &JsValue::from_str((&d.entry_point)));
+    {
+        let v = &d.entry_point;
+        set(&o, "entryPoint", &JsValue::from_str(v));
+    }
     if let Some(v) = &d.layout {
         set(&o, "layout", &union_pipeline_layout_or_auto(v));
     }
@@ -319,42 +522,78 @@ pub(crate) fn dict_shader_module_compilation_hint(d: &ShaderModuleCompilationHin
 /// `GPUPipelineDescriptorBase` as a JavaScript object.
 pub(crate) fn dict_pipeline_descriptor_base(d: &PipelineDescriptorBase<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "layout", &union_pipeline_layout_or_auto((&d.layout)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.layout;
+        set(&o, "layout", &union_pipeline_layout_or_auto(v));
+    }
     o
 }
 
 /// `GPUProgrammableStage` as a JavaScript object.
 pub(crate) fn dict_programmable_stage(d: &ProgrammableStage<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "module", &JsValue::from((&d.module).js()));
+    {
+        let v = &d.module;
+        set(&o, "module", &JsValue::from(v.js()));
+    }
     if let Some(v) = &d.entry_point {
         set(&o, "entryPoint", &JsValue::from_str(v));
     }
-    set(&o, "constants", &{ let rec = Object::new(); for (k, v1) in (&d.constants).iter() { set(&rec, k, &JsValue::from_f64(v1.get())); } JsValue::from(rec) });
+    {
+        let v = &d.constants;
+        set(&o, "constants", &{ let rec = Object::new(); for (k, v1) in v.iter() { set(&rec, k, &JsValue::from_f64(v1.get())); } JsValue::from(rec) });
+    }
     o
 }
 
 /// `GPUComputePipelineDescriptor` as a JavaScript object.
 pub(crate) fn dict_compute_pipeline_descriptor(d: &ComputePipelineDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "layout", &union_pipeline_layout_or_auto((&d.layout)));
-    set(&o, "compute", &JsValue::from(dict_programmable_stage((&d.compute))));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.layout;
+        set(&o, "layout", &union_pipeline_layout_or_auto(v));
+    }
+    {
+        let v = &d.compute;
+        set(&o, "compute", &JsValue::from(dict_programmable_stage(v)));
+    }
     o
 }
 
 /// `GPURenderPipelineDescriptor` as a JavaScript object.
 pub(crate) fn dict_render_pipeline_descriptor(d: &RenderPipelineDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "layout", &union_pipeline_layout_or_auto((&d.layout)));
-    set(&o, "vertex", &JsValue::from(dict_vertex_state((&d.vertex))));
-    set(&o, "primitive", &JsValue::from(dict_primitive_state((&d.primitive))));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.layout;
+        set(&o, "layout", &union_pipeline_layout_or_auto(v));
+    }
+    {
+        let v = &d.vertex;
+        set(&o, "vertex", &JsValue::from(dict_vertex_state(v)));
+    }
+    {
+        let v = &d.primitive;
+        set(&o, "primitive", &JsValue::from(dict_primitive_state(v)));
+    }
     if let Some(v) = &d.depth_stencil {
         set(&o, "depthStencil", &JsValue::from(dict_depth_stencil_state(v)));
     }
-    set(&o, "multisample", &JsValue::from(dict_multisample_state((&d.multisample))));
+    {
+        let v = &d.multisample;
+        set(&o, "multisample", &JsValue::from(dict_multisample_state(v)));
+    }
     if let Some(v) = &d.fragment {
         set(&o, "fragment", &JsValue::from(dict_fragment_state(v)));
     }
@@ -364,129 +603,246 @@ pub(crate) fn dict_render_pipeline_descriptor(d: &RenderPipelineDescriptor<'_, W
 /// `GPUPrimitiveState` as a JavaScript object.
 pub(crate) fn dict_primitive_state(d: &PrimitiveState) -> Object {
     let o = Object::new();
-    set(&o, "topology", &JsValue::from_str((&d.topology).as_str()));
+    {
+        let v = &d.topology;
+        set(&o, "topology", &JsValue::from_str(v.as_str()));
+    }
     if let Some(v) = &d.strip_index_format {
         set(&o, "stripIndexFormat", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "frontFace", &JsValue::from_str((&d.front_face).as_str()));
-    set(&o, "cullMode", &JsValue::from_str((&d.cull_mode).as_str()));
-    set(&o, "unclippedDepth", &JsValue::from_bool(*(&d.unclipped_depth)));
+    {
+        let v = &d.front_face;
+        set(&o, "frontFace", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.cull_mode;
+        set(&o, "cullMode", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.unclipped_depth;
+        set(&o, "unclippedDepth", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUMultisampleState` as a JavaScript object.
 pub(crate) fn dict_multisample_state(d: &MultisampleState) -> Object {
     let o = Object::new();
-    set(&o, "count", &JsValue::from_f64(f64::from(*(&d.count))));
-    set(&o, "mask", &JsValue::from_f64(f64::from(*(&d.mask))));
-    set(&o, "alphaToCoverageEnabled", &JsValue::from_bool(*(&d.alpha_to_coverage_enabled)));
+    {
+        let v = &d.count;
+        set(&o, "count", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.mask;
+        set(&o, "mask", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.alpha_to_coverage_enabled;
+        set(&o, "alphaToCoverageEnabled", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUFragmentState` as a JavaScript object.
 pub(crate) fn dict_fragment_state(d: &FragmentState<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "module", &JsValue::from((&d.module).js()));
+    {
+        let v = &d.module;
+        set(&o, "module", &JsValue::from(v.js()));
+    }
     if let Some(v) = &d.entry_point {
         set(&o, "entryPoint", &JsValue::from_str(v));
     }
-    set(&o, "constants", &{ let rec = Object::new(); for (k, v1) in (&d.constants).iter() { set(&rec, k, &JsValue::from_f64(v1.get())); } JsValue::from(rec) });
-    set(&o, "targets", &{ let arr = Array::new(); for v1 in (&d.targets).iter() { arr.push(&match v1 { Some(v1) => JsValue::from(dict_color_target_state(v1)), None => JsValue::NULL }); } JsValue::from(arr) });
+    {
+        let v = &d.constants;
+        set(&o, "constants", &{ let rec = Object::new(); for (k, v1) in v.iter() { set(&rec, k, &JsValue::from_f64(v1.get())); } JsValue::from(rec) });
+    }
+    {
+        let v = &d.targets;
+        set(&o, "targets", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&match v1 { Some(v1) => JsValue::from(dict_color_target_state(v1)), None => JsValue::NULL }); } JsValue::from(arr) });
+    }
     o
 }
 
 /// `GPUColorTargetState` as a JavaScript object.
 pub(crate) fn dict_color_target_state(d: &ColorTargetState) -> Object {
     let o = Object::new();
-    set(&o, "format", &JsValue::from_str((&d.format).as_str()));
+    {
+        let v = &d.format;
+        set(&o, "format", &JsValue::from_str(v.as_str()));
+    }
     if let Some(v) = &d.blend {
         set(&o, "blend", &JsValue::from(dict_blend_state(v)));
     }
-    set(&o, "writeMask", &JsValue::from_f64(f64::from(*(&d.write_mask))));
+    {
+        let v = &d.write_mask;
+        set(&o, "writeMask", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPUBlendState` as a JavaScript object.
 pub(crate) fn dict_blend_state(d: &BlendState) -> Object {
     let o = Object::new();
-    set(&o, "color", &JsValue::from(dict_blend_component((&d.color))));
-    set(&o, "alpha", &JsValue::from(dict_blend_component((&d.alpha))));
+    {
+        let v = &d.color;
+        set(&o, "color", &JsValue::from(dict_blend_component(v)));
+    }
+    {
+        let v = &d.alpha;
+        set(&o, "alpha", &JsValue::from(dict_blend_component(v)));
+    }
     o
 }
 
 /// `GPUBlendComponent` as a JavaScript object.
 pub(crate) fn dict_blend_component(d: &BlendComponent) -> Object {
     let o = Object::new();
-    set(&o, "operation", &JsValue::from_str((&d.operation).as_str()));
-    set(&o, "srcFactor", &JsValue::from_str((&d.src_factor).as_str()));
-    set(&o, "dstFactor", &JsValue::from_str((&d.dst_factor).as_str()));
+    {
+        let v = &d.operation;
+        set(&o, "operation", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.src_factor;
+        set(&o, "srcFactor", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.dst_factor;
+        set(&o, "dstFactor", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUDepthStencilState` as a JavaScript object.
 pub(crate) fn dict_depth_stencil_state(d: &DepthStencilState) -> Object {
     let o = Object::new();
-    set(&o, "format", &JsValue::from_str((&d.format).as_str()));
+    {
+        let v = &d.format;
+        set(&o, "format", &JsValue::from_str(v.as_str()));
+    }
     if let Some(v) = &d.depth_write_enabled {
         set(&o, "depthWriteEnabled", &JsValue::from_bool(*v));
     }
     if let Some(v) = &d.depth_compare {
         set(&o, "depthCompare", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "stencilFront", &JsValue::from(dict_stencil_face_state((&d.stencil_front))));
-    set(&o, "stencilBack", &JsValue::from(dict_stencil_face_state((&d.stencil_back))));
-    set(&o, "stencilReadMask", &JsValue::from_f64(f64::from(*(&d.stencil_read_mask))));
-    set(&o, "stencilWriteMask", &JsValue::from_f64(f64::from(*(&d.stencil_write_mask))));
-    set(&o, "depthBias", &JsValue::from_f64(f64::from(*(&d.depth_bias))));
-    set(&o, "depthBiasSlopeScale", &JsValue::from_f64(f64::from((&d.depth_bias_slope_scale).get())));
-    set(&o, "depthBiasClamp", &JsValue::from_f64(f64::from((&d.depth_bias_clamp).get())));
+    {
+        let v = &d.stencil_front;
+        set(&o, "stencilFront", &JsValue::from(dict_stencil_face_state(v)));
+    }
+    {
+        let v = &d.stencil_back;
+        set(&o, "stencilBack", &JsValue::from(dict_stencil_face_state(v)));
+    }
+    {
+        let v = &d.stencil_read_mask;
+        set(&o, "stencilReadMask", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.stencil_write_mask;
+        set(&o, "stencilWriteMask", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.depth_bias;
+        set(&o, "depthBias", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.depth_bias_slope_scale;
+        set(&o, "depthBiasSlopeScale", &JsValue::from_f64(f64::from(v.get())));
+    }
+    {
+        let v = &d.depth_bias_clamp;
+        set(&o, "depthBiasClamp", &JsValue::from_f64(f64::from(v.get())));
+    }
     o
 }
 
 /// `GPUStencilFaceState` as a JavaScript object.
 pub(crate) fn dict_stencil_face_state(d: &StencilFaceState) -> Object {
     let o = Object::new();
-    set(&o, "compare", &JsValue::from_str((&d.compare).as_str()));
-    set(&o, "failOp", &JsValue::from_str((&d.fail_op).as_str()));
-    set(&o, "depthFailOp", &JsValue::from_str((&d.depth_fail_op).as_str()));
-    set(&o, "passOp", &JsValue::from_str((&d.pass_op).as_str()));
+    {
+        let v = &d.compare;
+        set(&o, "compare", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.fail_op;
+        set(&o, "failOp", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.depth_fail_op;
+        set(&o, "depthFailOp", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.pass_op;
+        set(&o, "passOp", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUVertexState` as a JavaScript object.
 pub(crate) fn dict_vertex_state(d: &VertexState<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "module", &JsValue::from((&d.module).js()));
+    {
+        let v = &d.module;
+        set(&o, "module", &JsValue::from(v.js()));
+    }
     if let Some(v) = &d.entry_point {
         set(&o, "entryPoint", &JsValue::from_str(v));
     }
-    set(&o, "constants", &{ let rec = Object::new(); for (k, v1) in (&d.constants).iter() { set(&rec, k, &JsValue::from_f64(v1.get())); } JsValue::from(rec) });
-    set(&o, "buffers", &{ let arr = Array::new(); for v1 in (&d.buffers).iter() { arr.push(&match v1 { Some(v1) => JsValue::from(dict_vertex_buffer_layout(v1)), None => JsValue::NULL }); } JsValue::from(arr) });
+    {
+        let v = &d.constants;
+        set(&o, "constants", &{ let rec = Object::new(); for (k, v1) in v.iter() { set(&rec, k, &JsValue::from_f64(v1.get())); } JsValue::from(rec) });
+    }
+    {
+        let v = &d.buffers;
+        set(&o, "buffers", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&match v1 { Some(v1) => JsValue::from(dict_vertex_buffer_layout(v1)), None => JsValue::NULL }); } JsValue::from(arr) });
+    }
     o
 }
 
 /// `GPUVertexBufferLayout` as a JavaScript object.
 pub(crate) fn dict_vertex_buffer_layout(d: &VertexBufferLayout) -> Object {
     let o = Object::new();
-    set(&o, "arrayStride", &JsValue::from_f64((&d.array_stride).get() as f64));
-    set(&o, "stepMode", &JsValue::from_str((&d.step_mode).as_str()));
-    set(&o, "attributes", &{ let arr = Array::new(); for v1 in (&d.attributes).iter() { arr.push(&JsValue::from(dict_vertex_attribute(v1))); } JsValue::from(arr) });
+    {
+        let v = &d.array_stride;
+        set(&o, "arrayStride", &JsValue::from_f64(v.get() as f64));
+    }
+    {
+        let v = &d.step_mode;
+        set(&o, "stepMode", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.attributes;
+        set(&o, "attributes", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&JsValue::from(dict_vertex_attribute(v1))); } JsValue::from(arr) });
+    }
     o
 }
 
 /// `GPUVertexAttribute` as a JavaScript object.
 pub(crate) fn dict_vertex_attribute(d: &VertexAttribute) -> Object {
     let o = Object::new();
-    set(&o, "format", &JsValue::from_str((&d.format).as_str()));
-    set(&o, "offset", &JsValue::from_f64((&d.offset).get() as f64));
-    set(&o, "shaderLocation", &JsValue::from_f64(f64::from(*(&d.shader_location))));
+    {
+        let v = &d.format;
+        set(&o, "format", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.offset;
+        set(&o, "offset", &JsValue::from_f64(v.get() as f64));
+    }
+    {
+        let v = &d.shader_location;
+        set(&o, "shaderLocation", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPUTexelCopyBufferLayout` as a JavaScript object.
 pub(crate) fn dict_texel_copy_buffer_layout(d: &TexelCopyBufferLayout) -> Object {
     let o = Object::new();
-    set(&o, "offset", &JsValue::from_f64((&d.offset).get() as f64));
+    {
+        let v = &d.offset;
+        set(&o, "offset", &JsValue::from_f64(v.get() as f64));
+    }
     if let Some(v) = &d.bytes_per_row {
         set(&o, "bytesPerRow", &JsValue::from_f64(f64::from(*v)));
     }
@@ -499,66 +855,120 @@ pub(crate) fn dict_texel_copy_buffer_layout(d: &TexelCopyBufferLayout) -> Object
 /// `GPUTexelCopyBufferInfo` as a JavaScript object.
 pub(crate) fn dict_texel_copy_buffer_info(d: &TexelCopyBufferInfo<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "offset", &JsValue::from_f64((&d.offset).get() as f64));
+    {
+        let v = &d.offset;
+        set(&o, "offset", &JsValue::from_f64(v.get() as f64));
+    }
     if let Some(v) = &d.bytes_per_row {
         set(&o, "bytesPerRow", &JsValue::from_f64(f64::from(*v)));
     }
     if let Some(v) = &d.rows_per_image {
         set(&o, "rowsPerImage", &JsValue::from_f64(f64::from(*v)));
     }
-    set(&o, "buffer", &JsValue::from((&d.buffer).js()));
+    {
+        let v = &d.buffer;
+        set(&o, "buffer", &JsValue::from(v.js()));
+    }
     o
 }
 
 /// `GPUTexelCopyTextureInfo` as a JavaScript object.
 pub(crate) fn dict_texel_copy_texture_info(d: &TexelCopyTextureInfo<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "texture", &JsValue::from((&d.texture).js()));
-    set(&o, "mipLevel", &JsValue::from_f64(f64::from(*(&d.mip_level))));
-    set(&o, "origin", &union_origin_3d((&d.origin)));
-    set(&o, "aspect", &JsValue::from_str((&d.aspect).as_str()));
+    {
+        let v = &d.texture;
+        set(&o, "texture", &JsValue::from(v.js()));
+    }
+    {
+        let v = &d.mip_level;
+        set(&o, "mipLevel", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.origin;
+        set(&o, "origin", &union_origin_3d(v));
+    }
+    {
+        let v = &d.aspect;
+        set(&o, "aspect", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUCopyExternalImageDestInfo` as a JavaScript object.
 pub(crate) fn dict_copy_external_image_dest_info(d: &CopyExternalImageDestInfo<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "texture", &JsValue::from((&d.texture).js()));
-    set(&o, "mipLevel", &JsValue::from_f64(f64::from(*(&d.mip_level))));
-    set(&o, "origin", &union_origin_3d((&d.origin)));
-    set(&o, "aspect", &JsValue::from_str((&d.aspect).as_str()));
-    set(&o, "colorSpace", &JsValue::from_str((&d.color_space).as_str()));
-    set(&o, "premultipliedAlpha", &JsValue::from_bool(*(&d.premultiplied_alpha)));
+    {
+        let v = &d.texture;
+        set(&o, "texture", &JsValue::from(v.js()));
+    }
+    {
+        let v = &d.mip_level;
+        set(&o, "mipLevel", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.origin;
+        set(&o, "origin", &union_origin_3d(v));
+    }
+    {
+        let v = &d.aspect;
+        set(&o, "aspect", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.color_space;
+        set(&o, "colorSpace", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.premultiplied_alpha;
+        set(&o, "premultipliedAlpha", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUCopyExternalImageSourceInfo` as a JavaScript object.
 pub(crate) fn dict_copy_external_image_source_info(d: &CopyExternalImageSourceInfo<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "source", &JsValue::from((&d.source).js()));
-    set(&o, "origin", &union_origin_2d((&d.origin)));
-    set(&o, "flipY", &JsValue::from_bool(*(&d.flip_y)));
+    {
+        let v = &d.source;
+        set(&o, "source", &JsValue::from(v.js()));
+    }
+    {
+        let v = &d.origin;
+        set(&o, "origin", &union_origin_2d(v));
+    }
+    {
+        let v = &d.flip_y;
+        set(&o, "flipY", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUCommandBufferDescriptor` as a JavaScript object.
 pub(crate) fn dict_command_buffer_descriptor(d: &CommandBufferDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
     o
 }
 
 /// `GPUCommandEncoderDescriptor` as a JavaScript object.
 pub(crate) fn dict_command_encoder_descriptor(d: &CommandEncoderDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
     o
 }
 
 /// `GPUComputePassTimestampWrites` as a JavaScript object.
 pub(crate) fn dict_compute_pass_timestamp_writes(d: &ComputePassTimestampWrites<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "querySet", &JsValue::from((&d.query_set).js()));
+    {
+        let v = &d.query_set;
+        set(&o, "querySet", &JsValue::from(v.js()));
+    }
     if let Some(v) = &d.beginning_of_pass_write_index {
         set(&o, "beginningOfPassWriteIndex", &JsValue::from_f64(f64::from(*v)));
     }
@@ -571,7 +981,10 @@ pub(crate) fn dict_compute_pass_timestamp_writes(d: &ComputePassTimestampWrites<
 /// `GPUComputePassDescriptor` as a JavaScript object.
 pub(crate) fn dict_compute_pass_descriptor(d: &ComputePassDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
     if let Some(v) = &d.timestamp_writes {
         set(&o, "timestampWrites", &JsValue::from(dict_compute_pass_timestamp_writes(v)));
     }
@@ -581,7 +994,10 @@ pub(crate) fn dict_compute_pass_descriptor(d: &ComputePassDescriptor<'_, Web>) -
 /// `GPURenderPassTimestampWrites` as a JavaScript object.
 pub(crate) fn dict_render_pass_timestamp_writes(d: &RenderPassTimestampWrites<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "querySet", &JsValue::from((&d.query_set).js()));
+    {
+        let v = &d.query_set;
+        set(&o, "querySet", &JsValue::from(v.js()));
+    }
     if let Some(v) = &d.beginning_of_pass_write_index {
         set(&o, "beginningOfPassWriteIndex", &JsValue::from_f64(f64::from(*v)));
     }
@@ -594,8 +1010,14 @@ pub(crate) fn dict_render_pass_timestamp_writes(d: &RenderPassTimestampWrites<'_
 /// `GPURenderPassDescriptor` as a JavaScript object.
 pub(crate) fn dict_render_pass_descriptor(d: &RenderPassDescriptor<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "colorAttachments", &{ let arr = Array::new(); for v1 in (&d.color_attachments).iter() { arr.push(&match v1 { Some(v1) => JsValue::from(dict_render_pass_color_attachment(v1)), None => JsValue::NULL }); } JsValue::from(arr) });
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.color_attachments;
+        set(&o, "colorAttachments", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&match v1 { Some(v1) => JsValue::from(dict_render_pass_color_attachment(v1)), None => JsValue::NULL }); } JsValue::from(arr) });
+    }
     if let Some(v) = &d.depth_stencil_attachment {
         set(&o, "depthStencilAttachment", &JsValue::from(dict_render_pass_depth_stencil_attachment(v)));
     }
@@ -605,14 +1027,20 @@ pub(crate) fn dict_render_pass_descriptor(d: &RenderPassDescriptor<'_, Web>) -> 
     if let Some(v) = &d.timestamp_writes {
         set(&o, "timestampWrites", &JsValue::from(dict_render_pass_timestamp_writes(v)));
     }
-    set(&o, "maxDrawCount", &JsValue::from_f64((&d.max_draw_count).get() as f64));
+    {
+        let v = &d.max_draw_count;
+        set(&o, "maxDrawCount", &JsValue::from_f64(v.get() as f64));
+    }
     o
 }
 
 /// `GPURenderPassColorAttachment` as a JavaScript object.
 pub(crate) fn dict_render_pass_color_attachment(d: &RenderPassColorAttachment<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "view", &union_texture_or_view((&d.view)));
+    {
+        let v = &d.view;
+        set(&o, "view", &union_texture_or_view(v));
+    }
     if let Some(v) = &d.depth_slice {
         set(&o, "depthSlice", &JsValue::from_f64(f64::from(*v)));
     }
@@ -622,15 +1050,24 @@ pub(crate) fn dict_render_pass_color_attachment(d: &RenderPassColorAttachment<'_
     if let Some(v) = &d.clear_value {
         set(&o, "clearValue", &union_color(v));
     }
-    set(&o, "loadOp", &JsValue::from_str((&d.load_op).as_str()));
-    set(&o, "storeOp", &JsValue::from_str((&d.store_op).as_str()));
+    {
+        let v = &d.load_op;
+        set(&o, "loadOp", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.store_op;
+        set(&o, "storeOp", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPURenderPassDepthStencilAttachment` as a JavaScript object.
 pub(crate) fn dict_render_pass_depth_stencil_attachment(d: &RenderPassDepthStencilAttachment<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "view", &union_texture_or_view((&d.view)));
+    {
+        let v = &d.view;
+        set(&o, "view", &union_texture_or_view(v));
+    }
     if let Some(v) = &d.depth_clear_value {
         set(&o, "depthClearValue", &JsValue::from_f64(f64::from(v.get())));
     }
@@ -640,119 +1077,227 @@ pub(crate) fn dict_render_pass_depth_stencil_attachment(d: &RenderPassDepthStenc
     if let Some(v) = &d.depth_store_op {
         set(&o, "depthStoreOp", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "depthReadOnly", &JsValue::from_bool(*(&d.depth_read_only)));
-    set(&o, "stencilClearValue", &JsValue::from_f64(f64::from(*(&d.stencil_clear_value))));
+    {
+        let v = &d.depth_read_only;
+        set(&o, "depthReadOnly", &JsValue::from_bool(*v));
+    }
+    {
+        let v = &d.stencil_clear_value;
+        set(&o, "stencilClearValue", &JsValue::from_f64(f64::from(*v)));
+    }
     if let Some(v) = &d.stencil_load_op {
         set(&o, "stencilLoadOp", &JsValue::from_str(v.as_str()));
     }
     if let Some(v) = &d.stencil_store_op {
         set(&o, "stencilStoreOp", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "stencilReadOnly", &JsValue::from_bool(*(&d.stencil_read_only)));
+    {
+        let v = &d.stencil_read_only;
+        set(&o, "stencilReadOnly", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPURenderPassLayout` as a JavaScript object.
 pub(crate) fn dict_render_pass_layout(d: &RenderPassLayout) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "colorFormats", &{ let arr = Array::new(); for v1 in (&d.color_formats).iter() { arr.push(&match v1 { Some(v1) => JsValue::from_str(v1.as_str()), None => JsValue::NULL }); } JsValue::from(arr) });
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.color_formats;
+        set(&o, "colorFormats", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&match v1 { Some(v1) => JsValue::from_str(v1.as_str()), None => JsValue::NULL }); } JsValue::from(arr) });
+    }
     if let Some(v) = &d.depth_stencil_format {
         set(&o, "depthStencilFormat", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "sampleCount", &JsValue::from_f64(f64::from(*(&d.sample_count))));
+    {
+        let v = &d.sample_count;
+        set(&o, "sampleCount", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPURenderBundleDescriptor` as a JavaScript object.
 pub(crate) fn dict_render_bundle_descriptor(d: &RenderBundleDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
     o
 }
 
 /// `GPURenderBundleEncoderDescriptor` as a JavaScript object.
 pub(crate) fn dict_render_bundle_encoder_descriptor(d: &RenderBundleEncoderDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "colorFormats", &{ let arr = Array::new(); for v1 in (&d.color_formats).iter() { arr.push(&match v1 { Some(v1) => JsValue::from_str(v1.as_str()), None => JsValue::NULL }); } JsValue::from(arr) });
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.color_formats;
+        set(&o, "colorFormats", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&match v1 { Some(v1) => JsValue::from_str(v1.as_str()), None => JsValue::NULL }); } JsValue::from(arr) });
+    }
     if let Some(v) = &d.depth_stencil_format {
         set(&o, "depthStencilFormat", &JsValue::from_str(v.as_str()));
     }
-    set(&o, "sampleCount", &JsValue::from_f64(f64::from(*(&d.sample_count))));
-    set(&o, "depthReadOnly", &JsValue::from_bool(*(&d.depth_read_only)));
-    set(&o, "stencilReadOnly", &JsValue::from_bool(*(&d.stencil_read_only)));
+    {
+        let v = &d.sample_count;
+        set(&o, "sampleCount", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.depth_read_only;
+        set(&o, "depthReadOnly", &JsValue::from_bool(*v));
+    }
+    {
+        let v = &d.stencil_read_only;
+        set(&o, "stencilReadOnly", &JsValue::from_bool(*v));
+    }
     o
 }
 
 /// `GPUQueueDescriptor` as a JavaScript object.
 pub(crate) fn dict_queue_descriptor(d: &QueueDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
     o
 }
 
 /// `GPUQuerySetDescriptor` as a JavaScript object.
 pub(crate) fn dict_query_set_descriptor(d: &QuerySetDescriptor) -> Object {
     let o = Object::new();
-    set(&o, "label", &JsValue::from_str((&d.label)));
-    set(&o, "type", &JsValue::from_str((&d.r#type).as_str()));
-    set(&o, "count", &JsValue::from_f64(f64::from(*(&d.count))));
+    {
+        let v = &d.label;
+        set(&o, "label", &JsValue::from_str(v));
+    }
+    {
+        let v = &d.r#type;
+        set(&o, "type", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.count;
+        set(&o, "count", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPUCanvasToneMapping` as a JavaScript object.
 pub(crate) fn dict_canvas_tone_mapping(d: &CanvasToneMapping) -> Object {
     let o = Object::new();
-    set(&o, "mode", &JsValue::from_str((&d.mode).as_str()));
+    {
+        let v = &d.mode;
+        set(&o, "mode", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUCanvasConfiguration` as a JavaScript object.
 pub(crate) fn dict_canvas_configuration(d: &CanvasConfiguration<'_, Web>) -> Object {
     let o = Object::new();
-    set(&o, "device", &JsValue::from((&d.device).js()));
-    set(&o, "format", &JsValue::from_str((&d.format).as_str()));
-    set(&o, "usage", &JsValue::from_f64(f64::from(*(&d.usage))));
-    set(&o, "viewFormats", &{ let arr = Array::new(); for v1 in (&d.view_formats).iter() { arr.push(&JsValue::from_str(v1.as_str())); } JsValue::from(arr) });
-    set(&o, "colorSpace", &JsValue::from_str((&d.color_space).as_str()));
-    set(&o, "toneMapping", &JsValue::from(dict_canvas_tone_mapping((&d.tone_mapping))));
-    set(&o, "alphaMode", &JsValue::from_str((&d.alpha_mode).as_str()));
+    {
+        let v = &d.device;
+        set(&o, "device", &JsValue::from(v.js()));
+    }
+    {
+        let v = &d.format;
+        set(&o, "format", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.usage;
+        set(&o, "usage", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.view_formats;
+        set(&o, "viewFormats", &{ let arr = Array::new(); for v1 in v.iter() { arr.push(&JsValue::from_str(v1.as_str())); } JsValue::from(arr) });
+    }
+    {
+        let v = &d.color_space;
+        set(&o, "colorSpace", &JsValue::from_str(v.as_str()));
+    }
+    {
+        let v = &d.tone_mapping;
+        set(&o, "toneMapping", &JsValue::from(dict_canvas_tone_mapping(v)));
+    }
+    {
+        let v = &d.alpha_mode;
+        set(&o, "alphaMode", &JsValue::from_str(v.as_str()));
+    }
     o
 }
 
 /// `GPUColorDict` as a JavaScript object.
 pub(crate) fn dict_color_dict(d: &ColorDict) -> Object {
     let o = Object::new();
-    set(&o, "r", &JsValue::from_f64((&d.r).get()));
-    set(&o, "g", &JsValue::from_f64((&d.g).get()));
-    set(&o, "b", &JsValue::from_f64((&d.b).get()));
-    set(&o, "a", &JsValue::from_f64((&d.a).get()));
+    {
+        let v = &d.r;
+        set(&o, "r", &JsValue::from_f64(v.get()));
+    }
+    {
+        let v = &d.g;
+        set(&o, "g", &JsValue::from_f64(v.get()));
+    }
+    {
+        let v = &d.b;
+        set(&o, "b", &JsValue::from_f64(v.get()));
+    }
+    {
+        let v = &d.a;
+        set(&o, "a", &JsValue::from_f64(v.get()));
+    }
     o
 }
 
 /// `GPUOrigin2DDict` as a JavaScript object.
 pub(crate) fn dict_origin_2d_dict(d: &Origin2DDict) -> Object {
     let o = Object::new();
-    set(&o, "x", &JsValue::from_f64(f64::from(*(&d.x))));
-    set(&o, "y", &JsValue::from_f64(f64::from(*(&d.y))));
+    {
+        let v = &d.x;
+        set(&o, "x", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.y;
+        set(&o, "y", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPUOrigin3DDict` as a JavaScript object.
 pub(crate) fn dict_origin_3d_dict(d: &Origin3DDict) -> Object {
     let o = Object::new();
-    set(&o, "x", &JsValue::from_f64(f64::from(*(&d.x))));
-    set(&o, "y", &JsValue::from_f64(f64::from(*(&d.y))));
-    set(&o, "z", &JsValue::from_f64(f64::from(*(&d.z))));
+    {
+        let v = &d.x;
+        set(&o, "x", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.y;
+        set(&o, "y", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.z;
+        set(&o, "z", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }
 
 /// `GPUExtent3DDict` as a JavaScript object.
 pub(crate) fn dict_extent_3d_dict(d: &Extent3DDict) -> Object {
     let o = Object::new();
-    set(&o, "width", &JsValue::from_f64(f64::from(*(&d.width))));
-    set(&o, "height", &JsValue::from_f64(f64::from(*(&d.height))));
-    set(&o, "depthOrArrayLayers", &JsValue::from_f64(f64::from(*(&d.depth_or_array_layers))));
+    {
+        let v = &d.width;
+        set(&o, "width", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.height;
+        set(&o, "height", &JsValue::from_f64(f64::from(*v)));
+    }
+    {
+        let v = &d.depth_or_array_layers;
+        set(&o, "depthOrArrayLayers", &JsValue::from_f64(f64::from(*v)));
+    }
     o
 }

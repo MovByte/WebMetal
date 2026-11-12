@@ -3,13 +3,14 @@
 //! - [`api`]: the WebGPU IDL as Rust traits, with the types of [`idl`] (generated from the IDL index of the pinned
 //!   specification by `host/gen/gpugen.py`) and the numeric domains of [`num`].
 //! - `native` (feature `native`): the traits over the webgpu.h C API, linked against Dawn or wgpu-native.
+//! - `web` (feature `web`, wasm32): the traits over the browser's WebGPU.
 //! - [`negotiate`]: which features and limits to request from an adapter, from the tables of `tables/limits.toml`
 //!   ([`tables`]), and the check that the device received them.
 //! - [`scope`]: error-scope plumbing that captures every WebGPU error and attributes it to the call that raised it.
 //! - [`smoke`]: the conformance smoke test, run through every implementation.
 //!
-//! The binding performs the content-timeline steps of the specification itself, so a program sees the values,
-//! exceptions and errors the specification defines; device-timeline behavior is the implementation's.
+//! Both implementations perform the content-timeline steps of the specification the same way, so a program sees the
+//! same values, exceptions and errors through either; device-timeline behavior is the implementation's.
 
 pub mod api;
 #[rustfmt::skip]
@@ -23,6 +24,8 @@ pub mod tables;
 
 #[cfg(feature = "native")]
 pub mod native;
+#[cfg(all(feature = "web", target_arch = "wasm32"))]
+pub mod web;
 
 pub use api::*;
 pub use num::{Float32, Float64, Size64};

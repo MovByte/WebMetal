@@ -8,9 +8,22 @@ license.workspace = true
 [features]
 # The WebGPU binding over the webgpu.h C API (Dawn or wgpu-native); build.rs describes how one is selected.
 native = ["dep:bindgen"]
+# The WebGPU binding over the browser's WebGPU, for wasm32.
+web = ["dep:wasm-bindgen", "dep:js-sys", "dep:wasm-bindgen-futures"]
 
 [dependencies]
 webmetal-wire = { path = "../wire" }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The wasm-bindgen crate and the wasm-bindgen CLI that post-processes the module must be the same version.
+wasm-bindgen = { version = "=0.2.105", optional = true }
+js-sys = { version = "=0.3.82", optional = true }
+wasm-bindgen-futures = { version = "=0.4.55", optional = true }
+
 [build-dependencies]
 bindgen = { version = "0.72", optional = true, default-features = false, features = ["runtime"] }
+
+[[example]]
+name = "gpu_web_smoke"
+crate-type = ["cdylib"]
+required-features = ["web"]
