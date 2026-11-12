@@ -202,11 +202,11 @@ impl Instance {
         // queue-timeline callback can run. Its CPU-timeline callbacks run inside wgpuInstanceProcessEvents.
         let mut polled = Vec::new();
         for (_, t, dev) in pending {
-            if let (Timeline::Queue(q), Some(dev)) = (t, dev.as_ref().and_then(|d| d.upgrade())) {
-                if !polled.contains(q) {
-                    polled.push(*q);
-                    unsafe { sys::wgpuDevicePoll(dev.raw, 1, std::ptr::null()) };
-                }
+            if let (Timeline::Queue(q), Some(dev)) = (t, dev.as_ref().and_then(|d| d.upgrade()))
+                && !polled.contains(q)
+            {
+                polled.push(*q);
+                unsafe { sys::wgpuDevicePoll(dev.raw, 1, std::ptr::null()) };
             }
         }
         if polled.is_empty() {
