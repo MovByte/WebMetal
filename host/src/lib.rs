@@ -2,9 +2,11 @@
 //! replays it on one WebGPU device.
 //!
 //! [`embed`] is the interface the embedding environment (the kernel side) provides to the executor; [`exec`] is the core
-//! executor; [`gpu`] is the executor's binding to WebGPU.
+//! executor; [`gpu`] is the executor's binding to WebGPU; [`mem`] keeps buffers, textures and IOSurfaces coherent
+//! between guest memory and WebGPU.
 
 pub mod embed;
 pub mod exec;
 pub mod format;
 pub mod gpu;
+pub mod mem;
