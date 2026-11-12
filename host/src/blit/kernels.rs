@@ -775,8 +775,11 @@ pub(crate) fn encode_mip_level<A: Api>(
     }
     let mips = k.mips.borrow();
     let (_, (pipeline, bgl), sampler) = mips.iter().find(|(kk, _, _)| *kk == key).expect("made above");
+    // Each view takes the one usage it is bound with: a view in the texture's sRGB sibling format may lack a usage of
+    // the texture's, such as storage (WebGPU section 6.2.1).
     let mut sv = TextureViewDescriptor::new();
     sv.format = Some(m.format);
+    sv.usage = crate::gpu::idl::TextureUsage::TEXTURE_BINDING;
     sv.dimension = Some(if m.three_d { TextureViewDimension::D3 } else { TextureViewDimension::D2 });
     sv.base_mip_level = m.level - 1;
     sv.mip_level_count = Some(1);
@@ -800,6 +803,7 @@ pub(crate) fn encode_mip_level<A: Api>(
         g.call("GPUDevice.createBindGroup", LABEL, |d| d.create_bind_group(&BindGroupDescriptor::new(bgl, entries)));
     let mut tv = TextureViewDescriptor::new();
     tv.format = Some(m.format);
+    tv.usage = crate::gpu::idl::TextureUsage::RENDER_ATTACHMENT;
     tv.base_mip_level = m.level;
     tv.mip_level_count = Some(1);
     if m.three_d {

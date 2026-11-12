@@ -237,29 +237,42 @@ pub fn copy_region<A: Api>(
     Ok(())
 }
 
+/// The part of a texture `generateMipmapsForTexture:` makes: a texture's, or a view's levels and slices of its root,
+/// in the view's format.
+pub struct MipWindow {
+    /// `MTLPixelFormat` of the texture or view.
+    pub format: u32,
+    pub resolution: Resolution,
+    /// The root's levels: the first is the source of the rest.
+    pub levels: std::ops::Range<u32>,
+    /// The root's array slices (ignored for a 3D texture, whose levels are made whole).
+    pub slices: std::ops::Range<u32>,
+}
+
 /// `generateMipmapsForTexture:`: every level from the one above it. Metal requires "A `mipmapLevelCount` property
 /// that's greater than `1`" and "A `pixelFormat` that's color-renderable and color-filterable"
 /// (`generateMipmaps(for:)`), and states that "The image filtering that GPU drivers use to generate the mipmaps may
 /// vary by the feature families": the filter is the implementation's (plan section 9, row 10). Here each texel of a
 /// level is the source level sampled with a linear filter at the texel's centre: the average of the 2×2 (3D: 2×2×2)
 /// texels it covers when the source dimensions are even, a weighted average otherwise; in linear space for sRGB
-/// formats, whose views decode and encode.
+/// formats, whose views decode and encode. Through a view, the levels and slices are the view's, and the format.
 pub fn generate_mipmaps<A: Api>(
     mem: &Memory<A>,
     g: &impl Calls<A>,
     encoder: &A::CommandEncoder,
     t: &Texture<A>,
+    w: &MipWindow,
 ) -> Result<(), MemError> {
     const CALL: &str = "-[MTLBlitCommandEncoder generateMipmapsForTexture:]";
-    if t.geometry.mip_levels < 2 {
+    if w.levels.end - w.levels.start < 2 {
         return Err(MemError::undefined(CALL, "a texture with one mipmap level"));
     }
-    let f = match t.resolution {
+    let f = match w.resolution {
         Resolution::Native(f) => f,
         Resolution::Emulated(_) => {
             return Err(MemError::unimplemented(format!(
                 "{CALL}: a texture of pixel format {} stored through an emulation",
-                t.format
+                w.format
             )));
         }
         Resolution::StencilAspect => return Err(MemError::undefined(CALL, "a stencil format")),
@@ -274,7 +287,7 @@ pub fn generate_mipmaps<A: Api>(
     if !caps.aspects.is_empty() || f.is_compressed() || matches!(caps.sample, SampleType::Uint | SampleType::Sint) {
         return Err(MemError::undefined(
             CALL,
-            format!("pixel format {} is not color-renderable and filterable", t.format),
+            format!("pixel format {} is not color-renderable and filterable", w.format),
         ));
     }
     let renders = match caps.render {
@@ -293,14 +306,14 @@ pub fn generate_mipmaps<A: Api>(
     }
     let format = idl_format(f);
     let three_d = t.geometry.kind == TextureType::D3;
-    for level in 1..t.geometry.mip_levels {
+    for level in w.levels.start + 1..w.levels.end {
         let size = t.geometry.level_extent(level);
-        let layers = if three_d { size.2 } else { t.geometry.slices() };
-        for layer in 0..layers {
+        let layers = if three_d { 0..size.2 } else { w.slices.clone() };
+        for layer in layers {
             let m = MipLevel { texture: t.gpu(), format, level, layer, three_d, size };
             encode_mip_level(mem, g, encoder, &m)?;
         }
     }
-    mem.note_texture_write(t, 1..t.geometry.mip_levels, 0..t.geometry.slices());
+    mem.note_texture_write(t, w.levels.start + 1..w.levels.end, w.slices.clone());
     Ok(())
 }

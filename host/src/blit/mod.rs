@@ -16,6 +16,10 @@
 //! | Texture access counters, the SPI fills and compressed-texture invalidations, `copyFromTexture:...options:` with options | Refused: their semantics are not established. |
 //!
 //! Every Metal object a command names must be non-nil; Metal does not define a blit of nil. Fences are the core's.
+//!
+//! A texture view's bytes are its root texture's ([`crate::mem::view`]): a blit through a view checks Metal's rules
+//! against the view (its levels, slices, extents and pixel format) and moves the root's subresources at the view's
+//! bases.
 
 pub mod depth;
 pub mod kernels;
@@ -34,13 +38,14 @@ use crate::format::webgpu::Aspect;
 use crate::gpu::{Api, CommandEncoder as _, DebugCommands as _, Size64};
 use crate::mem::buffer::Buffer;
 use crate::mem::calls::Calls;
-use crate::mem::layout::TextureType;
+use crate::mem::layout::{Geometry, TextureType};
 use crate::mem::linear::LinearTexture;
 use crate::mem::texture::{Texture, TextureRegion, depth_float_only};
+use crate::mem::view::TextureView;
 use crate::mem::{MemError, Memory};
 
 use kernels::{Rows, Source, encode_rows};
-use region::{Unit, buffer_layout, option};
+use region::{Region, Unit, buffer_layout, option};
 
 /// The blit encoder service.
 pub struct BlitService<A: Api> {
@@ -58,23 +63,77 @@ fn payload<T: 'static>(objects: &Table, h: Handle) -> Option<Rc<T>> {
     objects.get(h)?.payload.clone()?.downcast::<T>().ok()
 }
 
-/// A texture a blit names: a texture, or a texture over a buffer's bytes.
+/// A texture a blit names: a texture, a texture over a buffer's bytes, or a view of a texture.
 pub(crate) enum Tex<A: Api> {
     Plain(Rc<Texture<A>>),
     Linear(Rc<LinearTexture<A>>, Rc<Texture<A>>),
+    View(Rc<TextureView<A>>),
 }
 
 impl<A: Api> Tex<A> {
+    /// The texture whose storage the blit moves: a view's root.
     pub(crate) fn texture(&self) -> &Rc<Texture<A>> {
         match self {
             Tex::Plain(t) | Tex::Linear(_, t) => t,
+            Tex::View(v) => &v.root,
+        }
+    }
+
+    /// The geometry Metal's rules apply to: a view's own.
+    pub(crate) fn geometry(&self) -> &Geometry {
+        match self {
+            Tex::View(v) => &v.geometry,
+            _ => &self.texture().geometry,
+        }
+    }
+
+    /// `MTLPixelFormat`: a view's own.
+    pub(crate) fn format(&self) -> u32 {
+        match self {
+            Tex::View(v) => v.format,
+            _ => self.texture().format,
+        }
+    }
+
+    /// How the host provides the pixel format: a view's own.
+    pub(crate) fn resolution(&self) -> Resolution {
+        match self {
+            Tex::View(v) => v.resolution,
+            _ => self.texture().resolution,
+        }
+    }
+
+    /// The view, for a view.
+    pub(crate) fn view(&self) -> Option<&Rc<TextureView<A>>> {
+        match self {
+            Tex::View(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// The root's levels and array slices the texture covers (a 3D texture's depth images are one slice).
+    pub(crate) fn root_window(&self) -> (std::ops::Range<u32>, std::ops::Range<u32>) {
+        match self {
+            Tex::View(v) => (v.root_levels(), v.root_slices()),
+            _ => {
+                let g = &self.texture().geometry;
+                (0..g.mip_levels, 0..g.slices())
+            }
+        }
+    }
+
+    /// A region validated against [`Tex::geometry`], as the region of the root it is.
+    pub(crate) fn in_root(&self, r: Region) -> Region {
+        match self {
+            Tex::View(v) => Region { level: v.root_level(r.level), slice: v.root_slice(r.slice), ..r },
+            _ => r,
         }
     }
 
     /// Before the blit reads or writes it: a texture over a buffer takes the buffer's bytes.
     fn prepare(&self, mem: &Memory<A>, g: &impl Calls<A>, encoder: &A::CommandEncoder) -> Result<(), MemError> {
         match self {
-            Tex::Plain(_) => Ok(()),
+            Tex::Plain(_) | Tex::View(_) => Ok(()),
             Tex::Linear(lt, _) => mem.prepare_linear(g, encoder, lt),
         }
     }
@@ -82,7 +141,7 @@ impl<A: Api> Tex<A> {
     /// After the blit wrote it: a texture over a buffer gives its bytes back to the buffer.
     fn written(&self, mem: &Memory<A>, g: &impl Calls<A>, encoder: &A::CommandEncoder) -> Result<(), MemError> {
         match self {
-            Tex::Plain(_) => Ok(()),
+            Tex::Plain(_) | Tex::View(_) => Ok(()),
             Tex::Linear(lt, _) => {
                 mem.note_linear_write(lt);
                 mem.sync_linear(g, encoder, lt)
@@ -123,6 +182,9 @@ pub(crate) fn texture<A: Api>(
                 "{call}: {what} is an MTLTextureTypeTextureBuffer texture, which shaders read as its buffer"
             ))),
         };
+    }
+    if let Some(v) = payload::<TextureView<A>>(objects, h) {
+        return Ok(Tex::View(v));
     }
     Err(MemError::invalid(format!("{call}: {what} {:#x} has no texture storage", h.get())))
 }
@@ -197,10 +259,11 @@ impl<A: Api> BlitService<A> {
         let src = buffer(objects, src, call, "the source buffer")?;
         let tex = texture(objects, dst, call, "the destination texture")?;
         let t = tex.texture();
-        check_buffer_blit_texture(call, t)?;
+        check_buffer_blit_texture(call, &tex)?;
         let (part, unit) = part(call, t, options)?;
-        let r = region::region(call, &t.geometry, unit, (slice, level), origin, size)?;
-        let l = buffer_layout(call, &t.geometry, unit, &r, (offset, bytes_per_row, bytes_per_image), src.length)?;
+        let r = region::region(call, tex.geometry(), unit, (slice, level), origin, size)?;
+        let l = buffer_layout(call, tex.geometry(), unit, &r, (offset, bytes_per_row, bytes_per_image), src.length)?;
+        let r = tex.in_root(r);
         tex.prepare(mem, g, &encoder)?;
         match part {
             Part::Texels => {
@@ -229,10 +292,11 @@ impl<A: Api> BlitService<A> {
         let tex = texture(objects, src, call, "the source texture")?;
         let dst = buffer(objects, dst, call, "the destination buffer")?;
         let t = tex.texture();
-        check_buffer_blit_texture(call, t)?;
+        check_buffer_blit_texture(call, &tex)?;
         let (part, unit) = part(call, t, options)?;
-        let r = region::region(call, &t.geometry, unit, (slice, level), origin, size)?;
-        let l = buffer_layout(call, &t.geometry, unit, &r, (offset, bytes_per_row, bytes_per_image), dst.length)?;
+        let r = region::region(call, tex.geometry(), unit, (slice, level), origin, size)?;
+        let l = buffer_layout(call, tex.geometry(), unit, &r, (offset, bytes_per_row, bytes_per_image), dst.length)?;
+        let r = tex.in_root(r);
         tex.prepare(mem, g, &encoder)?;
         match part {
             Part::Aspect(a) if t.blocks.is_none() => {
@@ -260,13 +324,13 @@ impl<A: Api> BlitService<A> {
         let s = texture(objects, src, call, "the source texture")?;
         let d = texture(objects, dst, call, "the destination texture")?;
         let (st, dt) = (s.texture(), d.texture());
-        check_pair(call, st, dt)?;
+        check_pair(call, &s, &d)?;
         let unit = texture::unit_of(st).unwrap_or(Unit::aspect(1));
-        let sr = region::region(call, &st.geometry, unit, (src_slice, src_level), src_origin, size)?;
+        let sr = region::region(call, s.geometry(), unit, (src_slice, src_level), src_origin, size)?;
         // The destination region has the source region's size, except that a compressed source region clamped to the
         // source level's edge covers whole blocks at the destination, clamped to the destination level's edge.
-        let dsize = if unit.compressed() && unit.pvrtc.is_none() && dst_level < u64::from(dt.geometry.mip_levels) {
-            let (dw, dh, _) = dt.geometry.level_extent(dst_level as u32);
+        let dsize = if unit.compressed() && unit.pvrtc.is_none() && dst_level < u64::from(d.geometry().mip_levels) {
+            let (dw, dh, _) = d.geometry().level_extent(dst_level as u32);
             let span = |blocks: u32, b: u32, o: u64, l: u32| {
                 (u64::from(blocks) * u64::from(b)).min(u64::from(l).saturating_sub(o))
             };
@@ -278,7 +342,8 @@ impl<A: Api> BlitService<A> {
         } else {
             size.clone()
         };
-        let dr = region::region(call, &dt.geometry, unit, (dst_slice, dst_level), dst_origin, &dsize)?;
+        let dr = region::region(call, d.geometry(), unit, (dst_slice, dst_level), dst_origin, &dsize)?;
+        let (sr, dr) = (s.in_root(sr), d.in_root(dr));
         s.prepare(mem, g, &encoder)?;
         d.prepare(mem, g, &encoder)?;
         texture::copy_region(mem, g, &encoder, (st, &sr), (dt, &dr))?;
@@ -301,14 +366,15 @@ impl<A: Api> BlitService<A> {
         let s = texture(objects, src, call, "the source texture")?;
         let d = texture(objects, dst, call, "the destination texture")?;
         let (st, dt) = (s.texture(), d.texture());
-        check_pair(call, st, dt)?;
+        let (sg, dg) = (s.geometry(), d.geometry());
+        check_pair(call, &s, &d)?;
         let bad = |rule: String| Err(MemError::undefined(call, rule));
         // "The sourceTexture must have at least sourceLevel + levelCount mips ... at least sourceSlice + sliceCount
         // array slices", and the same for the destination.
-        if src_level.checked_add(level_count).is_none_or(|e| e > u64::from(st.geometry.mip_levels))
-            || dst_level.checked_add(level_count).is_none_or(|e| e > u64::from(dt.geometry.mip_levels))
-            || src_slice.checked_add(slice_count).is_none_or(|e| e > u64::from(st.geometry.slices()))
-            || dst_slice.checked_add(slice_count).is_none_or(|e| e > u64::from(dt.geometry.slices()))
+        if src_level.checked_add(level_count).is_none_or(|e| e > u64::from(sg.mip_levels))
+            || dst_level.checked_add(level_count).is_none_or(|e| e > u64::from(dg.mip_levels))
+            || src_slice.checked_add(slice_count).is_none_or(|e| e > u64::from(sg.slices()))
+            || dst_slice.checked_add(slice_count).is_none_or(|e| e > u64::from(dg.slices()))
         {
             return bad(format!(
                 "slices {src_slice}+{slice_count} levels {src_level}+{level_count} to slices {dst_slice}+{slice_count} \
@@ -320,15 +386,15 @@ impl<A: Api> BlitService<A> {
         d.prepare(mem, g, &encoder)?;
         for k in 0..level_count {
             let (sl, dl) = (src_level + k, dst_level + k);
-            let (w, h, depth) = st.geometry.level_extent(sl as u32);
-            if (w, h, depth) != dt.geometry.level_extent(dl as u32) {
+            let (w, h, depth) = sg.level_extent(sl as u32);
+            if (w, h, depth) != dg.level_extent(dl as u32) {
                 return bad(format!("source level {sl} and destination level {dl} differ in size"));
             }
             let whole = Size { width: u64::from(w), height: u64::from(h), depth: u64::from(depth) };
             let zero = Origin { x: 0, y: 0, z: 0 };
             for i in 0..slice_count {
-                let sr = region::region(call, &st.geometry, unit, (src_slice + i, sl), &zero, &whole)?;
-                let dr = region::region(call, &dt.geometry, unit, (dst_slice + i, dl), &zero, &whole)?;
+                let sr = s.in_root(region::region(call, sg, unit, (src_slice + i, sl), &zero, &whole)?);
+                let dr = d.in_root(region::region(call, dg, unit, (dst_slice + i, dl), &zero, &whole)?);
                 texture::copy_region(mem, g, &encoder, (st, &sr), (dt, &dr))?;
             }
         }
@@ -345,14 +411,12 @@ impl<A: Api> BlitService<A> {
         dst: Option<Handle>,
     ) -> Result<(), MemError> {
         let objects = cx.objects();
-        let (st, dt) = {
-            let s = texture::<A>(objects, src, call, "the source texture")?;
-            let d = texture::<A>(objects, dst, call, "the destination texture")?;
-            (s.texture().clone(), d.texture().clone())
-        };
-        check_pair(call, &st, &dt)?;
-        if matches!(st.geometry.kind, TextureType::Cube | TextureType::CubeArray)
-            || matches!(dt.geometry.kind, TextureType::Cube | TextureType::CubeArray)
+        let s = texture::<A>(objects, src, call, "the source texture")?;
+        let d = texture::<A>(objects, dst, call, "the destination texture")?;
+        check_pair(call, &s, &d)?;
+        let (st, dt) = (*s.geometry(), *d.geometry());
+        if matches!(st.kind, TextureType::Cube | TextureType::CubeArray)
+            || matches!(dt.kind, TextureType::Cube | TextureType::CubeArray)
         {
             // The header computes sliceCount = min(arrayLength, arrayLength), which for a cube does not count its
             // faces; what the driver copies for cubes is not measured.
@@ -362,9 +426,7 @@ impl<A: Api> BlitService<A> {
         }
         // "sourceTexture must have a mip M with identical dimensions as the first mip of destinationTexture:
         // sourceLevel = M, destinationLevel = 0", or the other way around.
-        let find = |a: &Texture<A>, b: &Texture<A>| {
-            (0..a.geometry.mip_levels).find(|&m| a.geometry.level_extent(m) == b.geometry.level_extent(0))
-        };
+        let find = |a: &Geometry, b: &Geometry| (0..a.mip_levels).find(|&m| a.level_extent(m) == b.level_extent(0));
         let (sl, dl) = match (find(&st, &dt), find(&dt, &st)) {
             (Some(m), _) => (m, 0),
             (None, Some(m)) => (0, m),
@@ -375,8 +437,8 @@ impl<A: Api> BlitService<A> {
                 ));
             }
         };
-        let levels = (st.geometry.mip_levels - sl).min(dt.geometry.mip_levels - dl);
-        let slices = st.geometry.array_length.min(dt.geometry.array_length);
+        let levels = (st.mip_levels - sl).min(dt.mip_levels - dl);
+        let slices = st.array_length.min(dt.array_length);
         self.surfaces(
             cx,
             call,
@@ -518,9 +580,11 @@ impl<A: Api> BlitService<A> {
         let encoder = cx.encoder().clone();
         let (g, objects) = (cx.gpu(), cx.objects());
         let tex = texture(objects, h, CALL, "the texture")?;
-        check_blit_texture(CALL, tex.texture())?;
+        check_blit_texture(CALL, &tex)?;
         tex.prepare(mem, g, &encoder)?;
-        texture::generate_mipmaps(mem, g, &encoder, tex.texture())?;
+        let (levels, slices) = tex.root_window();
+        let w = texture::MipWindow { format: tex.format(), resolution: tex.resolution(), levels, slices };
+        texture::generate_mipmaps(mem, g, &encoder, tex.texture(), &w)?;
         tex.written(mem, g, &encoder)
     }
 
@@ -534,7 +598,7 @@ impl<A: Api> BlitService<A> {
         at: Option<(u64, u64)>,
     ) -> Result<(), MemError> {
         let tex = texture::<A>(cx.objects(), h, call, "the texture")?;
-        let g = &tex.texture().geometry;
+        let g = tex.geometry();
         if let Some((slice, level)) = at
             && (slice >= u64::from(g.slices()) || level >= u64::from(g.mip_levels))
         {
@@ -729,39 +793,43 @@ enum Fill {
 }
 
 /// A texture a blit reads or writes must have contents: not memoryless; and blits move single-sample textures between
-/// buffers.
-fn check_blit_texture<A: Api>(call: &'static str, t: &Texture<A>) -> Result<(), MemError> {
-    if t.storage == crate::mem::options::StorageMode::Memoryless {
+/// buffers. A view's bytes must be its root's.
+fn check_blit_texture<A: Api>(call: &'static str, tex: &Tex<A>) -> Result<(), MemError> {
+    if tex.texture().storage == crate::mem::options::StorageMode::Memoryless {
         return Err(MemError::undefined(call, "a memoryless texture has no contents"));
     }
-    if matches!(t.resolution, Resolution::StencilAspect) {
+    if matches!(tex.resolution(), Resolution::StencilAspect) {
         return Err(MemError::undefined(call, "a stencil view format"));
+    }
+    if let Some(v) = tex.view() {
+        v.bytes_are_root(call)?;
     }
     Ok(())
 }
 
 /// A texture a blit moves to or from a buffer: single-sample. Metal defines buffer blits for texels, and a multisample
 /// texture has none to lay out in a buffer.
-fn check_buffer_blit_texture<A: Api>(call: &'static str, t: &Texture<A>) -> Result<(), MemError> {
-    check_blit_texture(call, t)?;
-    if t.geometry.sample_count > 1 {
+fn check_buffer_blit_texture<A: Api>(call: &'static str, tex: &Tex<A>) -> Result<(), MemError> {
+    check_blit_texture(call, tex)?;
+    if tex.geometry().sample_count > 1 {
         return Err(MemError::undefined(call, "a blit between a buffer and a multisample texture"));
     }
     Ok(())
 }
 
 /// The source and destination of a texture copy: "The pixel format is the same as `sourceTexture`. The sample count
-/// is the same as `sourceTexture`." (debug layer: `blit.texture-to-texture-format-mismatch`).
-fn check_pair<A: Api>(call: &'static str, s: &Texture<A>, d: &Texture<A>) -> Result<(), MemError> {
+/// is the same as `sourceTexture`." (debug layer: `blit.texture-to-texture-format-mismatch`). A view's pixel format is
+/// its own.
+fn check_pair<A: Api>(call: &'static str, s: &Tex<A>, d: &Tex<A>) -> Result<(), MemError> {
     check_blit_texture(call, s)?;
     check_blit_texture(call, d)?;
-    if s.format != d.format {
+    if s.format() != d.format() {
         return Err(MemError::undefined(
             call,
-            format!("source pixel format {} differs from destination pixel format {}", s.format, d.format),
+            format!("source pixel format {} differs from destination pixel format {}", s.format(), d.format()),
         ));
     }
-    if s.geometry.sample_count != d.geometry.sample_count {
+    if s.geometry().sample_count != d.geometry().sample_count {
         return Err(MemError::undefined(call, "source and destination sample counts differ"));
     }
     Ok(())

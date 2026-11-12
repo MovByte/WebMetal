@@ -19,6 +19,10 @@
 //! ([`Memory::note_buffer_write`], [`Memory::note_texture_write`]) and every read-only one declared
 //! ([`Memory::note_buffer_read`]); textures over buffers that a dispatch writes are copied back after the pass
 //! ([`Memory::sync_linear`]).
+//!
+//! A texture view ([`crate::mem::view`]) binds as a WebGPU view of its root texture: its format (the root's, the sRGB
+//! sibling, or the stencil aspect), its levels and its slices; the pipeline variant takes the view's pixel format and
+//! type. Its writes are noted on the root's subresources it covers, and the root is brought up to date before the pass.
 
 pub mod pipeline;
 
@@ -35,13 +39,16 @@ use crate::format::webgpu::Aspect;
 use crate::gpu::idl::{
     BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, BufferBindingType, BufferUsage,
     ComputePassDescriptor, StorageTextureAccess, TextureAspect, TextureSampleType, TextureUsage, TextureViewDescriptor,
+    TextureViewDimension,
 };
 use crate::gpu::{
     Api, BindingCommands as _, Buffer as _, CommandEncoder as _, ComputePassEncoder as _, DebugCommands as _,
     Device as _, Size64, Texture as _,
 };
 use crate::mem::buffer::Buffer;
-use crate::mem::texture::{Prepare, Texture, usage};
+use crate::mem::layout::TextureType;
+use crate::mem::texture::{Prepare, Texture, idl_format, usage};
+use crate::mem::view::TextureView;
 use crate::mem::{MemError, Memory};
 use crate::state::SamplerObject;
 
@@ -481,6 +488,8 @@ impl<A: Api> ComputeService<A> {
                 self.memory.note_buffer_write(&b, None);
             } else if let Some(t) = payload::<Texture<A>>(objects, *h) {
                 self.memory.note_texture_write(&t, 0..t.geometry.mip_levels, 0..t.geometry.slices());
+            } else if let Some(v) = payload::<TextureView<A>>(objects, *h) {
+                self.memory.note_texture_write(&v.root, v.root_levels(), v.root_slices());
             } else if payload::<crate::mem::linear::LinearTexture<A>>(objects, *h).is_some() {
                 return Err(failure::unimplemented(
                     "-[MTLComputeCommandEncoder useResource:usage:] with a write usage of a texture over a buffer: \
@@ -602,14 +611,11 @@ impl<A: Api> ComputeService<A> {
         let textures = st
             .textures
             .iter()
-            .map(|(&index, e)| {
-                let t = e.tex.texture();
-                TextureSlot {
-                    index,
-                    texture_type: texture_type_value(t),
-                    pixel_format: u64::from(t.format),
-                    sample_count: u64::from(t.geometry.sample_count),
-                }
+            .map(|(&index, e)| TextureSlot {
+                index,
+                texture_type: texture_type_value(e.tex.geometry().kind),
+                pixel_format: u64::from(e.tex.format()),
+                sample_count: u64::from(e.tex.geometry().sample_count),
             })
             .collect();
         Ok(VariantKey {
@@ -732,6 +738,12 @@ impl<A: Api> ComputeService<A> {
                         let mut d = TextureViewDescriptor::new();
                         d.dimension = Some(*view_dimension);
                         d.aspect = view_aspect(t, *sample_type);
+                        if let Some(v) = e.tex.view() {
+                            if !v.takes(*view_dimension) {
+                                return Err(undefined(CALL, view_mismatch(*index, v, *view_dimension)));
+                            }
+                            v.describe(&mut d, 0..v.geometry.mip_levels, TextureUsage::TEXTURE_BINDING);
+                        }
                         let view = g
                             .call("GPUTexture.createView", &t.label, |_| t.gpu().create_view(&d))
                             .map_err(|ex| MemError::gpu("GPUTexture.createView", ex).failure())?;
@@ -742,7 +754,8 @@ impl<A: Api> ComputeService<A> {
                             undefined(CALL, format!("the function uses texture index {index} and none is bound"))
                         })?;
                         let t = e.tex.texture();
-                        if t.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 {
+                        let writable_format = mem.features().allows(e.tex.resolution().storage().caps().storage_wo);
+                        if t.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 || !writable_format {
                             return Err(if t.usage != usage::UNKNOWN && t.usage & usage::SHADER_WRITE == 0 {
                                 undefined(
                                     CALL,
@@ -751,11 +764,11 @@ impl<A: Api> ComputeService<A> {
                             } else {
                                 failure::host_unsupported(format!(
                                     "texture index {index}: this host cannot write {} textures from shaders",
-                                    t.resolution.storage().name()
+                                    e.tex.resolution().storage().name()
                                 ))
                             });
                         }
-                        if t.geometry.mip_levels > 1 {
+                        if e.tex.geometry().mip_levels > 1 {
                             return Err(failure::unimplemented(format!(
                                 "{CALL}: texture index {index} is a mipmapped texture bound for writing; the binding \
                                  layout does not say which level the function writes"
@@ -765,11 +778,28 @@ impl<A: Api> ComputeService<A> {
                         d.dimension = Some(*view_dimension);
                         d.format = Some(*format);
                         d.mip_level_count = Some(1);
+                        let (levels, slices) = e.tex.root_window();
+                        if let Some(v) = e.tex.view() {
+                            if !v.takes(*view_dimension) {
+                                return Err(undefined(CALL, view_mismatch(*index, v, *view_dimension)));
+                            }
+                            let stored = idl_format(v.resolution.storage());
+                            if *format != stored {
+                                return Err(failure::unimplemented(format!(
+                                    "{CALL}: texture index {index} is a view stored as {} that the function writes as \
+                                     {}",
+                                    stored.as_str(),
+                                    format.as_str()
+                                )));
+                            }
+                            v.describe(&mut d, 0..1, TextureUsage::STORAGE_BINDING);
+                            d.format = Some(*format);
+                        }
                         let view = g
                             .call("GPUTexture.createView", &t.label, |_| t.gpu().create_view(&d))
                             .map_err(|ex| MemError::gpu("GPUTexture.createView", ex).failure())?;
                         if *access != StorageTextureAccess::ReadOnly {
-                            mem.note_texture_write(t, 0..1, 0..t.geometry.slices());
+                            mem.note_texture_write(t, levels.start..levels.start + 1, slices);
                             if let Tex::Linear(lt, _) = &e.tex {
                                 mem.note_linear_write(lt);
                                 if !st.linear_written.iter().any(|x| x.handle == e.handle) {
@@ -893,10 +923,20 @@ fn set_sampler<A: Api>(objects: &Table, st: &mut State<A>, sampler: Option<Handl
     Ok(())
 }
 
-/// The `MTLTextureType` value of a texture (`MTLTexture.h`).
-fn texture_type_value<A: Api>(t: &Texture<A>) -> u64 {
-    use crate::mem::layout::TextureType as T;
-    match t.geometry.kind {
+/// Why a view cannot be bound where the function's texture type needs a view of `dimension`.
+fn view_mismatch<A: Api>(index: u64, v: &TextureView<A>, dimension: TextureViewDimension) -> String {
+    format!(
+        "texture index {index} is a {:?} view of {} slices, and the function's texture type takes a {} view",
+        v.geometry.kind,
+        v.geometry.slices(),
+        dimension.as_str()
+    )
+}
+
+/// The `MTLTextureType` value of a texture type (`MTLTexture.h`).
+fn texture_type_value(kind: TextureType) -> u64 {
+    use TextureType as T;
+    match kind {
         T::D1 => 0,
         T::D1Array => 1,
         T::D2 => 2,
@@ -940,7 +980,9 @@ impl<A: Api, E: Embedder> EncoderService<A, E> for ComputeService<A> {
         let encoder = cx.encoder().clone();
         for (h, at) in bound_textures(records, segment) {
             let objects = cx.objects();
-            if let Some(t) = payload::<Texture<A>>(objects, h) {
+            let t = payload::<Texture<A>>(objects, h)
+                .or_else(|| payload::<TextureView<A>>(objects, h).map(|v| v.root.clone()));
+            if let Some(t) = t {
                 if mem.prepare_texture(cx.gpu(), &encoder, &t).map_err(|e| fail(at, e.failure()))? == Prepare::Decode {
                     return Err(fail(
                         at,
