@@ -40,9 +40,11 @@ pub struct LibraryFunction {
     pub function_type: u64,
 }
 
-/// The functions of the reference library by name.
-pub fn reference_library() -> HashMap<String, LibraryFunction> {
-    let dir = match std::env::var_os("WEBMETAL_REFERENCE_BUILD") {
+/// The reference library's build directory: `WEBMETAL_REFERENCE_BUILD`, or an iOS build made once per test process
+/// (the tests of one binary run on parallel threads and must not build into the same directory at the same time).
+fn reference_build() -> &'static PathBuf {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| match std::env::var_os("WEBMETAL_REFERENCE_BUILD") {
         Some(d) => PathBuf::from(d),
         None => {
             let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("reference-ios");
@@ -62,7 +64,12 @@ pub fn reference_library() -> HashMap<String, LibraryFunction> {
             }
             d
         }
-    };
+    })
+}
+
+/// The functions of the reference library by name.
+pub fn reference_library() -> HashMap<String, LibraryFunction> {
+    let dir = reference_build();
     let data = std::fs::read(dir.join("wmref.metallib")).expect("wmref.metallib");
     let lib = airwgsl::parse_metallib(&data).expect("a metallib");
     let mut out = HashMap::new();
