@@ -1,0 +1,163 @@
+# Pinned specification sources. Every citation in the tables names one of these ids.
+# A source whose bytes no longer hash to the pin is refused by the generator and the
+# checker, so a new published version is adopted only by updating its pin here.
+
+[source.msl]
+title = "Metal Shading Language Specification"
+publisher = "Apple Inc."
+version = "4.1"
+date = "2026-06-04"
+url = "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf"
+sha256 = "41538b30d2f1140a5b2a0c84ce0a9f7b67bf0c707e224cfea0bfe5a44aa26cf5"
+kind = "pdf"
+
+[source.wgsl]
+title = "WebGPU Shading Language"
+publisher = "W3C"
+version = "Candidate Recommendation Draft"
+date = "2026-11-06"
+url = "https://www.w3.org/TR/2026/CRD-WGSL-20261106/"
+sha256 = "c7b8cc9d175f6f785ff9e29c28bc7c83334bd3338878e62a020e79e5c5be259d"
+kind = "html"
+
+[source.webgpu]
+title = "WebGPU"
+publisher = "W3C"
+version = "Candidate Recommendation Draft"
+date = "2026-09-15"
+url = "https://www.w3.org/TR/2026/CRD-webgpu-20260915/"
+sha256 = "7c67681430753937fd878fcbab9c2f0e93d757bdc24de6f3789ea0ff6c6f2438"
+kind = "html"
+
+[source.apple-makecommandbuffer]
+title = "Apple Developer Documentation: makeCommandBuffer()"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlcommandqueue/makecommandbuffer().json"
+sha256 = "4ccc4b800a9312bc6d07bd133fa6e15c88a7e4ac960972ef8bb4461f483d04af"
+kind = "appledoc"
+
+[source.apple-addcompletedhandler]
+title = "Apple Developer Documentation: addCompletedHandler(_:)"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlcommandbuffer/addcompletedhandler(_:).json"
+sha256 = "e54ac5c46233de51a0923d0f769d610b4d1da43d472a02e74a42ac79278ec798"
+kind = "appledoc"
+
+[source.apple-mtlfence]
+title = "Apple Developer Documentation: MTLFence"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlfence.json"
+sha256 = "57a1e173401faa786e3010ca79474b064132a0a2266fc409de879fbfeb0d51eb"
+kind = "appledoc"
+
+[source.apple-setpurgeablestate]
+title = "Apple Developer Documentation: setPurgeableState(_:)"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlresource/setpurgeablestate(_:).json"
+sha256 = "47902986811780a8a340a3137a9d6851309ed68728da028228ded4c661ae0072"
+kind = "appledoc"
+
+[source.apple-setdepthbias]
+title = "Apple Developer Documentation: setDepthBias(_:slopeScale:clamp:)"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlrendercommandencoder/setdepthbias(_:slopescale:clamp:).json"
+sha256 = "8e6d934a656ca5213e54aeac286b6709149a9de083bf44a9379a569766060f5c"
+kind = "appledoc"
+
+[source.apple-multisampleresolve]
+title = "Apple Developer Documentation: MTLStoreAction.multisampleResolve"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlstoreaction/multisampleresolve.json"
+sha256 = "7169f26cce71b069ade39e6a35234acaa8e7fdd5ae994e3963392942c4e8932d"
+kind = "appledoc"
+
+[source.apple-drawindexedprimitives]
+title = "Apple Developer Documentation: drawIndexedPrimitives(type:indexCount:indexType:indexBuffer:indexBufferOffset:)"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlrendercommandencoder/drawindexedprimitives(type:indexcount:indextype:indexbuffer:indexbufferoffset:).json"
+sha256 = "750eb244161a47618f006853bbd83b790aae305efe0fb35758fe080a61264f9e"
+kind = "appledoc"
+
+[source.apple-copytexture]
+title = "Apple Developer Documentation: copy(from:sourceSlice:sourceLevel:sourceOrigin:sourceSize:to:destinationSlice:destinationLevel:destinationOrigin:)"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlblitcommandencoder/copy(from:sourceslice:sourcelevel:sourceorigin:sourcesize:to:destinationslice:destinationlevel:destinationorigin:).json"
+sha256 = "8a4fbc4a8cfbb4c53ae92c8c536bfb666a6658884699e4a4d236d777e20affc1"
+kind = "appledoc"
+
+[source.apple-makebuffer]
+title = "Apple Developer Documentation: makeBuffer(length:options:)"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtldevice/makebuffer(length:options:).json"
+sha256 = "10568b9b2f181e6a00a32294689d610a64c9e66bbabe8d655107cd8bebfac6ab"
+kind = "appledoc"
+
+[source.apple-generatemipmaps]
+title = "Apple Developer Documentation: generateMipmaps(for:)"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlblitcommandencoder/generatemipmaps(for:).json"
+sha256 = "a543f38dbea36ed625ac283997051ea148186c6e9fe43f9ee67345acb339b82a"
+kind = "appledoc"
+
+[source.apple-bgr10-xr]
+title = "Apple Developer Documentation: MTLPixelFormat.bgr10_xr"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlpixelformat/bgr10_xr.json"
+sha256 = "63c1ebeffd565c704e14328fdb73bdc44a89ba6ef88e0b742b0152ef6729c3ee"
+kind = "appledoc"
+
+[source.apple-bgra10-xr]
+title = "Apple Developer Documentation: MTLPixelFormat.bgra10_xr"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlpixelformat/bgra10_xr.json"
+sha256 = "f8b75e6d667bcdeb6f97b9b0a8243597140db5c72968252d6b7a7283e7605c27"
+kind = "appledoc"
+
+# Header paths are relative to <SDK>/System/Library/Frameworks.
+[source.sdk]
+title = "iPhoneOS 27.2 SDK Metal.framework headers (Xcode 27.2, build 27B52)"
+publisher = "Apple Inc."
+version = "iPhoneOS27.2.sdk"
+date = "2026-11-12"
+sdk = "iphoneos"
+prefix = "System/Library/Frameworks"
+kind = "sdk"
+
+[source.sdk.files]
+"Metal.framework/Headers/MTLCommandBuffer.h" = "d84dda866f07ffc37ce68e3c635177373cdefa419fc1f64c766442ed81966895"
+"Metal.framework/Headers/MTLResidencySet.h" = "544f5c0c147dc24341391e629c3816e666661495915db2ae82ef6846343815c0"
+"Metal.framework/Headers/MTLRenderCommandEncoder.h" = "7ac9550f7e961e5f436198e9cb6389191442903d2632fb594d632d6f03f078a7"
+"Metal.framework/Headers/MTLComputeCommandEncoder.h" = "1ada0cf5aa9af0b3e4f635b6278d896a0ae5c0bfec615fbfd92c16984a1bb731"
+"Metal.framework/Headers/MTLPixelFormat.h" = "c1b276359f1ea2d8810c405549d9e33e87bc25c437925a7993dd2e1e14895adb"
+"Metal.framework/Headers/MTLVertexDescriptor.h" = "50a52f863a97b22e99baa2dede1c523215e6eeb6fea4323a793e31858fe4395f"
+"Metal.framework/Headers/MTLSampler.h" = "770e9c54f5a7d944d56016a1d3bd143bd8b07519431819a80991a5a30abba4f6"
+"Metal.framework/Headers/MTLTexture.h" = "c26f3cd5572d5a758b199ea981e1ef36fdf119e2b66dd846edbd8ff0de8c0767"
+"Metal.framework/Headers/MTLBlitCommandEncoder.h" = "5408b66799d286886576c1096df14d3d06853a9252855bbb3bb6ba8bfaea53e1"
+"Metal.framework/Headers/MTLDevice.h" = "4f099c34b14bdb8a6dfe1b3f31620b9cc17e6d46ac73d5d67c710f00766fdc07"
+"Metal.framework/Headers/MTLRenderPass.h" = "b97e85680a3053f05604ce26bfa17d56e0daad5c173a36f397e8b9e10121f957"
+"Metal.framework/Headers/MTLRenderPipeline.h" = "91f18ca45e0f571eacd6b832340d68065fd39a490ecf6192b8c6277329d81956"
+"Metal.framework/Headers/MTLStageInputOutputDescriptor.h" = "08fb58a203e93d8aef5569aa1efc8c855cf1168c63262049162b88655ea599be"

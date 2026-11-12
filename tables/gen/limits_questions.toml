@@ -1,0 +1,285 @@
+# Questions from sections 5 and 6 of the translator plan about limits, alignment rules and
+# fixed-function behavior. Each resolved answer carries citations whose quotes the checker
+# finds in the cited scope of a pinned source. Open questions carry the reason and the
+# package or evidence that can close them.
+
+[[question]]
+id = "5.5-webgpu-default-binding-limits"
+plan = "5.5"
+question = "WebGPU default per-stage limits for storage buffers, sampled textures and samplers."
+status = "resolved"
+answer = "Defaults: maxStorageBuffersPerShaderStage 8, maxSampledTexturesPerShaderStage 16, maxSamplersPerShaderStage 16, maxStorageTexturesPerShaderStage 4, maxUniformBuffersPerShaderStage 12; adapters may expose better values, which the executor requests (the [[limit]] rows of this file hold every default)."
+cite = [
+  { src = "webgpu", ref = "#dom-supported-limits-maxstoragebufferspershaderstage", quote = "maxStorageBuffersPerShaderStage | GPUSize32 | maximum | 8" },
+  { src = "webgpu", ref = "#dom-supported-limits-maxsampledtexturespershaderstage", quote = "maxSampledTexturesPerShaderStage | GPUSize32 | maximum | 16" },
+  { src = "webgpu", ref = "#dom-supported-limits-maxsamplerspershaderstage", quote = "maxSamplersPerShaderStage | GPUSize32 | maximum | 16" },
+  { src = "webgpu", ref = "#dom-supported-limits-maxstoragetexturespershaderstage", quote = "maxStorageTexturesPerShaderStage | GPUSize32 | maximum | 4" },
+  { src = "webgpu", ref = "#dom-supported-limits-maxuniformbufferspershaderstage", quote = "maxUniformBuffersPerShaderStage | GPUSize32 | maximum | 12" },
+]
+
+[[question]]
+id = "5.8-vertex-stage-writable-storage"
+plan = "5.8"
+question = "May a WebGPU vertex stage write storage buffers or storage textures?"
+status = "resolved"
+answer = "No. A bind group layout entry visible to the vertex stage must use buffer type uniform or read-only-storage, and storage textures with access read-only. Metal vertex functions that write device memory therefore have no WebGPU form."
+cite = [
+  { src = "webgpu", ref = "#bind-group-layout-creation", quote = "If entry.visibility includes VERTEX: If entry.buffer is provided, entry.buffer.type must be \"uniform\" or \"read-only-storage\". If entry.storageTexture is provided, entry.storageTexture.access must be \"read-only\"." },
+]
+
+[[question]]
+id = "5.10-vertex-buffer-alignment"
+plan = "5.10"
+question = "WebGPU alignment rules for vertex buffer offsets and strides."
+status = "resolved"
+answer = "setVertexBuffer offset must be a multiple of 4; arrayStride must be a multiple of 4 and at most maxVertexBufferArrayStride (default 2048)."
+cite = [
+  { src = "webgpu", ref = "#render-pass-encoder-drawing", quote = "offset must be a multiple of 4. offset + size must be ≤ bufferSize." },
+  { src = "webgpu", ref = "#vertex-formats", quote = "descriptor.arrayStride ≤ device.[[device]].[[limits]].maxVertexBufferArrayStride. descriptor.arrayStride is a multiple of 4." },
+  { src = "webgpu", ref = "#dom-supported-limits-maxvertexbufferarraystride", quote = "maxVertexBufferArrayStride | GPUSize32 | maximum | 2048" },
+]
+
+[[question]]
+id = "5.10-max-inter-stage-variables"
+plan = "5.10"
+question = "WebGPU limit on inter-stage shader variables."
+status = "resolved"
+answer = "maxInterStageShaderVariables defaults to 16 (compatibility mode 15); adapters may report more."
+cite = [
+  { src = "webgpu", ref = "#dom-supported-limits-maxinterstageshadervariables", quote = "maxInterStageShaderVariables | GPUSize32 | maximum | 16 | 15" },
+]
+
+[[question]]
+id = "5.10-clip-space-and-framebuffer-origin"
+plan = "5.10"
+question = "Do Metal and WebGPU agree on clip space (y up, z in [0,1]) and on a top-left framebuffer origin?"
+status = "resolved"
+answer = "Yes on both. WebGPU NDC has x and y in [-1,1], z in [0,1], bottom-left at (-1,-1); framebuffer coordinates start top-left with y increasing down. MSL defines NDC with (-1,-1) at the lower-left, a visible z range of [0,1], and viewport coordinates with the origin at the top-left, x right and y down. No flips are needed."
+cite = [
+  { src = "webgpu", ref = "#coordinate-systems", quote = "-1.0 ≤ x ≤ 1.0 -1.0 ≤ y ≤ 1.0 0.0 ≤ z ≤ 1.0 The bottom-left corner is at (-1.0, -1.0, z)." },
+  { src = "webgpu", ref = "#coordinate-systems", quote = "The top-left corner is at (0.0, 0.0). x increases to the right. y increases down." },
+  { src = "msl", ref = "1.7", quote = "The lower-left corner of the viewport is at an (x,y) coordinate of (-1.0,-1.0) and the upper corner is at (1.0,1.0)." },
+  { src = "msl", ref = "1.7", quote = "The visible portion of the z coordinate is between 0.0 and 1.0." },
+  { src = "msl", ref = "1.7", quote = "with the origin in the top-left corner of the viewport and positive values going to the right and down." },
+]
+
+[[question]]
+id = "6.1-queue-capacity"
+plan = "6.1"
+question = "When a command queue already holds its maximum number of uncompleted command buffers, does commandBuffer block or return nil?"
+status = "resolved"
+answer = "It blocks the calling thread until the GPU finishes one of the queue's command buffers, then returns."
+cite = [
+  { src = "apple-makecommandbuffer", quote = "This method blocks the calling CPU thread when the queue doesn’t have any free command buffers, and returns after the GPU finishes executing one." },
+]
+
+[[question]]
+id = "6.1-handler-order-and-thread"
+plan = "6.1"
+question = "Order and thread of scheduled/completed handlers."
+status = "open"
+reason = "Not a specification fact: the Metal documentation states only that the driver calls the handlers after the GPU finishes the buffer, not their order or thread. Owned by the V1 reference harness (status/handler sequence recording on real Metal)."
+cite = [
+  { src = "apple-addcompletedhandler", quote = "The GPU device’s driver (on the CPU) calls the completion handlers after the GPU finishes executing the command buffer." },
+]
+
+[[question]]
+id = "6.1-device-removed-code"
+plan = "6.1"
+question = "Error code for command buffers affected by device loss."
+status = "open"
+reason = "MTLCommandBufferErrorDeviceRemoved (11) is unavailable on iOS, so the iOS 17.7 driver cannot report it; the header defines no device-loss code for iOS. Which code (for example Internal, Timeout or AccessRevoked) real iOS Metal reports when the GPU becomes unusable is device behavior that this Mac cannot show (its DeviceRemoved is macOS-only and deprecated). Needs a measurement on an iOS device, ideally the A10X (plan decision D-4); until then the executor reports device loss through the unimplemented channel rather than choosing a code."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLCommandBuffer.h", quote = "MTLCommandBufferErrorDeviceRemoved API_DEPRECATED(\"MTLCommandBufferErrorDeviceRemoved cannot occur on Apple Silicon\", macos(10.13, 27.0)) API_UNAVAILABLE(ios) = 11," },
+  { sdk = "Metal.framework/Headers/MTLCommandBuffer.h", quote = "MTLCommandBufferErrorInternal An internal error that doesn't fit into the other categories." },
+]
+
+[[question]]
+id = "6.1-fence-wait-before-update"
+plan = "6.1"
+question = "Is waiting on a fence before it is updated within the same command buffer a defined error in Metal?"
+status = "resolved"
+answer = "No error is defined. The documentation requires producing passes (which update the fence) to be encoded before consuming passes (which wait); the reverse order is not given a defined result, so it falls in validation class 2 of section 6.10 (undefined in Metal)."
+cite = [
+  { src = "apple-mtlfence", quote = "When encoding the producing and consuming passes into the same command buffer, encode the producing passes before the consuming passes." },
+]
+
+[[question]]
+id = "6.2-purgeable-state-return"
+plan = "6.2"
+question = "Return values of setPurgeableState:."
+status = "resolved"
+answer = "It returns the prior purgeable state; with keepCurrent it returns the current state without changing it."
+cite = [
+  { src = "apple-setpurgeablestate", quote = "The prior purgeable state of the resource." },
+  { src = "apple-setpurgeablestate", quote = "If state is keepCurrent, the method returns the current purgeable state without changing it." },
+]
+
+[[question]]
+id = "6.2-residency-sets"
+plan = "6.2"
+question = "Are residency sets part of the iOS 17.7 Metal API?"
+status = "resolved"
+answer = "No. MTLResidencySet is available from iOS 18.0, so it does not exist on 21H461 (iOS 17.7) and is rejected as on device."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLResidencySet.h", quote = "API_AVAILABLE(macos(15.0), ios(18.0)) @protocol MTLResidencySet <NSObject>" },
+]
+
+[[question]]
+id = "6.3-copy-alignment"
+plan = "6.3"
+question = "WebGPU alignment rules for buffer-texture and buffer-buffer copies."
+status = "resolved"
+answer = "Buffer<->texture copies need bytesPerRow to be a multiple of 256 and the buffer offset a multiple of the texel block copy footprint (4 for depth/stencil aspects). Buffer<->buffer copies need size and both offsets to be multiples of 4, and the source and destination must be different buffers."
+cite = [
+  { src = "webgpu", ref = "#gputexelcopybufferinfo", quote = "imageCopyBuffer.bytesPerRow must be a multiple of 256." },
+  { src = "webgpu", ref = "#gputexelcopytextureinfo", quote = "Let offsetAlignment = texel block copy footprint of texture.format." },
+  { src = "webgpu", ref = "#gputexelcopytextureinfo", quote = "Set offsetAlignment to 4. If aligned is true: bufferLayout.offset is a multiple of offsetAlignment." },
+  { src = "webgpu", ref = "#commands-buffer-copies", quote = "size is a multiple of 4. sourceOffset is a multiple of 4. destinationOffset is a multiple of 4." },
+  { src = "webgpu", ref = "#commands-buffer-copies", quote = "source and destination are not the same GPUBuffer." },
+]
+
+[[question]]
+id = "6.4-anisotropy"
+plan = "6.4"
+question = "WebGPU anisotropy limits and filter requirements."
+status = "resolved"
+answer = "maxAnisotropy must be at least 1, is clamped to the platform maximum, and when greater than 1 requires magFilter, minFilter and mipmapFilter all linear."
+cite = [
+  { src = "webgpu", ref = "#sampler-creation", quote = "The provided maxAnisotropy value will be clamped to the maximum value that the platform supports. If descriptor.maxAnisotropy > 1: descriptor.magFilter, descriptor.minFilter, and descriptor.mipmapFilter must be \"linear\"." },
+]
+
+[[question]]
+id = "6.4-depth-bias-formula"
+plan = "6.4"
+question = "Do Metal and WebGPU compute depth bias with the same formula and units?"
+status = "open"
+reason = "WebGPU defines the formula (constant bias times r, the minimum representable value of a unorm format, or 2^(exp(max depth) - r) for float formats, plus slope scale times max depth slope, then the clamp). Metal's documentation gives no formula, so the A10X's unit for depth bias is a hardware behavior: it needs a measurement on an A10X (a measurement on this Mac would describe M-series hardware only)."
+cite = [
+  { src = "webgpu", ref = "#depth-stencil-state", quote = "Let bias be (float)state.depthBias * r + state.depthBiasSlopeScale * maxDepthSlope." },
+  { src = "apple-setdepthbias", quote = "Call this method to have the render pipeline apply a bias to the rasterized depth after the clipping stage." },
+]
+
+[[question]]
+id = "6.4-depth-bias-lines-points"
+plan = "6.4"
+question = "Does depth bias apply to lines and points?"
+status = "resolved"
+answer = "In neither API. Metal: depth bias only influences triangles. WebGPU: bias has no effect on point and line topologies and must be 0 in pipelines with them. For Metal line/point draws the executor therefore builds the WebGPU pipeline with zero bias, which is exact."
+cite = [
+  { src = "apple-setdepthbias", quote = "A depth bias only influences triangle primitives, but doesn’t apply to points or lines." },
+  { src = "webgpu", ref = "#depth-stencil-state", quote = "If topology is \"point-list\", \"line-list\", or \"line-strip\": descriptor.depthBias must be 0. descriptor.depthBiasSlopeScale must be 0. descriptor.depthBiasClamp must be 0." },
+]
+
+[[question]]
+id = "6.4-viewport-bounds"
+plan = "6.4"
+question = "Does WebGPU restrict the viewport to the attachment bounds?"
+status = "resolved"
+answer = "Not to the attachment: x and y must be at least -2 x maxTextureDimension2D, x+width and y+height at most 2 x maxTextureDimension2D - 1, width and height in [0, maxTextureDimension2D], depths in [0,1] with minDepth <= maxDepth. WebGPU may round the viewport extents to integer precision, which a fractional Metal viewport can observe; a fractional viewport is exact only on hosts that keep the fraction (a per-host property) or through the shader-side position transform of section 6.4."
+cite = [
+  { src = "webgpu", ref = "#render-pass-encoder-rasterization-state", quote = "Let maxViewportRange be this.limits.maxTextureDimension2D × 2." },
+  { src = "webgpu", ref = "#render-pass-encoder-rasterization-state", quote = "x ≥ -maxViewportRange y ≥ -maxViewportRange 0 ≤ width ≤ this.limits.maxTextureDimension2D" },
+  { src = "webgpu", ref = "#render-pass-encoder-rasterization-state", quote = "Round x, y, width, and height to some uniform precision, no less precise than integer rounding." },
+]
+
+[[question]]
+id = "6.4-sample-positions-4x"
+plan = "6.4"
+question = "Are WebGPU's 4-sample positions the ones Metal.framework's __defaultSamplePositions_4 table holds?"
+status = "resolved"
+answer = "Yes. WebGPU mandates the standard pattern (0.375, 0.125), (0.875, 0.375), (0.125, 0.625), (0.625, 0.875), which is the table recorded in plan section 6.4 from Metal.framework. Whether the A10X driver uses the framework default is D1's."
+cite = [
+  { src = "webgpu", ref = "#standard-sample-patterns", quote = "4 | Sample 0: (0.375, 0.125) Sample 1: (0.875, 0.375) Sample 2: (0.125, 0.625) Sample 3: (0.625, 0.875)" },
+  { src = "webgpu", ref = "#rasterization", quote = "Implementations must use the standard sample pattern for the given multisample.count when performing rasterization." },
+]
+
+[[question]]
+id = "6.4-resolve-filter"
+plan = "6.4"
+question = "Does Metal specify the multisample resolve as an average?"
+status = "resolved"
+answer = "No. Metal's documentation says only that the GPU resolves the samples to one sample per pixel; WebGPU likewise says only that the samples are resolved to a single sample. Neither defines the filter, so the WebGPU resolve is within Metal's latitude (plan section 9 row 10)."
+cite = [
+  { src = "apple-multisampleresolve", quote = "The GPU resolves the multisampled data to one sample per pixel and stores the data to the resolve texture, discarding the multisample data afterwards." },
+  { src = "webgpu", ref = "#render-pass-encoder-finalization", quote = "Resolve the multiple samples of every texel of colorSubregion to a single sample and copy to colorAttachment.resolveTarget." },
+]
+
+[[question]]
+id = "6.5-primitive-restart"
+plan = "6.5"
+question = "Is primitive restart always on in both APIs?"
+status = "resolved"
+answer = "Metal treats the largest index value (0xFFFF / 0xFFFFFFFF) as a restart sentinel in every indexed draw. WebGPU splits on the restart value only for strip topologies with stripIndexFormat set; for list topologies the value is an ordinary index. Indexed list draws whose index data can contain the sentinel therefore need the executor to drop the incomplete primitive and restart assembly (re-indexing from the index data it holds); strips map directly with stripIndexFormat equal to the draw's index type."
+cite = [
+  { src = "apple-drawindexedprimitives", quote = "You can complete a primitive and start a new one by passing a sentinel index value that’s the largest unsigned integer possible for indexType." },
+  { src = "webgpu", ref = "#primitive-assembly", quote = "First, if the primitive topology is a strip, (which means that desc.stripIndexFormat is not undefined) and the drawCall is indexed, the vertexIndexList is split into sub-lists using the maximum value of desc.stripIndexFormat as a separator." },
+  { src = "webgpu", ref = "#primitive-assembly", quote = "Any incomplete primitives are dropped." },
+]
+
+[[question]]
+id = "6.5-index-offset-alignment"
+plan = "6.5"
+question = "WebGPU index buffer offset alignment."
+status = "resolved"
+answer = "The offset passed to setIndexBuffer must be a multiple of the index format's byte size (2 or 4)."
+cite = [
+  { src = "webgpu", ref = "#render-pass-encoder-drawing", quote = "offset is a multiple of indexFormat’s byte size." },
+]
+
+[[question]]
+id = "6.5-indirect-draw-layout"
+plan = "6.5"
+question = "Do Metal's indirect draw argument structs have WebGPU's field order?"
+status = "resolved"
+answer = "Yes. Non-indexed: vertexCount, instanceCount, vertexStart/firstVertex, baseInstance/firstInstance as four u32. Indexed: indexCount, instanceCount, indexStart/firstIndex, baseVertex (i32), baseInstance/firstInstance. A non-zero first instance needs indirect-first-instance; without it WebGPU treats the draw as a no-op, so the executor reads the arguments and issues a direct draw."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLRenderCommandEncoder.h", quote = "typedef struct { uint32_t vertexCount; uint32_t instanceCount; uint32_t vertexStart; uint32_t baseInstance; } MTLDrawPrimitivesIndirectArguments;" },
+  { sdk = "Metal.framework/Headers/MTLRenderCommandEncoder.h", quote = "typedef struct { uint32_t indexCount; uint32_t instanceCount; uint32_t indexStart; int32_t baseVertex; uint32_t baseInstance; } MTLDrawIndexedPrimitivesIndirectArguments;" },
+  { src = "webgpu", ref = "#render-pass-encoder-drawing", quote = "drawIndirectParameters[0] = vertexCount; drawIndirectParameters[1] = instanceCount; drawIndirectParameters[2] = firstVertex; drawIndirectParameters[3] = firstInstance;" },
+  { src = "webgpu", ref = "#render-pass-encoder-drawing", quote = "drawIndexedIndirectParameters[0] = indexCount; drawIndexedIndirectParameters[1] = instanceCount; drawIndexedIndirectParameters[2] = firstIndex; // baseVertex is a signed value. drawIndexedIndirectParametersSigned[3] = baseVertex; drawIndexedIndirectParameters[4] = firstInstance;" },
+  { src = "webgpu", ref = "#render-pass-encoder-drawing", quote = "If the \"indirect-first-instance\" feature is not enabled and firstInstance is not zero the drawIndirect() call will be treated as a no-op." },
+]
+
+[[question]]
+id = "6.6-indirect-dispatch-layout"
+plan = "6.6"
+question = "Does Metal's indirect dispatch struct match WebGPU's?"
+status = "resolved"
+answer = "Yes: three u32 threadgroup counts in x, y, z order in both."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLComputeCommandEncoder.h", quote = "typedef struct { uint32_t threadgroupsPerGrid[3]; } MTLDispatchThreadgroupsIndirectArguments;" },
+  { src = "webgpu", ref = "#compute-pass-encoder-dispatch", quote = "let dispatchIndirectParameters = new Uint32Array(3); dispatchIndirectParameters[0] = workgroupCountX; dispatchIndirectParameters[1] = workgroupCountY; dispatchIndirectParameters[2] = workgroupCountZ;" },
+]
+
+[[question]]
+id = "6.6-clear-buffer"
+plan = "6.6"
+question = "Can WebGPU's clearBuffer fill with a value other than zero?"
+status = "resolved"
+answer = "No. clearBuffer fills with zeros only, and size and offset must be multiples of 4. fillBuffer:range:value: with a non-zero byte, or with an unaligned range, needs writes or a compute pass."
+cite = [
+  { src = "webgpu", ref = "#commands-buffer-copies", quote = "Encode a command into the GPUCommandEncoder that fills a sub-region of a GPUBuffer with zeros." },
+  { src = "webgpu", ref = "#commands-buffer-copies", quote = "size is a multiple of 4. offset is a multiple of 4. buffer.size ≥ (offset + size)." },
+]
+
+[[question]]
+id = "6.6-overlapping-texture-copy"
+plan = "6.6"
+question = "What does Metal define for copies between overlapping regions of the same texture?"
+status = "resolved"
+answer = "Nothing: the documentation says such copies may result in unexpected behavior (undefined, validation class 2). WebGPU requires the source and destination subresource sets of copyTextureToTexture to be disjoint."
+cite = [
+  { src = "apple-copytexture", quote = "Copying data to overlapping regions within the same texture may result in unexpected behavior." },
+  { src = "webgpu", ref = "#commands-texel-copies", quote = "The set of subresources for texture copy(source, copySize) and the set of subresources for texture copy(destination, copySize) are disjoint." },
+]
+
+[[question]]
+id = "6.10-new-buffer-contents"
+plan = "6.10"
+question = "Does Metal zero-fill new buffers?"
+status = "resolved"
+answer = "Yes: makeBuffer(length:options:) creates a buffer it clears with zero values. WebGPU zero-initializes too."
+cite = [
+  { src = "apple-makebuffer", quote = "Creates a buffer the method clears with zero values." },
+]
