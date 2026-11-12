@@ -341,10 +341,11 @@ size_t WMElemSize(WMElem elem) {
 - (void)bounded:(NSString *)name elem:(WMElem)elem bytes:(const void *)bytes count:(size_t)count
           ideal:(const double *)ideal model:(NSString *)model bound:(NSString *)bound
       reference:(NSString *)reference {
-    if (elem != WMElemF16 && elem != WMElemF32 && elem != WMElemF64)
-        [self fail:@"bounded \"%@\": element type %@ is not floating point", name, WMElemName(elem)];
-    if (![@[@"ulp", @"abs", @"srgb8-decode"] containsObject:model])
+    if (![@[@"ulp", @"abs", @"srgb8-decode", @"srgb8-encode"] containsObject:model])
         [self fail:@"bounded \"%@\": unknown model %@", name, model];
+    BOOL codes = [model isEqualToString:@"srgb8-encode"];
+    if (codes ? elem != WMElemU8 : (elem != WMElemF16 && elem != WMElemF32 && elem != WMElemF64))
+        [self fail:@"bounded \"%@\": element type %@ does not fit model %@", name, WMElemName(elem), model];
     WMRule *rule = @{@"compare": @"bounded", @"model": model, @"bound": bound, @"reference": reference,
                      @"ideal": WMHex(ideal, count * sizeof(double))};
     [self data:name elem:elem bytes:bytes length:count * WMElemSize(elem) layout:nil rule:rule];

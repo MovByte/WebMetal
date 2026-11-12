@@ -138,6 +138,8 @@ def bounded_failures(record):
             ok = abs(value - target) <= bound
         elif rule["model"] == "srgb8-decode":
             ok = abs(srgb_code(value) - target) <= bound
+        elif rule["model"] == "srgb8-encode":
+            ok = abs(value - target) < bound
         else:
             return [f"unknown model {rule['model']}"]
         if not ok:

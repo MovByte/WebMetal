@@ -140,14 +140,16 @@ Comparison fields by record kind: `value`: `type` and `value`; `data`:
 
 A bounded rule has `model`, `bound` (a decimal string), `reference` (the
 clause that states the bound) and `ideal`: one IEEE binary64 value per data
-element, as little-endian hexadecimal. Each measured element `v` with ideal
-value `x` must satisfy:
+element, as little-endian hexadecimal. The data elements are `f16`, `f32` or
+`f64`, except for the `srgb8-encode` model, whose elements are `u8` codes.
+Each measured element `v` with ideal value `x` must satisfy:
 
 | `model` | Condition |
 | --- | --- |
 | `ulp` | `abs(v - x) <= bound * ulp(x)`, where `ulp` is defined in MSL 4.1 section 8.4 for the record's element type (`f16` or `f32`): the gap between the two consecutive finite values around `x`, or, when `x` is representable, the distance from `x` to its nearest other finite value |
 | `abs` | `abs(v - x) <= bound` |
 | `srgb8-decode` | `x` is an 8-bit sRGB code; converting `v` back to an unrounded sRGB code with the rule of MSL 4.1 section 8.7.7 gives `r`, and `abs(r - x) <= bound` |
+| `srgb8-encode` | `v` is an 8-bit sRGB code (`elem` is `u8`) and `x` is the unrounded reference code that the linear-to-sRGB rule of MSL 4.1 section 8.7.7 gives for the encoded value; `abs(v - x) < bound` (strictly less) |
 
 A NaN ideal value requires a NaN measured value.
 

@@ -71,10 +71,11 @@ size_t WMElemSize(WMElem elem);
 - (void)data:(NSString *)name elem:(WMElem)elem bytes:(const void *)bytes
       length:(size_t)length layout:(nullable NSDictionary *)layout rule:(WMRule *)rule;
 
-// Floating-point data compared against ideal values under an error model
-// (FORMAT.md, "Bounded comparisons"). `ideal` holds `count` doubles.
-// `model` is one of "ulp", "abs", "srgb8-decode"; `bound` is the decimal
-// bound for the model. `reference` names the clause that states the bound.
+// Data compared against ideal values under an error model (FORMAT.md,
+// "Bounded comparisons"). `ideal` holds `count` doubles. `model` is one of
+// "ulp", "abs", "srgb8-decode" (floating-point elements) or "srgb8-encode"
+// (u8 codes); `bound` is the decimal bound for the model. `reference` names
+// the clause that states the bound.
 - (void)bounded:(NSString *)name elem:(WMElem)elem bytes:(const void *)bytes
           count:(size_t)count ideal:(const double *)ideal model:(NSString *)model
           bound:(NSString *)bound reference:(NSString *)reference;
