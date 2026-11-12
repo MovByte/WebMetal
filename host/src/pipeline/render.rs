@@ -851,6 +851,8 @@ fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflecti
         BindingSource::MetalSampler { stage: s, index } => {
             Source::MetalSampler { stage: stage(call, *s)?, index: *index }
         }
+        // Framebuffer fetch: the snapshot the render path takes before each group of primitives (plan section 5.9).
+        BindingSource::FetchSnapshot { attachment } => Source::FetchSnapshot { attachment: *attachment },
         BindingSource::Uniforms(block) => {
             let mut fields = Vec::new();
             for f in &block.fields {
@@ -913,6 +915,9 @@ pub fn plan(call: &str, label: &str, settings: &RenderSettings, c: &Compiled) ->
     }
     let passes = match &c.passes[..] {
         [] | [airwgsl::PassPlan::Direct] => PassPlan::Direct,
+        // Each primitive in a pass of its own is exact for any geometry; the compiler's overlap prover only allows
+        // fewer passes, which the render path does not take yet.
+        [airwgsl::PassPlan::PerPrimitive { fetched, .. }] => PassPlan::PerPrimitive { fetched: fetched.clone() },
         other => return Err(failure::unimplemented(format!("{call}: the pass plans {other:?}"))),
     };
     Ok(RenderPipelineDesc {

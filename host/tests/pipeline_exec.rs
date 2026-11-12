@@ -497,6 +497,84 @@ fn a_compiled_render_pipeline_draws_through_the_render_encoder() {
     h.assert_no_errors();
 }
 
+/// `render.framebuffer-fetch` with the compiler's pipeline: the fragment function reads color attachment 0 through
+/// the snapshot binding the compiler describes, the pass plan draws each primitive after a snapshot (plan section
+/// 5.9), and the result equals Metal's.
+#[test]
+fn the_compiler_s_framebuffer_fetch_plan_draws_metal_s_result() {
+    use pipeline_common::render_descriptor;
+    let h = Harness::new();
+    let lib = reference_library();
+    if render_predicted(&h, &lib, "rnd_vertex_triangles", Some("rnd_fragment_fetch"), R32_UINT) != status::OK {
+        eprintln!("{}: rnd_fragment_fetch does not compile; nothing to draw", h.name());
+        return;
+    }
+    let vertex = h.function(&lib["rnd_vertex_triangles"].bitcode, "rnd_vertex_triangles", 1);
+    let fragment = h.function(&lib["rnd_fragment_fetch"].bitcode, "rnd_fragment_fetch", 2);
+    let p = h.handle();
+    let f = reply_failure(&h.render_pipeline(p, render_descriptor(Some(vertex), Some(fragment), R32_UINT), 0));
+    assert_eq!(f.status, status::OK, "{f:?}");
+    // MTLStorageModePrivate 2, MTLTextureUsageRenderTarget 4.
+    let target = h.handle();
+    h.ok(Request::CreateTexture(CreateTexture {
+        texture: target,
+        descriptor: render_common::texture_descriptor(R32_UINT, 8, 8, 2, 4),
+    }));
+    // RVertexAt of the reference harness: three triangles covering the target with ids 1, 2, 3, then a fourth with 4.
+    let mut vertices = Vec::new();
+    for t in 0..4u32 {
+        for (x, y) in [(-1.0f64, -1.0f64), (24.0, -1.0), (-1.0, 24.0)] {
+            for c in [(x / 8.0 * 2.0 - 1.0) as f32, (1.0 - y / 8.0 * 2.0) as f32, 0.0, 1.0] {
+                vertices.extend_from_slice(&c.to_le_bytes());
+            }
+            for u in [t + 1, 0, 0, 0] {
+                vertices.extend_from_slice(&u.to_le_bytes());
+            }
+            for c in [1.0f32, 0.0, 0.0, 0.0] {
+                vertices.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+    }
+    let (vb, _) = h.buffer_with(&vertices);
+    let draw = |start, count| {
+        // MTLPrimitiveTypeTriangle 3.
+        Command::RenderDrawPrimitives(RenderDrawPrimitives {
+            primitive_type: 3,
+            vertex_start: start,
+            vertex_count: count,
+        })
+    };
+    let mut records = render_common::render(
+        h.handle(),
+        render_common::pass_color(target, render_common::clear(0.0, 0.0, 0.0, 0.0)),
+        vec![
+            Command::RenderSetRenderPipelineState(RenderSetRenderPipelineState { pipeline_state: Some(p) }),
+            Command::RenderSetVertexBuffer(RenderSetVertexBuffer { buffer: Some(vb), offset: 0, index: 0 }),
+            draw(0, 9),
+            draw(9, 3),
+        ],
+    );
+    let (out, addr) = h.buffer_with(&[0u8; 256]);
+    records.push(Command::BeginBlit(BeginBlit { encoder: h.handle() }));
+    records.push(Command::BlitCopyTextureToBuffer(BlitCopyTextureToBuffer {
+        source_texture: Some(target),
+        source_slice: 0,
+        source_level: 0,
+        source_origin: Origin { x: 0, y: 0, z: 0 },
+        source_size: Size { width: 8, height: 8, depth: 1 },
+        destination_buffer: Some(out),
+        destination_offset: 0,
+        destination_bytes_per_row: 32,
+        destination_bytes_per_image: 256,
+    }));
+    records.push(Command::EncoderEndEncoding(EncoderEndEncoding {}));
+    let (f, at) = h.run(&records);
+    assert_eq!(f.status, status::OK, "{}: offset {at}: {f:?}", h.name());
+    let golden = Golden::load("render.framebuffer-fetch").bytes("result").expect("result");
+    assert_eq!(h.read(addr, 256), golden, "{}", h.name());
+    h.assert_no_errors();
+}
+
 #[test]
 fn every_reference_stage_function_creates_or_fails_loudly() {
     use pipeline_common::render_descriptor;
