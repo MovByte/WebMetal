@@ -1120,3 +1120,59 @@ answer = "Yes: makeBuffer(length:options:) creates a buffer it clears with zero 
 cite = [
   { src = "apple-makebuffer", quote = "Creates a buffer the method clears with zero values." },
 ]
+
+[[question]]
+id = "5.7-point-rasterization"
+plan = "5.7"
+question = "Which pixels does Metal cover for a point of size other than 1, and does WebGPU support larger points?"
+status = "open"
+reason = "WebGPU rasterizes a point to the single pixel containing it, so sizes other than 1 need the plan's quad expansion. MSL defines point_size only as the size of a point primitive; neither MSL nor the Metal documentation pinned here states the coverage rule (square, centre sampling, rounding of the size). The rule is hardware behavior to be measured on the A10X before the quad expansion can be claimed exact; until then sizes other than 1 are LOUD (plan 5.7)."
+cite = [
+  { src = "webgpu", ref = "#point-rasterization", quote = "A single FragmentDestination is selected within the pixel containing the framebuffer coordinates of the point." },
+  { src = "msl", ref = "5.2.3.3", quote = "point_size float Size of a point primitive" },
+]
+
+[[question]]
+id = "5.9-subpixel-precision"
+plan = "5.9"
+question = "Metal's subpixel precision for rasterization, needed by the overlap proof of the fetch emulation."
+status = "open"
+reason = "Neither the MSL specification nor the pinned Metal documentation or family tables state a subpixel precision; it is a property of the A10X rasterizer and needs a measurement on the device. Until then the disjoint-batch acceleration of plan 5.9 cannot be proved and the baseline per-primitive path applies."
+cite = [
+  { src = "msl", ref = "1.7", absent = "[Ss]ub-?pixel" },
+]
+
+[[question]]
+id = "5.7-lod-average-and-bias"
+plan = "5.7"
+question = "Behavior of the sampler SPI properties lodAverage and lodBias on the A10X."
+status = "open"
+reason = "Both are private (SPI) sampler properties without public documentation; the family tables list the public sampler LOD bias only from Apple10. Their effect on the A10X is hardware behavior needing a measurement on the device (D1 can read whether the driver honors them); until then a sampler that sets either is LOUD."
+cite = [
+  { src = "mfst", quote = "Sampler LOD bias Metal 3 & 4 Apple10" },
+]
+
+[[question]]
+id = "D1-api-profile-values"
+plan = "6.9"
+question = "A10X values the API mapping depends on: per-stage buffer, texture and sampler slots (5.5), constant sampler encodings (5.5), argument buffer tier (5.5), counter sets (6.1), heap sizes and alignments and allocated sizes (6.2), viewport count (6.4), non-uniform dispatch (6.6)."
+status = "open"
+owner = "D1"
+reason = "These are device values D1 extracts from the 21H461 binaries; they are not specification questions. Apple's family tables, a cross-check only, give argument buffers tier 1 for the A10's family (tier 2 from Apple6), multiple viewports from Apple5 (so one viewport) and non-uniform threadgroup size from Apple4 (so dispatchThreads is unavailable)."
+cite = [
+  { src = "mfst", quote = "A10-series Metal Apple3" },
+  { src = "mfst", quote = "Argument buffers tier 2 Metal 3 & 4 Apple6" },
+  { src = "mfst", quote = "Multiple viewports Metal 3 & 4 Apple5" },
+  { src = "mfst", quote = "Nonuniform threadgroup size Metal 3 & 4 Apple4" },
+]
+
+[[question]]
+id = "system-behavior-items"
+plan = "6.8"
+question = "Items of sections 6.3, 6.6 and 6.8 that depend on system software or the panel rather than a specification: how often CoreAnimation asks for XR formats on J120, the disp0 panel mode, the framebuffer color space, QuartzCore's handling of timed presents, IOSurfaceAccelerator filters, and the CoreAnimation texture-memory SPI."
+status = "open"
+owner = "G3, K3, K5"
+reason = "Not specification questions: their answers come from the 21H461 binaries and DeviceTree (packages G3, K3 and K5) or from a device. Listed here so that every [M] of sections 5 and 6 has an entry. The XR encoding itself is resolved in formats.toml (question 6.3-xr-encoding)."
+cite = [
+  { src = "apple-bgr10-xr", quote = "To display wide color values on devices with wide color displays, set this pixel format on the colorPixelFormat property of an MTKView or the pixelFormat property of a CAMetalLayer." },
+]

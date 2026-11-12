@@ -5223,3 +5223,14 @@ cite = [
   { src = "mfst", quote = "Programmable sample positions Metal 3 & 4 Apple2" },
   { src = "mfst", quote = "Counting occlusion query Metal 3 & 4 Apple3" },
 ]
+
+[[question]]
+id = "6.3-ycbcr"
+plan = "6.3"
+question = "Conversion matrix, range, siting and filtering order of the private YCbCr formats."
+status = "open"
+owner = "D1"
+reason = "The private YCbCr formats are absent from the SDK header and the public documentation, so no specification defines them; their list and definitions come from the 21H461 binaries (D1) and IOSurface attachments, and the order of filtering and conversion is hardware behavior needing a device measurement (plan section 9 row 7)."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLPixelFormat.h", absent = "[Yy][Cc][Bb][Cc][Rr]" },
+]
