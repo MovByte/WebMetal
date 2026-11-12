@@ -12,6 +12,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "airwgsl"
+version = "0.1.0"
+source = "git+https://github.com/MovByte/AirWgsl?rev=07395cfd9ead0433865a6d724a38b1a43a93f0fb#07395cfd9ead0433865a6d724a38b1a43a93f0fb"
+
+[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -200,6 +205,7 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 name = "webmetal-host"
 version = "0.1.0"
 dependencies = [
+ "airwgsl",
  "bindgen",
  "webmetal-wire",
 ]
