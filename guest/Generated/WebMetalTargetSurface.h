@@ -1100,6 +1100,40 @@ inline constexpr DriverSelector kAGXA10FamilyRenderPipelineDriver[] = {
     {SelectorKind::Instance, "vertexFunctionHandleWithFunction:", "@24@0:8@16", "agx", ""},
 };
 
+// Driver-layer selectors of AGXA10FamilyIndirectArgumentEncoder -> IOGPUMetalIndirectArgumentEncoder -> _MTLIndirectArgumentEncoder -> _MTLObjectWithLabel.
+inline constexpr DriverSelector kAGXA10FamilyIndirectArgumentEncoderDriver[] = {
+    {SelectorKind::Instance, "alignment", "Q16@0:8", "agx", ""},
+    {SelectorKind::Instance, "constantDataAtIndex:", "^v24@0:8Q16", "agx", ""},
+    {SelectorKind::Instance, "encodedLength", "Q16@0:8", "agx", ""},
+    {SelectorKind::Instance, "initWithLayout:device:", "@32@0:8@16@24", "agx", ""},
+    {SelectorKind::Instance, "newArgumentEncoderForBufferAtIndex:", "@24@0:8Q16", "agx", ""},
+    {SelectorKind::Instance, "setAccelerationStructure:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setArgumentBuffer:offset:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setBuffer:offset:atIndex:", "v40@0:8@16Q24Q32", "agx", ""},
+    {SelectorKind::Instance, "setBuffers:offsets:withRange:", "v48@0:8r^@16r^Q24{_NSRange=QQ}32", "agx", ""},
+    {SelectorKind::Instance, "setComputePipelineState:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setComputePipelineStates:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setFunctionTable:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setFunctionTables:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setIndirectArgumentBuffer:offset:", "v32@0:8@16Q24", "iogpu", ""},
+    {SelectorKind::Instance, "setIndirectCommandBuffer:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setIndirectCommandBuffers:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setIntersectionFunctionTable:atBufferIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setIntersectionFunctionTable:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setIntersectionFunctionTables:withBufferRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setIntersectionFunctionTables:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setRenderPipelineState:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setRenderPipelineStates:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setSamplerState:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setSamplerStates:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setTexture:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setTextures:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setVisibleFunctionTable:atBufferIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setVisibleFunctionTable:atIndex:", "v32@0:8@16Q24", "agx", ""},
+    {SelectorKind::Instance, "setVisibleFunctionTables:withBufferRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+    {SelectorKind::Instance, "setVisibleFunctionTables:withRange:", "v40@0:8r^@16{_NSRange=QQ}24", "agx", ""},
+};
+
 inline constexpr Role kRoles[] = {
     {"WebMetalDevice", "AGXA10XDevice", "_MTLDevice", kAGXA10XDeviceDriver, 264},
     {"WebMetalBuffer", "AGXA10FamilyBuffer", "_MTLResource", kAGXA10FamilyBufferDriver, 75},
@@ -1115,6 +1149,7 @@ inline constexpr Role kRoles[] = {
     {"WebMetalDepthStencilState", "AGXA10FamilyDepthStencilState", "_MTLDepthStencilState", kAGXA10FamilyDepthStencilStateDriver, 4},
     {"WebMetalComputePipelineState", "AGXA10FamilyComputePipeline", "_MTLComputePipelineState", kAGXA10FamilyComputePipelineDriver, 16},
     {"WebMetalRenderPipelineState", "AGXA10FamilyRenderPipeline", "_MTLRenderPipelineState", kAGXA10FamilyRenderPipelineDriver, 37},
+    {"WebMetalArgumentEncoder", "AGXA10FamilyIndirectArgumentEncoder", "_MTLIndirectArgumentEncoder", kAGXA10FamilyIndirectArgumentEncoderDriver, 30},
 };
 
 inline constexpr BaseIvar k_MTLAccelerationStructureCommandEncoderIvars[] = {
@@ -2528,12 +2563,52 @@ inline constexpr BaseSelector k_MTLHeapSelectors[] = {
     {SelectorKind::Instance, "usedSize", nullptr},
 };
 
+inline constexpr BaseIvar k_MTLIndirectArgumentBufferLayoutIvars[] = {
+    {"_private", 8, "^v"},
+};
+inline constexpr BaseSelector k_MTLIndirectArgumentBufferLayoutSelectors[] = {
+    {SelectorKind::Instance, nullptr, nullptr},  // none; the count below is 0
+};
+
 inline constexpr BaseIvar k_MTLIndirectArgumentEncoderIvars[] = {
     {"_device", 24, "@\"<MTLDevice>\""},
     {"_layout", 32, "@\"_MTLIndirectArgumentBufferLayout\""},
 };
 inline constexpr BaseSelector k_MTLIndirectArgumentEncoderSelectors[] = {
-    {SelectorKind::Instance, nullptr, nullptr},  // none; the count below is 0
+    {SelectorKind::Instance, "alignment", nullptr},
+    {SelectorKind::Instance, "constantDataAtIndex:", "^v24@0:8Q16"},
+    {SelectorKind::Instance, "device", "@16@0:8"},
+    {SelectorKind::Instance, "encodedLength", nullptr},
+    {SelectorKind::Instance, "initWithLayout:device:", "@32@0:8@16@24"},
+    {SelectorKind::Instance, "label", "@16@0:8"},
+    {SelectorKind::Instance, "newArgumentEncoderForBufferAtIndex:", "@24@0:8Q16"},
+    {SelectorKind::Instance, "setAccelerationStructure:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setArgumentBuffer:offset:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setArgumentBuffer:startOffset:arrayElement:", "v40@0:8@16Q24Q32"},
+    {SelectorKind::Instance, "setBuffer:offset:atIndex:", "v40@0:8@16Q24Q32"},
+    {SelectorKind::Instance, "setBuffers:offsets:withRange:", "v48@0:8r^@16r^Q24{_NSRange=QQ}32"},
+    {SelectorKind::Instance, "setComputePipelineState:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setComputePipelineStates:withRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setFunctionTable:atIndex:", nullptr},
+    {SelectorKind::Instance, "setFunctionTables:withRange:", nullptr},
+    {SelectorKind::Instance, "setIndirectArgumentBuffer:offset:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setIndirectCommandBuffer:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setIndirectCommandBuffers:withRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setIntersectionFunctionTable:atBufferIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setIntersectionFunctionTable:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setIntersectionFunctionTables:withBufferRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setIntersectionFunctionTables:withRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setLabel:", "v24@0:8@16"},
+    {SelectorKind::Instance, "setRenderPipelineState:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setRenderPipelineStates:withRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setSamplerState:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setSamplerStates:withRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setTexture:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setTextures:withRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setVisibleFunctionTable:atBufferIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setVisibleFunctionTable:atIndex:", "v32@0:8@16Q24"},
+    {SelectorKind::Instance, "setVisibleFunctionTables:withBufferRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
+    {SelectorKind::Instance, "setVisibleFunctionTables:withRange:", "v40@0:8r^@16{_NSRange=QQ}24"},
 };
 
 inline constexpr BaseIvar k_MTLIndirectComputeCommandIvars[] = {
@@ -2920,7 +2995,8 @@ inline constexpr BaseLayout kBases[] = {
     {"_MTLFence", "_MTLObjectWithLabel", 20, k_MTLFenceIvars, 0, k_MTLFenceSelectors, 0},
     {"_MTLFunctionHandle", "NSObject", 32, k_MTLFunctionHandleIvars, 3, k_MTLFunctionHandleSelectors, 0},
     {"_MTLHeap", "_MTLObjectWithLabel", 48, k_MTLHeapIvars, 3, k_MTLHeapSelectors, 37},
-    {"_MTLIndirectArgumentEncoder", "_MTLObjectWithLabel", 40, k_MTLIndirectArgumentEncoderIvars, 2, k_MTLIndirectArgumentEncoderSelectors, 0},
+    {"_MTLIndirectArgumentBufferLayout", "NSObject", 16, k_MTLIndirectArgumentBufferLayoutIvars, 1, k_MTLIndirectArgumentBufferLayoutSelectors, 0},
+    {"_MTLIndirectArgumentEncoder", "_MTLObjectWithLabel", 40, k_MTLIndirectArgumentEncoderIvars, 2, k_MTLIndirectArgumentEncoderSelectors, 34},
     {"_MTLIndirectComputeCommand", "NSObject", 8, k_MTLIndirectComputeCommandIvars, 0, k_MTLIndirectComputeCommandSelectors, 0},
     {"_MTLIndirectRenderCommand", "NSObject", 8, k_MTLIndirectRenderCommandIvars, 0, k_MTLIndirectRenderCommandSelectors, 0},
     {"_MTLObjectWithLabel", "NSObject", 20, k_MTLObjectWithLabelIvars, 2, k_MTLObjectWithLabelSelectors, 0},

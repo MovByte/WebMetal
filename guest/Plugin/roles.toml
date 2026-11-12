@@ -59,3 +59,7 @@ target = "AGXA10FamilyComputePipeline"
 [[class]]
 name = "WebMetalRenderPipelineState"
 target = "AGXA10FamilyRenderPipeline"
+
+[[class]]
+name = "WebMetalArgumentEncoder"
+target = "AGXA10FamilyIndirectArgumentEncoder"

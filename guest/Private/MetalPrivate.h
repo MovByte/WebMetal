@@ -59,6 +59,9 @@
 @interface _MTLIndirectArgumentEncoder : _MTLObjectWithLabel
 @end
 
+@interface _MTLIndirectArgumentBufferLayout : NSObject
+@end
+
 @interface _MTLRenderPipelineState : NSObject
 @end
 
