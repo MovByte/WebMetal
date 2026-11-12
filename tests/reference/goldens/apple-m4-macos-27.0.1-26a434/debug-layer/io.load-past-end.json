@@ -1,0 +1,17 @@
+{
+  "area": "io.errors",
+  "case": "io.load-past-end",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugIOCommandBuffer internalValidateLoadBuffer:offset:size:sourceHandle:sourceHandleOffset:]:78: failed assertion `Load Buffer From IO Handle Validation\nsourceHandleOffset(7680) + size(1024) must be <= [sourceHandle length](8192)\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"require","name":"io-command-queue","value":true},
+    {"kind":"step","name":"load"}
+  ],
+  "status": "terminated",
+  "title": "Error path: an IO load whose source range extends past the end of the file",
+  "variant": "debug-layer"
+}

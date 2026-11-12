@@ -1,0 +1,16 @@
+{
+  "area": "validation.resources",
+  "case": "validation.buffer-length-over-max",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugDevice newBufferWithLength:options:]:796: failed assertion `Buffer Validation\nnewBufferWith*:length 0x must not exceed 13639 MB.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newBufferWithLength: one byte above maxBufferLength",
+  "variant": "debug-layer"
+}

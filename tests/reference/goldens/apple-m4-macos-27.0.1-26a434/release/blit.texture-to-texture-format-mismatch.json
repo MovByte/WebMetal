@@ -1,0 +1,17 @@
+{
+  "area": "validation.blit",
+  "case": "blit.texture-to-texture-format-mismatch",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"encode-mismatched-copy"},
+    {"kind":"step","name":"end-encoding"},
+    {"kind":"value","name":"status","rule":{"compare":"none","reason":"misuse: the result is not defined"},"type":"i64","value":4}
+  ],
+  "status": "ok",
+  "title": "Texture copy between different pixel formats, which the documentation does not allow",
+  "variant": "release"
+}

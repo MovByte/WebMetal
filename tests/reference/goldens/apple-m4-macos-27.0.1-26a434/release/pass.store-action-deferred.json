@@ -1,0 +1,15 @@
+{
+  "area": "pass.load-store",
+  "case": "pass.store-action-deferred",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":16,"elem":"u32","hex":"03000000030000000300000003000000030000000300000003000000030000000300000003000000030000000300000003000000030000000300000003000000","kind":"data","layout":{"bytes_per_row":16,"format":"R32Uint","height":4,"width":4},"name":"result","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "MTLStoreActionUnknown finalized with setColorStoreAction:atIndex: before endEncoding",
+  "variant": "release"
+}

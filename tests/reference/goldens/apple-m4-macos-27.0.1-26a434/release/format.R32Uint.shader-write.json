@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R32Uint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"u32","hex":"000000001b5984d87f1bc6f5134adc7b01000000e424854120fd4ac45e876a98ff00000010173e14a4560e39590863d900010000426895ae72509364d7a45db9ffff000047ddefc292f2a62a1ebde0d800000100a0774f7580b97733fd4f4be3ff030000f1a9f647b6d15cca7e38ab15000400002f7dbfcf59110ef9fa22a44affffffffa543bf94403e25578fdad219000000804edc711a17081848f30f2ff9ef7799975fbaee164f5a4fdeb199153b7a03be1900d10c9b549dad098ff0ab5e00152ed3a19b43ca886066676ac447acccef960b5a06c430ac47b43237337c2ae6dc41a48741845a11382a952323dc11e6008eef8eb6d395550487508000378cced1b21a4ef99dfcd807196d68d97c3c44d25806e6223ffc10a71064b00cc0265ce990e8866c320fda87d2e839f7318941e4a6658e5a2bac770167699cbc68bea2c03130cbc8822ca7351fb0c3c9eed87fb34703a0831b06e14eeb0bf9c0d5def728d7ed686cf3b47041f5c3f3204a2237badc78ab5b8b5aff2cb873b1d7d12ac3a3b0e7408c90dad0668718f33ac0f753ba51a0e3252f88f72accdcf6c46d778f42500f53a1178205f05d0084187c4da3bcdf0c75f576597c37146e6ca9a10eb656e9cb54d436e76259bd3632c6595ab9ddb7dbd4f2c3267c7393c67b80b4fb4d66c1755bcd0488def4a226c6c6342402f849b018aaf34a52afb7bfdfb24001","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"0000000001000000ff00000000010000ffff000000000100ff03000000040000ffffffff00000080ef7799977a03be1900152ed3ccef960be6dc41a4e6008eefced1b21a44d258065ce990e841e4a665a2c031307fb34703f728d7ed37badc78c3a3b0e753ba51a08f42500fa3bcdf0cb656e9cbb9ddb7db4d66c17502f849b0","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R32Uint",
+  "variant": "release"
+}

@@ -1,0 +1,18 @@
+{
+  "area": "pass.layered",
+  "case": "pass.layered-rendering",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple5","value":true},
+    {"count":16,"elem":"u32","hex":"04000000040000000400000004000000040000000400000004000000040000000400000004000000040000000400000004000000040000000400000004000000","kind":"data","name":"layer-0","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u32","hex":"02000000020000000200000002000000020000000200000002000000020000000200000002000000020000000200000002000000020000000200000002000000","kind":"data","name":"layer-1","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u32","hex":"03000000030000000300000003000000030000000300000003000000030000000300000003000000030000000300000003000000030000000300000003000000","kind":"data","name":"layer-2","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "renderTargetArrayLength with [[render_target_array_index]], including an out-of-bounds index",
+  "variant": "release"
+}

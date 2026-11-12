@@ -1,0 +1,43 @@
+{
+  "area": "pipeline.descriptors",
+  "case": "pipeline.descriptor-defaults",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"color.pixel-format","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"color.blending-enabled","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"color.source-rgb","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"color.destination-rgb","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"color.rgb-operation","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"color.source-alpha","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"color.destination-alpha","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"color.alpha-operation","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"color.write-mask","rule":{"compare":"exact"},"type":"u64","value":15},
+    {"kind":"value","name":"max-call-stack-depth","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"depth-format","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"stencil-format","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"raster-sample-count","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":1},
+    {"kind":"value","name":"alpha-to-coverage","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"bool","value":false},
+    {"kind":"value","name":"alpha-to-one","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"bool","value":false},
+    {"kind":"value","name":"rasterization-enabled","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"bool","value":true},
+    {"kind":"value","name":"input-primitive-topology","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":0},
+    {"kind":"value","name":"max-tessellation-factor","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":16},
+    {"kind":"value","name":"tessellation-partition-mode","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":0},
+    {"kind":"value","name":"tessellation-factor-format","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":0},
+    {"kind":"value","name":"tessellation-step-function","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":0},
+    {"kind":"value","name":"tessellation-winding","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":0},
+    {"kind":"value","name":"tessellation-control-point-index","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":0},
+    {"kind":"value","name":"support-indirect-command-buffers","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"bool","value":false},
+    {"kind":"value","name":"max-vertex-amplification-count","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":1},
+    {"kind":"value","name":"compute.max-call-stack-depth","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"compute.max-total-threads","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"u64","value":0},
+    {"kind":"value","name":"compute.multiple-of-execution-width","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"bool","value":false},
+    {"kind":"value","name":"compute.support-indirect-command-buffers","rule":{"compare":"none","reason":"default not stated in MTLRenderPipeline.h"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "Default values of render and compute pipeline descriptors",
+  "variant": "release"
+}

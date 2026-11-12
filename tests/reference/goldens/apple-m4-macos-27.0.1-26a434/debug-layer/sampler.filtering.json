@@ -1,0 +1,17 @@
+{
+  "area": "sampler.filtering",
+  "case": "sampler.filtering",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":28,"elem":"f32","hex":"000000000000804100000042000040420000003f000084410000024200004242000020400000944100000a4200004a420000504000009a4100000d4200004d420000f0400000bc4100001e4200005e42000040400000984100000c4200004c42000070410000f84100003c4200007c42","kind":"data","name":"bilinear","rule":{"compare":"none","reason":"Metal states no precision for filter weights or the anisotropic footprint"}},
+    {"count":12,"elem":"f32","hex":"00a0074200a0474200c0834200c0a3420080a0420080c0420080e042004000430080c2420080e2420040014300401143","kind":"data","name":"linear-mip","rule":{"compare":"none","reason":"Metal states no precision for filter weights or the anisotropic footprint"}},
+    {"count":8,"elem":"f32","hex":"0000f0400000bc4100001e4200005e420000f0400000bc4100001e4200005e42","kind":"data","name":"anisotropic-16","rule":{"compare":"none","reason":"Metal states no precision for filter weights or the anisotropic footprint"}}
+  ],
+  "status": "ok",
+  "title": "Linear, linear-mip and anisotropic filtering results (reference data)",
+  "variant": "debug-layer"
+}

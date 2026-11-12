@@ -1,0 +1,25 @@
+{
+  "area": "format.compressed",
+  "case": "format.BC2_RGBA.blocks",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"supports-bc-texture-compression","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":64,"elem":"u8","hex":"0c0bc45a9815aad05fd0c4638ff63f6d63712899cc8f8abaaf93783009c71c68a76900809868c53d341a88281d66a14017c9f1564de5a8e4e388c3de9879fbc7","kind":"data","layout":{"block_bytes":16,"block_height":4,"block_width":4,"bytes_per_row":32,"format":"BC2_RGBA","height":8,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"kind":"step","name":"getBytes"},
+    {"count":64,"elem":"u8","hex":"0c0bc45a9815aad05fd0c4638ff63f6d63712899cc8f8abaaf93783009c71c68a76900809868c53d341a88281d66a14017c9f1564de5a8e4e388c3de9879fbc7","kind":"data","layout":{"block_bytes":16,"block_height":4,"block_width":4,"bytes_per_row":32,"format":"BC2_RGBA","height":8,"width":8},"name":"getbytes","rule":{"compare":"exact"}},
+    {"kind":"step","name":"copyFromTexture:toBuffer:"},
+    {"count":64,"elem":"u8","hex":"0c0bc45a9815aad05fd0c4638ff63f6d63712899cc8f8abaaf93783009c71c68a76900809868c53d341a88281d66a14017c9f1564de5a8e4e388c3de9879fbc7","kind":"data","name":"readback","rule":{"compare":"exact"}},
+    {"kind":"step","name":"copyFromTexture:toTexture:"},
+    {"kind":"value","name":"copy-equals-source","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"step","name":"read"},
+    {"count":256,"elem":"f32","hex":"8a89093fa9a8a83ed5d4d43ecdcc4c3f8a89093fa9a8a83ed5d4d43e00000000d7d6563f8180003d0000803fbcbb3b3fb1b0303fb5b4343eb7b6363f00000000c5c4443ec1c0403dc7c6463fcdcc4c3ee9e8e83ea7a6a63e9594143fcdcccc3e9594143febeaea3ef7f6f63e8988883d9594143febeaea3ef7f6f63eefeeee3eb1b0303fb5b4343eb7b6363f8988883ec7c6c63ef3f2f23e8584043ecdcc4c3f8a89093fa9a8a83ed5d4d43eabaa2a3f8a89093fa9a8a83ed5d4d43eabaaaa3ea3a2a23eb9b8383eaead2d3f8988083fc5c4443ec1c0403dc7c6463f8988083e9594143febeaea3ef7f6f63e9a99193fa3a2a23eb9b8383eaead2d3f9a99193f8a89093fa9a8a83ed5d4d43e8988083f8a89093fa9a8a83ed5d4d43e9a99193f8a89093fa9a8a83ed5d4d43eabaaaa3ed7d6563f8180003d0000803f8988883d9594143febeaea3ef7f6f63ecdcc4c3fa3a2a23eb9b8383eaead2d3fcdcc4c3fc5c4443ec1c0403dc7c6463f0000803f9594143febeaea3ef7f6f63e8988083fc7c6c63ef3f2f23e8584043eabaa2a3f8a89093fa9a8a83ed5d4d43eabaa2a3fb1b0303fb5b4343eb7b6363f00000000c7c6c63ef3f2f23e8584043ededd5d3f9594143febeaea3ef7f6f63eabaa2a3fe9e8e83ea7a6a63e9594143f8988083fe9e8e83ea7a6a63e9594143fabaa2a3fc5c4443ec1c0403dc7c6463fbcbb3b3fa5a4243e8180803d8584843eefeeee3e8d8c0c3e8584043ec5c4c43eabaa2a3fa5a4243e8180803d8584843e9a99193fc1c0c03d8b8a8a3ea6a5253fcdcccc3e8d8c0c3fe1e0e03dc1c0c03defeeee3ea8a7273fb7b6b63ec1c0c03d8988883ddfde5e3fdcdb5b3fc1c0c03d9a99193fa8a7273fb7b6b63ec1c0c03dcdcc4c3ff1f0f03dd1d0503e8685053f00000000a5a4243e8180803d8584843e00000000f1f0f03dd1d0503e8685053f00000000a5a4243e8180803d8584843e8988083fdfde5e3fdcdb5b3fc1c0c03d8988883da8a7273fb7b6b63ec1c0c03d0000803fc4c3433f9d9c1c3fc1c0c03dcdcccc3edfde5e3fdcdb5b3fc1c0c03dabaaaa3ea5a4243e8180803d8584843e8988083fc1c0c03d8b8a8a3ea6a5253f9a99193ff1f0f03dd1d0503e8685053f8988083ff1f0f03dd1d0503e8685053fcdcccc3ec4c3433f9d9c1c3fc1c0c03ddedd5d3fa8a7273fb7b6b63ec1c0c03d8988883ec4c3433f9d9c1c3fc1c0c03dabaaaa3ec4c3433f9d9c1c3fc1c0c03defee6e3fc1c0c03d8b8a8a3ea6a5253fabaaaa3ec1c0c03d8b8a8a3ea6a5253fcdcc4c3fc1c0c03d8b8a8a3ea6a5253fdedd5d3fa5a4243e8180803d8584843ecdcc4c3ec4c3433f9d9c1c3fc1c0c03d8988083fdfde5e3fdcdb5b3fc1c0c03dabaa2a3f8d8c0c3fe1e0e03dc1c0c03d8988883ec4c3433f9d9c1c3fc1c0c03defee6e3f","kind":"data","layout":{"components":4,"height":8,"width":8},"name":"read.decoded","rule":{"compare":"none","reason":"Metal does not state the output precision of compressed-format decoding for shader reads"}}
+  ],
+  "status": "ok",
+  "title": "Block upload, readback, copy and decoded read of BC2_RGBA",
+  "variant": "debug-layer"
+}

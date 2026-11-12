@@ -1,0 +1,18 @@
+{
+  "area": "command-buffer.ordering",
+  "case": "command-buffer.enqueue-order",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"a.status","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"kind":"value","name":"b.status","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"count":256,"elem":"u8","hex":"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1","kind":"data","name":"target","rule":{"compare":"exact"}},
+    {"kind":"value","name":"completed-handler-order","rule":{"compare":"exact"},"type":"strings","value":["b","a"]}
+  ],
+  "status": "ok",
+  "title": "Command buffers run in enqueue order when it differs from creation and commit order",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,17 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.encoder-on-committed-buffer",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "failed assertion _status < MTLCommandBufferStatusCommitted at line 323 in -[IOGPUMetalCommandBuffer setCurrentCommandEncoder:]",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"value","name":"status","rule":{"compare":"exact"},"type":"i64","value":4},
+    {"kind":"step","name":"create-encoder"}
+  ],
+  "status": "terminated",
+  "title": "computeCommandEncoder on a command buffer that was committed",
+  "variant": "release"
+}

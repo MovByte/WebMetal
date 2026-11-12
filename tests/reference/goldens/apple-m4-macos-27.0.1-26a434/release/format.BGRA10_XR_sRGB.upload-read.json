@@ -1,0 +1,22 @@
+{
+  "area": "format.color",
+  "case": "format.BGRA10_XR_sRGB.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":256,"elem":"u8","hex":"0000000000000000c0ffc0ffc0ffc0ff0000000000000000c0ffc0ffc0ffc0ff0000000000000000c0ffc0ffc0ffc0ff0067c0cdc01140cf007a00e040d4408a40c1809c00e680fc803a80ab80550007c03180be004b003d00e700a38086806a800a80df400c00e1c084401c002580f5c0f1c0234036403e80db40a600ff0089006c40e0c09600cf00210041006f409640eec0560047001400a340ee80d6c02ac0a380afc019c018c04dc035406a4059405fc08cc08800fc004180588022005e007f40ab0033c098005cc0bec0600062c045002c80b640e8800b00ba00fac01980dbc076001680e880e300f280c2409c001740d3c0bc00188066c01b00e74055","kind":"data","layout":{"bytes_per_row":64,"format":"BGRA10_XR_sRGB","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":256,"elem":"u8","hex":"0000000000000000c0ffc0ffc0ffc0ff0000000000000000c0ffc0ffc0ffc0ff0000000000000000c0ffc0ffc0ffc0ff0067c0cdc01140cf007a00e040d4408a40c1809c00e680fc803a80ab80550007c03180be004b003d00e700a38086806a800a80df400c00e1c084401c002580f5c0f1c0234036403e80db40a600ff0089006c40e0c09600cf00210041006f409640eec0560047001400a340ee80d6c02ac0a380afc019c018c04dc035406a4059405fc08cc08800fc004180588022005e007f40ab0033c098005cc0bec0600062c045002c80b640e8800b00ba00fac01980dbc076001680e880e300f280c2409c001740d3c0bc00188066c01b00e74055","kind":"data","layout":{"bytes_per_row":64,"format":"BGRA10_XR_sRGB","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"kind":"value","name":"getbytes-equals-readback","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":0,"elem":"f32","hex":"","kind":"data","name":"read.exact","rule":{"compare":"exact"}},
+    {"count":128,"elem":"f32","hex":"00f006bf00f006bf00f006bf000000000064d63f0064d63f0064d63f0000803f00f006bf00f006bf00f006bf000000000064d63f0064d63f0064d63f0000803f00f006bf00f006bf00f006bf000000000064d63f0064d63f0064d63f0000803f0070abbe0048363f0000903b5f5f5f3f00984f3f0024813f00800c3daaa9a93e00588f3f00c0433e00e80a3f0000803f0000f4bb00709e3e000090bd000000000000bebc0048023f00c0ddbd000000000000983d0020743e00cc913fa9a8a83d0030c7be0000803f0080d0be0000803f008039be00207abe00408a3d0000803f0040b3bd000042be00b4ad3f000000000018d43f0050873e00186e3fa5a4a43e00201e3e00b8813f0000163cdfde5e3f0000543c008045bd00a055bedad9d93e008002bd0000ccbb0050a43f0000000000d0583f0050a43f0020743e00000000005087be0080b13e00207a3e000000000000ec3b00c0b7bd000094bc0000000000c0aa3d0000cf3d000000ba0000803f00e04abe00009cbb008045bd000000000080d1bd00509d3e0080453de4e3e33e0000003a0008033f000020bb8180803c00f0d53e00c00dbe00000fbd0000803f0014c53f00b0e93e0020cbbe0000000000a097be0000db3c00186e3f0000803f00f00e3f0064ae3f0054893ff2f1f13e00e0f93e00904b3f003093be0000000000cc913f00207ebe0000843b00000000","kind":"data","name":"read.xr","rule":{"compare":"none","reason":"The decoding of extended-range (XR) channels is not stated in MTLPixelFormat.h or the MSL specification"}},
+    {"kind":"value","name":"read.within-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Upload, readback and shader read conversion of BGRA10_XR_sRGB",
+  "variant": "release"
+}

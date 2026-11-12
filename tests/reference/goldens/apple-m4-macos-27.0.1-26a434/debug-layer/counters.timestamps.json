@@ -1,0 +1,28 @@
+{
+  "area": "counters.timestamps",
+  "case": "counters.timestamps",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"counter-sets","rule":{"compare":"device"},"type":"strings","value":["timestamp: GPUTimestamp"]},
+    {"kind":"value","name":"supports-sampling.stage","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"supports-sampling.draw","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-sampling.dispatch","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-sampling.tile-dispatch","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-sampling.blit","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"sample-timestamps.nonzero","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"require","name":"counter-set.timestamp","value":true},
+    {"kind":"require","name":"sampling.stage-boundary","value":true},
+    {"kind":"value","name":"sample-buffer.sample-count","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"resolved-length","rule":{"compare":"exact"},"type":"u64","value":16},
+    {"kind":"value","name":"start.valid","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"end.valid","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"end-not-before-start","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Counter sets and sampling points of the device; stage-boundary timestamps of a compute pass",
+  "variant": "debug-layer"
+}

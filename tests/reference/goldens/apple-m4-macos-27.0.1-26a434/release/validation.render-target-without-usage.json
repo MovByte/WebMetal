@@ -1,0 +1,18 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.render-target-without-usage",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"create-encoder"},
+    {"kind":"call","name":"create-encoder","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"encoder-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "renderCommandEncoderWithDescriptor: with a color texture that lacks the render-target usage",
+  "variant": "release"
+}

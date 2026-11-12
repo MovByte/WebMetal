@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.commit-twice",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[IOGPUMetalCommandBuffer validate]:214: failed assertion `commit an already committed command buffer'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"second-commit"}
+  ],
+  "status": "terminated",
+  "title": "Error path: commit on a command buffer that is already committed and completed",
+  "variant": "release"
+}

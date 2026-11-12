@@ -1,0 +1,16 @@
+{
+  "area": "storage.texture-cpu-access",
+  "case": "storage.texture-get-bytes-after-gpu-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"equals-written","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"u32","hex":"49e59a4ac7c536565faea79aaa765ae8a16d2f2001fd91060ca20a2cf8178a1bfd3fd86bdd17069d9420dadd1a98d82845f8f7589718965487358703e507725df3a33994582ad91d2538bb3e09f65967b583018149c7d9c2d04a020f8d741902a1000062d3066c5a5aa1f8ff0c96ea0d8a3bfeff9655258dc33fb8724c21b70472c280a2bd96154cbb0cdd794ff10a22e8642f0755bc1901f95c30a2ab2b7e23e64138a2b83aa76c8395e81f9f24c0b7a92f3843334f9e2fd424b1438b675bb08b42aca60165deb9e7a4b61a5fbf43d2d43ac3e6ae6297c84269b4b72ee61aabb335ca753bb47f2163ee61992caa7f0c9e1114ec2433c90fa34b935dfeb1fdfaafc182c0152761370126ee931dc7cde9aac9207f12d99210486fb615a6f9d0f8915d45131f07ca33149b7e775a38f2d46c82435b7a186169cc6c889a1d86bcad1eb3f9b5f183fdb1899cf9ff29c0362afd1333d7e2da01b5fcd93cb553d935b9acf13a5067d2dfa8c2fa4541411b65b0878fb596f067cab0eb0b3694793e3b0c6755cad7e73c4ba2bc7a50140a6541f1e2ef1df5f68744163db98b31131c05bb9069b94b6b37e9cb4c0d431e71081e32661eddbdc7b367295a065a4e9c58f60952c61494e105bfa5d4b7b1f2387f29805aed37df39b69381c347e3dbaf902ae879fcc79fe74db5b6426f960656c79b7542599ce77187757b780651048783ffaa","kind":"data","name":"texels","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "getBytes of a shared texture after a compute pass wrote it",
+  "variant": "debug-layer"
+}

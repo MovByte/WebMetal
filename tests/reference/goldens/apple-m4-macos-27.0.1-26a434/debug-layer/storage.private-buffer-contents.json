@@ -1,0 +1,16 @@
+{
+  "area": "storage.errors",
+  "case": "storage.private-buffer-contents",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLToolsResource validateCPUWriteable]:135: failed assertion `resourceOptions (0x20) specify MTLResourceStorageModePrivate, which is not CPU accessible.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"contents"}
+  ],
+  "status": "terminated",
+  "title": "Error path: contents of a private buffer",
+  "variant": "debug-layer"
+}

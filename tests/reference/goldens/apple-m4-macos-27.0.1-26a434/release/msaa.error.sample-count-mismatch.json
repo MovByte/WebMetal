@@ -1,0 +1,18 @@
+{
+  "area": "msaa.coverage",
+  "case": "msaa.error.sample-count-mismatch",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"device.texture-sample-count-4","value":true},
+    {"kind":"step","name":"draw"},
+    {"kind":"step","name":"completed"},
+    {"count":64,"elem":"u32","hex":"01000000000000000000000000000000010000000000000000000000000000000100000000000000000000000000000001000000000000000000000000000000010000000000000000000000000000000100000000000000000000000000000001000000000000000000000000000000010000000000000000000000000000000100000000000000000000000000000001000000000000000000000000000000010000000000000000000000000000000100000000000000000000000000000001000000000000000000000000000000010000000000000000000000000000000100000000000000000000000000000001000000000000000000000000000000","kind":"data","name":"samples","rule":{"compare":"none","reason":"the result of a sample count mismatch is not defined"}}
+  ],
+  "status": "ok",
+  "title": "Pipeline with rasterSampleCount 1 used with a 4x attachment (invalid use)",
+  "variant": "release"
+}

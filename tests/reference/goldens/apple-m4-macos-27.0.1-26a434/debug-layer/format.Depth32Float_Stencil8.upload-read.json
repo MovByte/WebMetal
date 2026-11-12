@@ -1,0 +1,24 @@
+{
+  "area": "format.depth-stencil",
+  "case": "format.Depth32Float_Stencil8.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"count":32,"elem":"f32","hex":"000000000000803f0000003f12158d3e2aad803ea261f13e60faf53cd7af433f12d67e3fb032123ebe62693fc6e9623fa01c953e88d7783fec12833eb8f3ab3df00c393ec1b7653f30505e3d8ceac03e951c2d3f5070133fd77b5a3f3e17f33ef87f513fb649953e40974e3f30c1783f3041693e44cc6d3e6c7c323f6087413e","kind":"data","name":"input.depth","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u8","hex":"a5c1813e3c47ddb5ecfe36b99e277ff7349dc75916685b371cfa0ae3b9e9f8d7","kind":"data","name":"input.stencil","rule":{"compare":"exact"}},
+    {"count":32,"elem":"f32","hex":"000000000000803f0000003f12158d3e2aad803ea261f13e60faf53cd7af433f12d67e3fb032123ebe62693fc6e9623fa01c953e88d7783fec12833eb8f3ab3df00c393ec1b7653f30505e3d8ceac03e951c2d3f5070133fd77b5a3f3e17f33ef87f513fb649953e40974e3f30c1783f3041693e44cc6d3e6c7c323f6087413e","kind":"data","name":"readback.depth","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u8","hex":"a5c1813e3c47ddb5ecfe36b99e277ff7349dc75916685b371cfa0ae3b9e9f8d7","kind":"data","name":"readback.stencil","rule":{"compare":"exact"}},
+    {"count":32,"elem":"f32","hex":"000000000000803f0000003f12158d3e2aad803ea261f13e60faf53cd7af433f12d67e3fb032123ebe62693fc6e9623fa01c953e88d7783fec12833eb8f3ab3df00c393ec1b7653f30505e3d8ceac03e951c2d3f5070133fd77b5a3f3e17f33ef87f513fb649953e40974e3f30c1783f3041693e44cc6d3e6c7c323f6087413e","kind":"data","name":"read.depth","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.depth-equals-stored","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"view.pixel-format","rule":{"compare":"exact"},"type":"u64","value":261},
+    {"count":32,"elem":"u32","hex":"a5000000c1000000810000003e0000003c00000047000000dd000000b5000000ec000000fe00000036000000b90000009e000000270000007f000000f7000000340000009d000000c70000005900000016000000680000005b000000370000001c000000fa0000000a000000e3000000b9000000e9000000f8000000d7000000","kind":"data","name":"read.x32-stencil8-view","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.x32-stencil8-view-equals-stored","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Depth32Float_Stencil8 per-aspect blits, depth read and an X32_Stencil8 view",
+  "variant": "debug-layer"
+}

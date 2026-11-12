@@ -1,0 +1,17 @@
+{
+  "area": "validation.cpu-access",
+  "case": "validation.private-texture-get-bytes",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"call"},
+    {"kind":"call","name":"call","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "getBytes:bytesPerRow:fromRegion:mipmapLevel: on a private-storage texture",
+  "variant": "release"
+}

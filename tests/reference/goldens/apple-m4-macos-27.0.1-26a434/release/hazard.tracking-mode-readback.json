@@ -1,0 +1,26 @@
+{
+  "area": "hazard.modes",
+  "case": "hazard.tracking-mode-readback",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"buffer.default","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"texture.default","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"heap.default","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"heap-buffer.default","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"buffer.untracked","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"texture.untracked","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"heap.untracked","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"heap-buffer.untracked","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"buffer.tracked","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"texture.tracked","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"heap.tracked","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"heap-buffer.tracked","rule":{"compare":"exact"},"type":"u64","value":2}
+  ],
+  "status": "ok",
+  "title": "hazardTrackingMode of device and heap resources for each hazard option",
+  "variant": "release"
+}

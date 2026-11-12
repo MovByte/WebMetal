@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RG16Unorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bfcae0493cb2fbb13e4c18f03ef20d37bf4b504a3fd1e24f3ed87407be40d7cfbef29cf13d6475643f60dc243fba2045bfcaca483e0192ff3e3c495c3f34bc4a3fc0dfbf3e5348523f80b3c7beec72883fdeacdd3d812e003e7a3064bf80f4613f0bb20a3f3286313fb52a4fbfeef997bf92b3913e07be063f08131ebf5ca48a3eaa54bfbed8dc1abfd07f0c3f9c6ce33e6c2e8e3f304578bf00cc5b3c20cd1a3e4e5b193f3442943e301fe53e3031753fb8da923f94d275bf56987cbf7c5ef63e1834b23e3c51b9be7ed89ebe93a12cbf330f87bf60d168bebcd85fbf8864243fce8baabe283902bfb6fbc5bef8eb84bebda747bfbf7d01bff8342a3fc069063e40a7573ee01ecdbd149a0c3fb20a24bf80dda03c205789beae79d7bedc0989beacf28bbfc049d2be705d06be018381bffc3262bf005613bfe4e2a0be2859823f681a363ee8828b3f88efefbe8e4306bff0e1293e28f804be468638bf0cad69bf204a123dae3ba2be80ec8abdc8a28c3f285e94bf80e7653c5444423f90ca86bf","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"0000ffffffff00000000ffffffff0000000000000000008000800000000000002803fe5850caf933341e74e43332c97ff05f48d2b61b0c20b28a86b1da48be8600000000ffff00005b99214affff00001a590000000000000000000000000000ea350000070500000000000000000000862dffff782a00002509000000009803","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RG16Unorm",
+  "variant": "debug-layer"
+}

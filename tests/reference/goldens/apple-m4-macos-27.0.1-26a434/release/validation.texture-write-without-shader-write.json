@@ -1,0 +1,19 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.texture-write-without-shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"set-texture"},
+    {"kind":"call","name":"set-texture","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"dispatch"},
+    {"kind":"call","name":"dispatch","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "A kernel that writes a texture created without the shader-write usage (encoded, not committed)",
+  "variant": "release"
+}

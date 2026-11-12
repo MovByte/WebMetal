@@ -1,0 +1,17 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.threadgroup-above-pipeline-limit",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"dispatch"},
+    {"kind":"call","name":"dispatch","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "dispatchThreadgroups with more threads per threadgroup than the pipeline allows (encoded, not committed)",
+  "variant": "release"
+}

@@ -1,0 +1,16 @@
+{
+  "area": "texture.errors",
+  "case": "texture.error-view-size-mismatch",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "_mtlValidateArgumentsForTextureViewOnDevice:1877: failed assertion `Texture Creation\nsource texture pixelFormat (MTLPixelFormatRGBA8Unorm) not compatible with texture view pixelFormat (MTLPixelFormatR8Unorm).\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newTextureViewWithPixelFormat"}
+  ],
+  "status": "terminated",
+  "title": "RGBA8Unorm texture viewed as R8Unorm (different texel size)",
+  "variant": "debug-layer"
+}

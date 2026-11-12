@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RGBA16Unorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bfada9ab3e3450333f0a7e093f0c200b3f3309333fd4ebd33eeb1cea3def2fee3e1929193f0568043f000dff3d4e174e3f3a433a3f5073503f80747f3fe385e13e4e8f4c3f079b053fb168313dccce4b3ebca3bb3e3f6c3e3f926a123e22e8213fe971e93e63b0623fa3afa23e5517553f2fd62e3f4ad4493fbdb9bb3e3ba5393fc2464bbf4eb0003f72b43abf2f7f91bf802be53ddc1d9c3f0473923fa49b9dbef4bf04bfa0cf0f3f1836edbe58807b3e208fd7bdb869d8bea05ea33d707fd9bd487f283ee0b4d7be5cb042bf14f75e3f50f2153f94749b3f0c54783ffe3c50bf08940ebf4cb4113fe059cf3d4e2dcfbefc6e81be303d8cbe16b41c3ff6fa1abf807f76be41b457bf6051f0bd48dc26be1c78d93e066638bf26cf1b3f20ce9c3f0b742dbf4851903f0dcb06bf80195c3f100d073ff0da9f3ecf7f92bfaae7863fcc10923ebe04833f501f6a3fb274153f5a8a8e3f164a8bbf14b09b3ff879fcbef0e4613f80cc9c3f44ecb6beccef31bf7c72133f102c583ec8f130bfd4c92ebf","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":256,"elem":"u8","hex":"0000ffff0000ffffffff0000ffff00000000ffff00000000ffff00000000008000000000008000000000008000000000008000000000ffff00000000ffff0000d55550b37e89208b08b3f669441d187728996884e21f16ce42ba72d074ffc3708fcc9b85160bf432d25d6cbe9a24e8a1b874b0e2585116d5d6aed4c9dd5da5b90000b08000000000a51cffffffff00000000cf8f0000e03e000000006c140000202a00000000f6def295ffff53f800000000b491eb19000000000000b39c00000000000000000000bc6c0000cf9bffff0000ffff000019dc0d87ed4f0000ffff0849ffff1eea7495ffff0000ffff0000e4e1ffff0000000072930b3600000000","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RGBA16Unorm",
+  "variant": "debug-layer"
+}

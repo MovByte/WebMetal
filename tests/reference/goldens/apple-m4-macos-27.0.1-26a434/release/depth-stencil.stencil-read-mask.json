@@ -1,0 +1,16 @@
+{
+  "area": "depth-stencil.stencil",
+  "case": "depth-stencil.stencil-read-mask",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":64,"elem":"u32","hex":"01000000010000000100000001000000000000000000000000000000000000000100000001000000010000000100000000000000000000000000000000000000010000000100000001000000010000000000000000000000000000000000000001000000010000000100000001000000000000000000000000000000000000000100000001000000010000000100000000000000000000000000000000000000010000000100000001000000010000000000000000000000000000000000000001000000010000000100000001000000000000000000000000000000000000000100000001000000010000000100000000000000000000000000000000000000","kind":"data","layout":{"bytes_per_row":64,"format":"R32Uint","height":4,"width":16},"name":"color","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a","kind":"data","layout":{"bytes_per_row":16,"format":"Stencil8","height":4,"width":16},"name":"stencil","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Stencil compare with read masks: (reference & readMask) against (stored & readMask)",
+  "variant": "release"
+}

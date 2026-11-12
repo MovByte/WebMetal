@@ -1,0 +1,23 @@
+{
+  "area": "format.color",
+  "case": "format.RGB9E5Float.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"00000000000080bf0000008000008037000080bf00000080000080370000803f0000c07f0000c03e00000000000080bf0000c03e00000000000080bf0000008000000080000080370000803f00606a47000080370000803f00606a470000c07f0000803f00606a470000c07f0000c03e00606a470000c07f0000c03e00000000e4709640def5df3fc2e27b3c2e68d43748af463a381a323f9ec1333ff1b0fc3c78aec23b0caa743db67fac3c5231be388ef34c3978e8ab36ac6ff83664bd7737a22e4d379080b244b0712f407aa85c3fd443623d1d7f133f6e9679449437b84082be96424ed9a33f2f17ec42754e603c7db1294571d390445ccfb837dac433452eac6e3931da4e3997e694433ae3d7436858553a757ed23bbcbaf83cb0106038a6025f3dc31b0f3d5db95a37d4f9fd44920a473a6ab278428cce4b42084b6c3b8693163ad051073f7098b1375872cc383f4fc73b524f5b3d8b8cf3417cdf5c4152e2ef43ebdf683bf685603c4bc0a042ae9c063c14a6023f0a5c323eaea3a6404033d8409fcd9c3f72fe583e008a75436b98f93bf19fa73b345cd43730166744e56e903b9cd617406860b7437c4bfd37663f3f4455efe93b714d9b3ed40ef83d358176406fb4623b3083a23794219b3c3c759b367653463f50312742e62587366414f93fa84ce639265c823fe8312640934fad3ef5f1343d549b2f3f5b12d537","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"count":16,"elem":"u8","hex":"00000000000000040000037080010070","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"write.rounded-texels","rule":{"compare":"exact"},"type":"u64","value":28},
+    {"count":112,"elem":"u8","hex":"00000084000050ff00a803f8d40100f82cdf009000c89e7d30d2b35a99153c1800ca02d00000cccf2d0b60b7532101d80000a4c40dd2c457be3d025800e25fae001c027800009ca7df0100c0040a6679b09d3490f39f06400004b8c57e0100c8ed010088000c38adf2011084ad2c7c7d","kind":"data","name":"write.rounded","rule":{"compare":"none","reason":"MSL 4.1 section 1.6.7: texture writes to floating-point pixel formats use the hardware's native rounding by default"}},
+    {"kind":"value","name":"write.rounded-matches-section-8.7-conversion","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"write.rounded-matches-truncation","rule":{"compare":"device"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RGB9E5Float",
+  "variant": "release"
+}

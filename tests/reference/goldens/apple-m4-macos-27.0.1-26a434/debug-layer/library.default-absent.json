@@ -1,0 +1,18 @@
+{
+  "area": "library.default",
+  "case": "library.default-absent",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"main-bundle-without-default-metallib","value":true},
+    {"kind":"value","name":"default.library-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"bundle.library-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":6,"description":"no default library was found","domain":"MTLLibraryErrorDomain","kind":"error","name":"bundle.error","nil":0,"rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newDefaultLibrary and newDefaultLibraryWithBundle:error: in a tool without default.metallib",
+  "variant": "debug-layer"
+}

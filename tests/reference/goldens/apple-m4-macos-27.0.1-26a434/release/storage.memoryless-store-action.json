@@ -1,0 +1,22 @@
+{
+  "area": "storage.errors",
+  "case": "storage.memoryless-store-action",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple2","value":true},
+    {"kind":"step","name":"create-encoder"},
+    {"kind":"call","name":"create-encoder","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"encoder-is-nil","rule":{"compare":"none","reason":"storing a memoryless attachment is outside the documented use"},"type":"bool","value":false},
+    {"kind":"step","name":"commit"},
+    {"kind":"value","name":"completed-within-10s","rule":{"compare":"none","reason":"storing a memoryless attachment is outside the documented use"},"type":"bool","value":true},
+    {"kind":"value","name":"status","rule":{"compare":"none","reason":"storing a memoryless attachment is outside the documented use"},"type":"u64","value":4},
+    {"kind":"error","name":"error","nil":1,"rule":{"compare":"none","reason":"storing a memoryless attachment is outside the documented use"}}
+  ],
+  "status": "ok",
+  "title": "Error path: a memoryless depth attachment with store action store",
+  "variant": "release"
+}

@@ -1,0 +1,16 @@
+{
+  "area": "depth-stencil.depth-test",
+  "case": "depth-stencil.error.test-without-attachment",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder validateCommonDrawErrors:]:6032: failed assertion `Draw Errors Validation\nMTLDepthStencilDescriptor sets depth test but MTLRenderPassDescriptor has a nil depthAttachment texture\nMTLDepthStencilDescriptor has depthWriteEnabled but MTLRenderPassDescriptor has a nil depthAttachment texture\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"draw"}
+  ],
+  "status": "terminated",
+  "title": "Depth-stencil state with a depth test bound in a pass without a depth attachment (invalid use)",
+  "variant": "debug-layer"
+}

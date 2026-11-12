@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RG16Uint.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"u32","hex":"bca90000fd260000f200000060000000b8a00000ec880000bb00000001000000e67b0000e1190000290000005b000000f7000000e7fe00006e000000b300000067390000ac0700001600000052000000f43e0000d4c60000ec000000d2000000ce170000fdbb0000500000006c000000928a000026dd0000c800000091000000f3fc000089440000c80000001c000000eb900000228b000002000000240000006f83000018680000ae000000b00000000cca00004c7e0000c300000002000000bb4b000053d900003d000000fc000000252b0000783c00006b00000042000000ef24000072f90000f90000008200000003fc0000902c00006c0000005f000000e79367444d6c55a37773f718fd01e6f9048567f8c54db957f57df54c254d69984c9417bb0e3cbf4756f756050a17f01f3bd277bfb4d2832d485d55bf4d370281978cdb63ee2d1f8816698004ea9b30fc91d9adbaab8bffafcd5d6718208db6e5c3214b28a8ae6939213fdd718e1dfda8253be5dac337b71b0a2925903e9d3c6931348714ef903729754966432409794d37860f6b5b25af2c5deb664a81534e73e6b59750f5c997871ccb281b1fff3b4900353712a76b033cae7d8e7b54e185d514b945db803e176211e3768aab79f35bb6705f1cef3f51442b43421ac43d6a1bab83c1538e8a433765432736f673012dc11365ccdae68bda615f031b12770126","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"bca9fd26b8a0ec88e67be119f700e7fe6739ac07f43ed4c6ce17fdbb928a26ddf3fc8944eb90228b6f8318680cca4c7ebb4b53d9252b783cef2472f903fc902c","kind":"data","name":"render.representable","rule":{"compare":"exact"}},
+    {"kind":"value","name":"render.representable-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":64,"elem":"u8","hex":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a RG16Uint color attachment",
+  "variant": "release"
+}

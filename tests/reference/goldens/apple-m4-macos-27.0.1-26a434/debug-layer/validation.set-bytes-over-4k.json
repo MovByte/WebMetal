@@ -1,0 +1,16 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.set-bytes-over-4k",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugComputeCommandEncoder setBytes:length:attributeStride:atIndex:]:382: failed assertion `length(8192) must be <= 4096.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"set-bytes"}
+  ],
+  "status": "terminated",
+  "title": "setBytes:length:atIndex: with 8 KiB of data (encoded, not committed)",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R32Float.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"00000000000000800000807f000080ff000000800000807f000080ffffff7f7f0000807f000080ffffff7f7f00008080000080ffffff7f7f0000808000000000ffff7f7f0000808000000000000000800000808000000000000000800000807f686afcce4e821b113786563cb9290643993483fdb6044d600cc4e90fef7ee5fceb47efcc9f28e2b63a47b2a6a1ec749d501a5b07b67ee6bbeba65d32ca4381eac2f71694a13be97d79d0c4a2f7812756f1aff1c1af5d4a29b34d19e40aabf594b9876ca0f97b79838d2d711634880e77626de81e02163b6ad8c7e9d01e54ff75abfb1ac9f0e19aa80e74c24df0632949cd1b07438e57ba123b9d17fe1cd3c43e3899e2229e8efb2addadddb1883d3b86a0ad870c37aaea86cb809e616e5e19ba03e82cf515d4c9813ba4e19dce99e29f8f8d204d229e94b8636c08de45a601aceaf6bcc6c4067737ca460a3a7b6073b83396fe10693e3a41135738ca383c95a2e6cc0f93676b0914edac219c811ffc19f885e5724e821590820d8e73c5235265ef8ff61b9cfdbb56348fc2e18b2b49c6cb431a4995c987148e2b3513c9ce0d613236da241c7dfb185ba378fcad6899cf3a98c96333e0953ad73407d0014ef3dea4377c29543f445f4ca3585367a5193cd37b5f6b1849fa1561355fc460cbcd215c17449445b8746cd5290ef6ea4a0ae6ba9a1898b6a3add753b8cffc8e7dbbbb","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"00000000000000800000807f000080ffffff7f7f00008080686afcce993483fdeb47efcc501a5b07c2f71694f1aff1c1b9876ca0626de81eabfb1ac9cd1b07433899e222a0ad870c03e82cf58f8d204deaf6bcc63396fe10e6cc0f93f885e572ef8ff61bcb431a493236da243a98c963a4377c29d37b5f6b5c174494ba9a1898","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R32Float",
+  "variant": "debug-layer"
+}

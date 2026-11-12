@@ -1,0 +1,19 @@
+{
+  "area": "io.errors",
+  "case": "io.load-past-end",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"io-command-queue","value":true},
+    {"kind":"step","name":"load"},
+    {"kind":"call","name":"load","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"status","rule":{"compare":"none","reason":"MTLIOCommandBuffer.h does not state the result of reading past the end of a file"},"type":"i64","value":3},
+    {"kind":"error","name":"error","nil":1,"rule":{"compare":"none","reason":"MTLIOCommandBuffer.h does not state the result of reading past the end of a file"}}
+  ],
+  "status": "ok",
+  "title": "Error path: an IO load whose source range extends past the end of the file",
+  "variant": "release"
+}

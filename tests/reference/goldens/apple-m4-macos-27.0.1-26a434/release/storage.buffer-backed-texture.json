@@ -1,0 +1,23 @@
+{
+  "area": "storage.linear-texture",
+  "case": "storage.buffer-backed-texture",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"minimum-linear-texture-alignment","rule":{"compare":"device"},"type":"u64","value":16},
+    {"kind":"value","name":"minimum-texture-buffer-alignment","rule":{"compare":"device"},"type":"u64","value":16},
+    {"kind":"value","name":"texture.buffer-is-source","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"texture.buffer-offset","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"texture.buffer-bytes-per-row-matches","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"shader-reads-buffer-bytes","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"u32","hex":"eb0000009b000000f7000000db0000000700000052000000ab000000f20000004d000000050000002e00000070000000d40000005b00000065000000260000004a000000630000001200000034000000820000005800000029000000fa0000001e0000006100000013000000eb000000f000000068000000890000002f00000099000000fe000000de0000006c000000a00000004e000000fe000000e5000000990000003c000000fa00000044000000cf000000420000007f000000f4000000060000009e00000019000000e9000000bb000000b2000000e60000006f0000007d000000a000000001000000730000008f0000007b000000dd00000016000000b70000000c000000f2000000e50000000e000000720000000c000000d5000000d70000009800000084000000480000001d00000033000000e50000003f000000ec00000036000000ec0000004a00000032000000e500000055000000430000000f00000041000000a000000075000000f00000002b0000006b0000002b000000be000000aa0000003c00000074000000a20000005f00000021000000d10000005d000000620000008200000088000000be000000c1000000380000006b000000a7000000d4000000fb0000003d000000610000006000000097000000230000002900000097000000f1000000160000007800000093000000b900000004000000","kind":"data","name":"read","rule":{"compare":"exact"}},
+    {"kind":"value","name":"buffer-holds-shader-writes","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"u8","hex":"030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c","kind":"data","name":"written-rows","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "A texture over a buffer: CPU bytes read by a shader, shader writes visible in the buffer",
+  "variant": "release"
+}

@@ -1,0 +1,20 @@
+{
+  "area": "storage.iosurface",
+  "case": "storage.iosurface-texture",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"surface.bytes-per-row","rule":{"compare":"device"},"type":"u64","value":128},
+    {"kind":"value","name":"texture.iosurface-is-surface","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"texture.iosurface-plane","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"gpu-reads-cpu-bytes","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"cpu-reads-gpu-bytes","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"u8","hex":"46961fe26ee9b4c43ad1b926b1d3db52ec63124fadc36d9843556da4d7a5542afa0b582b79787e5d99a5a426835534d8d34a0d2571da72fcce839c3e552dcf6a04087ea1b9619dc93057fcdb72be784488dedc394dfc1c1be1fd755cb90e840378b94cd1f9d83493f22f3d883374c676eb43f7fc094b7cdaa6e77e12f4bf7c31","kind":"data","name":"cpu-view-after-gpu-write","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "An IOSurface-backed texture: CPU writes under lock read by a blit, blit writes read under lock",
+  "variant": "release"
+}

@@ -1,0 +1,17 @@
+{
+  "area": "storage.errors",
+  "case": "storage.no-copy-unaligned",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"create"},
+    {"kind":"call","name":"create","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"is-nil","rule":{"compare":"none","reason":"the documentation requires page-aligned memory and does not define other input"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "Error path: newBufferWithBytesNoCopy on memory that is not page aligned",
+  "variant": "debug-layer"
+}

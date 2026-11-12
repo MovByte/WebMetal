@@ -1,0 +1,17 @@
+{
+  "area": "pass.load-store",
+  "case": "pass.error.store-action-unknown-unset",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"encode"},
+    {"kind":"step","name":"completed"},
+    {"count":16,"elem":"u32","hex":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","kind":"data","layout":{"bytes_per_row":16,"format":"R32Uint","height":4,"width":4},"name":"result","rule":{"compare":"none","reason":"the store action applied when MTLStoreActionUnknown is never finalized is not defined"}}
+  ],
+  "status": "ok",
+  "title": "MTLStoreActionUnknown never finalized before endEncoding (invalid use)",
+  "variant": "release"
+}

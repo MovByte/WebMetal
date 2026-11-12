@@ -1,0 +1,16 @@
+{
+  "area": "texture.errors",
+  "case": "texture.error-multisample-mipmapped",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation\nMTLTextureDescriptor mipmapLevelCount must equal 1 for multisample textures.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newTextureWithDescriptor"}
+  ],
+  "status": "terminated",
+  "title": "Multisample texture descriptor with two mipmap levels (MTLTexture.h: must be 1)",
+  "variant": "debug-layer"
+}

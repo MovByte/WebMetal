@@ -1,0 +1,17 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.set-bytes-over-4k",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"set-bytes"},
+    {"kind":"call","name":"set-bytes","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "setBytes:length:atIndex: with 8 KiB of data (encoded, not committed)",
+  "variant": "release"
+}

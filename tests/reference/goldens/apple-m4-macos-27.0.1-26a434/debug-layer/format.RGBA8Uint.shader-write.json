@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RGBA8Uint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"u32","hex":"0000000001000000ff0000000001000001000000ff00000000010000ffff0000ff00000000010000ffff00000000010000010000ffff000000000100ff030000ffff000000000100ff0300000004000000000100ff03000000040000ffffffffff03000000040000ffffffff0000008000040000ffffffff0000008000000000ffffffff000000800000000001000000000000800000000001000000ff000000a64ac83e2b3f482385ffe5caae95205eb5ccd4fef221dfa6763322d9ed5b55ca5a41aaab6cc773ae6ebd1b967fae12712d01bdd3437fa3325edd24cdec9875dea4590026dae51977acf574569aa912bcb86da4460b78a213f8db34eaf9b460101a6dabba0f4aa2b82af57ef82bf2318188b624d715fcef27459cdae2e2d5426b5157b1929d8a27d2f67f045231547a17b162f55bcf2b7ce0e92bcaea6548028b4c11e5da16a2e7e7549b62f653cd91ebf5e3c5011fa29aa96b6d8105177954ecd069ded1ea6fc97292c943e0c89b135359b4fd60676b6e96d45c28463319bc8eb5add5b9b4c32e60d5ddacea031f3289ef04f79bbf768a9a0cda61662cc07a8d5c284341db982691c2a473adc68400e421495c30555241c6d1db11c5211c92021825f4679fcc1bd83e7000cead4802d8ce5f82b58a706938fee2d1fed4ca4e963b4f8b32dda39fa0e1935fd51699f5c2154385e7c63d0d1b564ec70d8e404a4a","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"0001ffff01ffffffffffffffffffffffffffffffffffffffffffffffffffff00ffff0001ff0001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RGBA8Uint",
+  "variant": "debug-layer"
+}

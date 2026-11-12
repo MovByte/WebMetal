@@ -1,0 +1,25 @@
+{
+  "area": "format.compressed",
+  "case": "format.BC7_RGBAUnorm_sRGB.blocks",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"supports-bc-texture-compression","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":64,"elem":"u8","hex":"9055f8b994aa33551820204483ddf3315d10eddf0e50f5e7101cbf2de89c60743dd57abb156da606138de3a4ccb433b1cc1e5b4fbf6ece98b70bf9b55ce27cf4","kind":"data","layout":{"block_bytes":16,"block_height":4,"block_width":4,"bytes_per_row":32,"format":"BC7_RGBAUnorm_sRGB","height":8,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"kind":"step","name":"getBytes"},
+    {"count":64,"elem":"u8","hex":"9055f8b994aa33551820204483ddf3315d10eddf0e50f5e7101cbf2de89c60743dd57abb156da606138de3a4ccb433b1cc1e5b4fbf6ece98b70bf9b55ce27cf4","kind":"data","layout":{"block_bytes":16,"block_height":4,"block_width":4,"bytes_per_row":32,"format":"BC7_RGBAUnorm_sRGB","height":8,"width":8},"name":"getbytes","rule":{"compare":"exact"}},
+    {"kind":"step","name":"copyFromTexture:toBuffer:"},
+    {"count":64,"elem":"u8","hex":"9055f8b994aa33551820204483ddf3315d10eddf0e50f5e7101cbf2de89c60743dd57abb156da606138de3a4ccb433b1cc1e5b4fbf6ece98b70bf9b55ce27cf4","kind":"data","name":"readback","rule":{"compare":"exact"}},
+    {"kind":"step","name":"copyFromTexture:toTexture:"},
+    {"kind":"value","name":"copy-equals-source","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"step","name":"read"},
+    {"count":256,"elem":"f32","hex":"5fedd53ee21e6e3f198dd13dabaa2a3fd10aad3da2180a3fa10bba3dd7d6563f5fedd53ee21e6e3f198dd13dc0bf3f3f0dce603e921b393f810cc83dd7d6563f0109903d3989133eb98bbb3e0000803fddc80d3e2dca223e0989103e0000803fc54a2c3e5548053e010f703e0000803fd10d5d3e810ee83bcdcb3c3e0000803fd10aad3da2180a3fa10bba3dd7d6563fe1099e3cb32ccb3e110bb13dd7d6563f5fedd53ee21e6e3f198dd13dd7d6563fd10aad3da2180a3fa10bba3dabaa2a3f810ee83c5548053e565b353f0000803fc54e6c3e00000000f98a2f3e0000803fc54a2c3e5548053e010f703e0000803f0000803f5fedd53e0989103e0000803f910b393df98eef3e598bb53dabaa2a3f6989163e343a233f310cc33deceb6b3f810aa83ba32aaa3ed10aad3dabaa2a3fe7699e3e2a9d523fc98ccc3dabaa2a3f2dca223e054c403ec10f7c3e0000803fd10d5d3e810ee83bcdcb3c3e0000803f0000803f5fedd53ee10aae3c0000803f0000803f5fedd53e010a203b0000803f810aa83ba32aaa3ed10aad3dabaa2a3f6989163e343a233f310cc33dabaa2a3fd10aad3da2180a3fa10bba3dc0bf3f3fe7699e3e2a9d523fc98ccc3dabaa2a3f3dcc433e310b333d598d553e0000803f0000803f5fedd53ea9888a3e0000803f0000803f5fedd53efcb91f3f0000803f0000803f5fedd53ee10aae3c0000803f7ba9973ec32a2c3fd10aad3d0000803f0bacc03e0bacc03ec10ffc3c0000803f5fedd53e3dcc433e9fe9993e0000803f6989163e6548863e6548863e0000803ff98a2f3e110ee13e354cc33e0000803ff98a2f3e110ee13e354cc33e0000803f5548053e010ee03c276ff23e0000803f310aa33e3feee33eddcccd3e0000803f410bb43e6dcee63ed10a2d3d0000803f5fedd53e3dcc433e9fe9993e0000803fadcc4a3e810f783ea9888a3e0000803f3ed9133f7109173dadcc4a3e0000803fadcc4a3ed0fd5c3fd0fd5c3f0000803f6989163e2dca223ec98ccc3d0000803fadcc4a3e4109143c0000803f0000803fc32a2c3fa32aaa3ec32a2c3f0000803f4328843e854e683e0fe9903e0000803fa32aaa3e598d553e5769953e0000803fc32a2c3fc10ffc3cf98fff3d0000803f8fe9183fd1080d3d2dcb323e0000803f5548053e010ee03c276ff23e0000803fadcc4a3e4109143c0000803f0000803fadcc4a3e2548023f7ba9973e0000803fc32a2c3fa32aaa3ec32a2c3f0000803fadcc4a3e810f783ea9888a3e0000803f8988083f210a223d410f743e0000803f50fa243f3108033d0989103e0000803fd5480d3fc1091c3dd10d5d3e0000803f310aa33e3feee33eddcccd3e0000803f310aa33e3feee33eddcccd3e0000803fadcc4a3e2548023f7ba9973e0000803f576ff53e5dccc53e70f8063f0000803f","kind":"data","layout":{"components":4,"height":8,"width":8},"name":"read.decoded","rule":{"compare":"none","reason":"Metal does not state the output precision of compressed-format decoding for shader reads"}}
+  ],
+  "status": "ok",
+  "title": "Block upload, readback, copy and decoded read of BC7_RGBAUnorm_sRGB",
+  "variant": "debug-layer"
+}

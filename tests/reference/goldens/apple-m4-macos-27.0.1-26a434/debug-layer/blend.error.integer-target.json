@@ -1,0 +1,16 @@
+{
+  "area": "blend.equations",
+  "case": "blend.error.integer-target",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateWithDevice:5101: failed assertion `Render Pipeline Descriptor Validation\nBlending is enabled for render target 0; however, the pixelformat MTLPixelFormatR32Uint for this render target is not blendable.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"create-pipeline"}
+  ],
+  "status": "terminated",
+  "title": "Render pipeline with blending enabled on an R32Uint attachment (invalid use)",
+  "variant": "debug-layer"
+}

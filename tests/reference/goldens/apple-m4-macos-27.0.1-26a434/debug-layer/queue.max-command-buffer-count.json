@@ -1,0 +1,20 @@
+{
+  "area": "queue.capacity",
+  "case": "queue.max-command-buffer-count",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"third-requested"},
+    {"kind":"value","name":"third.returned-while-two-outstanding","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"step","name":"first-completed"},
+    {"kind":"value","name":"third.returned-after-first-completed","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"third.is-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"uncommitted-release.frees-slot","rule":{"compare":"none","reason":"MTLCommandQueue documents only that a slot returns after the GPU finishes a command buffer"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "commandBuffer on a queue whose maxCommandBufferCount buffers are all outstanding",
+  "variant": "debug-layer"
+}

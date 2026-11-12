@@ -1,0 +1,15 @@
+{
+  "area": "validation.undefined",
+  "case": "validation.private-texture-initial-contents",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"all-zero","rule":{"compare":"none","reason":"Metal does not define the initial contents of a new private texture"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Contents of a new private-storage texture before anything writes it",
+  "variant": "debug-layer"
+}

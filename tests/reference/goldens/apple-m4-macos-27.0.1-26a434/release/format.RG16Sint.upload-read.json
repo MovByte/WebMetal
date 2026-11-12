@@ -1,0 +1,21 @@
+{
+  "area": "format.color",
+  "case": "format.RG16Sint.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":128,"elem":"u8","hex":"008000800180018000000000ff7fff7f008000800180018045f976afddf507ef8c0628aec222d213a90cb5f0cac734e0c1429b7084346b8fc1f8d8ca027f537b9fb1d624b217ec63ac05a2dc0ec4e5579c4ab06be0bf034d1dcb6e8a1db1120c0a3c0ad9285395a8cee8bb6b7c190d9bde528e03a47637ba531303e0977e6d20","kind":"data","layout":{"bytes_per_row":32,"format":"RG16Sint","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":128,"elem":"u8","hex":"008000800180018000000000ff7fff7f008000800180018045f976afddf507ef8c0628aec222d213a90cb5f0cac734e0c1429b7084346b8fc1f8d8ca027f537b9fb1d624b217ec63ac05a2dc0ec4e5579c4ab06be0bf034d1dcb6e8a1db1120c0a3c0ad9285395a8cee8bb6b7c190d9bde528e03a47637ba531303e0977e6d20","kind":"data","layout":{"bytes_per_row":32,"format":"RG16Sint","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"kind":"value","name":"getbytes-equals-readback","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"i32","hex":"0080ffff0080ffff00000000010000000180ffff0180ffff000000000100000000000000000000000000000001000000ff7f0000ff7f000000000000010000000080ffff0080ffff00000000010000000180ffff0180ffff000000000100000045f9ffff76afffff0000000001000000ddf5ffff07efffff00000000010000008c06000028aeffff0000000001000000c2220000d21300000000000001000000a90c0000b5f0ffff0000000001000000cac7ffff34e0ffff0000000001000000c14200009b7000000000000001000000843400006b8fffff0000000001000000c1f8ffffd8caffff0000000001000000027f0000537b000000000000010000009fb1ffffd62400000000000001000000b2170000ec6300000000000001000000ac050000a2dcffff00000000010000000ec4ffffe557000000000000010000009c4a0000b06b00000000000001000000e0bfffff034d000000000000010000001dcbffff6e8affff00000000010000001db1ffff120c000000000000010000000a3c00000ad9ffff00000000010000002853000095a8ffff0000000001000000cee8ffffbb6b000000000000010000007c1900000d9bffff0000000001000000de5200008e0300000000000001000000a476000037baffff00000000010000005313000003e0ffff0000000001000000977e00006d2000000000000001000000","kind":"data","name":"read.exact","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.within-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Upload, readback and shader read conversion of RG16Sint",
+  "variant": "release"
+}

@@ -1,0 +1,21 @@
+{
+  "area": "pipeline.async",
+  "case": "pipeline.compute-async",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"handler-calls","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"state-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"bindings","rule":{"compare":"exact"},"type":"strings","value":["type=0 index=0 records access=1 used=1 argument=1 alignment=16 size=80 data=1 pointer(element=1 access=1 alignment=16 size=80 argument-buffer=0) struct{color@0:6 index=0; position@16:5 index=0; flags@28:33 index=0; inner@32:2 index=0 array(element=1 length=2 stride=16 index-stride=0 struct{a@0:4 index=0; b@8:33 index=0}); h@64:16 index=0; c@66:45 index=0}","type=0 index=1 matrix access=0 used=1 argument=1 alignment=16 size=64 data=15 pointer(element=15 access=0 alignment=16 size=64 argument-buffer=0) struct(none)","type=0 index=2 counter access=1 used=1 argument=1 alignment=4 size=4 data=1 pointer(element=1 access=1 alignment=4 size=4 argument-buffer=0) struct{__s@0:33 index=0}","type=0 index=3 unused access=1 used=0 argument=1 alignment=4 size=4 data=33 pointer(element=33 access=1 alignment=4 size=4 argument-buffer=0) struct(none)","type=1 index=0 scratch access=1 used=1 argument=1 threadgroup-alignment=4 threadgroup-size=4","type=2 index=0 input access=0 used=1 argument=1 texture-type=2 data=3 depth=0 array-length=1","type=2 index=1 output access=2 used=1 argument=1 texture-type=2 data=33 depth=0 array-length=1","type=2 index=2 sampled access=0 used=1 argument=1 texture-type=3 data=16 depth=0 array-length=1","type=2 index=3 depth access=0 used=1 argument=1 texture-type=2 data=3 depth=1 array-length=1","type=3 index=0 s access=0 used=1 argument=1"]},
+    {"kind":"value","name":"plain.handler-calls","rule":{"compare":"exact"},"type":"u64","value":1},
+    {"kind":"value","name":"plain.state-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"plain.error","nil":1,"rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newComputePipelineStateWithFunction:options:completionHandler: with reflection",
+  "variant": "release"
+}

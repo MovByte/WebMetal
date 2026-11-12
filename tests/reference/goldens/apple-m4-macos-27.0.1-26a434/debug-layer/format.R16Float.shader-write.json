@@ -1,0 +1,25 @@
+{
+  "area": "format.color",
+  "case": "format.R16Float.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"00000000000000800000803f00e07f47000000800000803f00e07f4700ef7f470000803f00e07f4700ef7f470000803800e07f4700ef7f47000080380000807f000080380000807f000080ff0010803f0000807f000080ff0010803f0030803f000080ff0010803f0030803f000000000000803500008035000080360000803f000000350000a0360000a0350000803f000020360000e0360000c0350000803f00000036000080350000c0360000803f00ef7f47000080380000807f000080ff0010803f0030803f00000000000000800030803f00000000000000800000803f9f2dbdbb193e3c3a290948414829c43c4d95dc38f4916c45b4f2e8402aa20b46305ebd3ab1b471c6b8c40439ecf3b2be4bdd9fba454f7b425b9e5d390550e6406b35a640a6e4f13ffb9088bc13a24539236122467f96bdbacc5ddd41dae3fdba2284f0be9894b3c5a813d8c4a44810bfcf14b0c655e4efbe9fc6a3bcae141b3bd6843c449da57c41619e6ac487f99c388b14b0bd7782dfc4ca2078c6ce4c8d38d5a5153dbe7ea6c27529d3392457513cec9775c1ea8151423bbe703fb4326141897a15b97c55123d497eae4595465f4420c47a44526bb73da522a5433213cd46cd9d5ac220210cc53f782fc3794e89bd1854403ce320974441ad2d3dd4df7c41ff94dd40103dcfc3159bd33ac8380cbee0624abd981c4a4279b39c38e9206bc0","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":7},
+    {"count":14,"elem":"u8","hex":"00000080003cff7b0004007c00fc","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":8,"elem":"u8","hex":"1000080028002000","kind":"data","name":"write.half-subnormal","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.half-subnormal-preserved","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"write.rounded-texels","rule":{"compare":"exact"},"type":"u64","value":21},
+    {"count":42,"elem":"u8","hex":"ff7b003c013ce99de406ea15fe943145137184b780f5e46180adad28accbab88d663d4d20222ec4653aa","kind":"data","name":"write.rounded","rule":{"compare":"none","reason":"MSL 4.1 section 1.6.7: texture writes to floating-point pixel formats use the hardware's native rounding by default"}},
+    {"kind":"value","name":"write.rounded-matches-section-8.7-conversion","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"write.rounded-matches-truncation","rule":{"compare":"device"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R16Float",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.encoder-while-encoder-open",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugCommandBuffer blitCommandEncoder]:154: failed assertion `encoding in progress'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"blit-encoder"}
+  ],
+  "status": "terminated",
+  "title": "Error path: a blit encoder requested while a compute encoder is open",
+  "variant": "debug-layer"
+}

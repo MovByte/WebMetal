@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R8Uint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"u32","hex":"00000000a0c88373f633a58a172d397401000000e88bd08d4d9d136cc5e5fa2cff0000007329a1b2335b16745a45e967000100000659dbbd7cb4c99590c3d609ffff0000873dead96a9c87f5a1b5da02000001007c14a59722f1d6ef499f4291ff03000024745c154fcff8123ceec47f000400008fb8521c01d5532e9778eb3affffffff23eb9d4be0e8576337be26d2000000806e16403d16e1a0cadff05e412196a9033318a09b869dd2c484180652d345ef65ac4063ddf298953ba23e24716b5b4a10e7528315d119fc82dea8f077c97b25bc510aa6310a9f555a59e1fcd0cf68db4f229ada1be53bd23994e1cb7b98f6e455f40cb9fefa3ff7a4cce314ae21b283b72ebca58ddcc8eb47e5cfe7f3b07324f154f27c783a220c9547a078a45898885531a9ecba105b1c2d160495cfef52d05a917ac7a9f4122fdcb415192a86b8d7eb517d624df95201c7572b241ea10a2e696e80551f92c5688162b38b232fb78ffca1ec64ce605c6658934b4c7e102bbe71bc27959abe6d35577d57b6e05ab0698cb8dc39eb2d46ffb18350afb18f8687235eb4a2d4b110f4a4c1402a1df3764365d09cc412b3eee0c812451aad16e6e8eedbe45558aa8a17fa3494e440b153140fba41d10985f0c6dd216280d0de6976b1af24bda26d8a12e8ff27b4b9e563de3805e814cedb0f73b3252c8c6f8c9a7a959a38ccada6bd4294d012e049","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":32,"elem":"u8","hex":"0001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R8Uint",
+  "variant": "debug-layer"
+}

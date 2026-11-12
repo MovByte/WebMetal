@@ -1,0 +1,16 @@
+{
+  "area": "fence.errors",
+  "case": "fence.update-then-wait-same-encoder",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugComputeCommandEncoder waitForFence:]:1566: failed assertion `MTLFence cannot be waited on after it has been updated within the same encoder.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"wait-after-update"}
+  ],
+  "status": "terminated",
+  "title": "Error path: waitForFence: after updateFence: on the same fence in one encoder",
+  "variant": "debug-layer"
+}

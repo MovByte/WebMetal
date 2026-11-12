@@ -1,0 +1,18 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.texture-write-without-shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateComputeFunctionArguments:1184: failed assertion `Compute Function(pip_write_texture): writes texture (t[0]) whose usage (0x01) doesn't specify MTLTextureUsageShaderWrite (0x02)'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"set-texture"},
+    {"kind":"call","name":"set-texture","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"dispatch"}
+  ],
+  "status": "terminated",
+  "title": "A kernel that writes a texture created without the shader-write usage (encoded, not committed)",
+  "variant": "debug-layer"
+}

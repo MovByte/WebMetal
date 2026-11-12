@@ -1,0 +1,15 @@
+{
+  "area": "compute.atomics",
+  "case": "compute.threadgroup-atomics",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":8,"elem":"u32","hex":"f00100005d000000100200005e000000300200005f0000005002000060000000","kind":"data","name":"sum-and-max","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Threadgroup-memory atomics combined within each threadgroup",
+  "variant": "release"
+}

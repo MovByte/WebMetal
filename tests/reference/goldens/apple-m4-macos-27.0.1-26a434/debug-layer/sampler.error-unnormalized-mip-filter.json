@@ -1,0 +1,16 @@
+{
+  "area": "sampler.errors",
+  "case": "sampler.error-unnormalized-mip-filter",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateMTLSamplerDescriptor:79: failed assertion `Sampler Descriptor Validation\nMTLSamplerDescriptor:non-normalized coords require MTLSamplerMipFilterNotMipmapped.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newSamplerStateWithDescriptor"}
+  ],
+  "status": "terminated",
+  "title": "Unnormalized coordinates with a mip filter (MSL 4.1 section 2.10: mip_filter must be none)",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,40 @@
+{
+  "area": "device.families",
+  "case": "device.families",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"family.apple1","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple2","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple3","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple4","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple5","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple6","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple7","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple8","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple9","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.apple10","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"family.apple11","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"family.mac1","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.mac2","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.common1","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.common2","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.common3","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.mac-catalyst1","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"family.mac-catalyst2","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"family.metal3","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"family.metal4","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"feature-set.macOS_GPUFamily1_v1","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"feature-set.macOS_GPUFamily1_v2","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"feature-set.macOS_ReadWriteTextureTier2","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"feature-set.macOS_GPUFamily1_v3","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"feature-set.macOS_GPUFamily1_v4","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"feature-set.macOS_GPUFamily2_v1","rule":{"compare":"device"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "supportsFamily: for every MTLGPUFamily and supportsFeatureSet: for every feature set of the platform",
+  "variant": "release"
+}

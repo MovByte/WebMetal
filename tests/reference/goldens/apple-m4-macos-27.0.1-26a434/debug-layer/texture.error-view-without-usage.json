@@ -1,0 +1,16 @@
+{
+  "area": "texture.errors",
+  "case": "texture.error-view-without-usage",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "_validateTextureView:748: failed assertion `Texture View Validation\ntexture usage (0x01) doesn't specify MTLTextureUsagePixelFormatView (0x10)\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newTextureViewWithPixelFormat"}
+  ],
+  "status": "terminated",
+  "title": "RGBA8Unorm texture without MTLTextureUsagePixelFormatView viewed as RGBA8Uint",
+  "variant": "debug-layer"
+}

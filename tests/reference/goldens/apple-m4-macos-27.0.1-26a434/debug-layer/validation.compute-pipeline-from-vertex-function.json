@@ -1,0 +1,16 @@
+{
+  "area": "validation.pipelines",
+  "case": "validation.compute-pipeline-from-vertex-function",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLComputePipelineDescriptorInternal setComputeFunction:withType:]:896: failed assertion `computeFunction functionType is not a MTLFunctionTypeKernel.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newComputePipelineStateWithFunction:error: with a vertex function",
+  "variant": "debug-layer"
+}

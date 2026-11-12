@@ -1,0 +1,15 @@
+{
+  "area": "pipeline.descriptors",
+  "case": "pipeline.rasterization-disabled",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":16,"elem":"u32","hex":"00000000000000000500000007000000090000000b0000000d0000000f0000001100000013000000150000001700000000000000000000000000000000000000","kind":"data","name":"vertex-writes","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "A render pipeline with rasterization disabled whose vertex function writes a buffer",
+  "variant": "release"
+}

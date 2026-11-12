@@ -1,0 +1,16 @@
+{
+  "area": "texture.errors",
+  "case": "texture.error-1d-mipmapped",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation\nMTLTextureDescriptor requests a mipmapLevelCount of 2 but the texture type MTLTextureType1D requires that mipmapLevelCount is 1\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newTextureWithDescriptor"}
+  ],
+  "status": "terminated",
+  "title": "1D texture descriptor with two mipmap levels (MSL: 1D textures have no mipmaps)",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RGBA16Snorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bf2c03963e2be5143efc3e7e3ff2d7f83ec96fe43e3caf9d3ef76c7b3fccfd653ea5ebd13e173d0b3eae0e573fae16573f11d6073f0314013f187a0b3f02ad003e6527b23ef1be783f36881a3f5af12c3d39d11b3dc17fe03ef561fa3cd0ec673f29e5133e25e9913d9ca7cd3e6690323f16038b3e37a39b3e298a143fd2b9e83d0818693f4026e8bd6dfb92bfa83bb83ebb7d9dbf8e1462bf7a30ffbea0f586bda2226cbf3acf373f44da82be2a98d3be28f8ee3e00bf043df867c83e67e598bf520391be1d589dbff1e237bf8e0166bf509a273ea4a6f13ea412d53ef8c70a3fa8a78dbf6682933f424d913fa02be53ee8862bbf2c3a853ea0dfa6be60c42a3f145d273f0086213e73f19ebfe8a82e3f04adb83e600858bd78e5493f5fff81bfa8f1763e38f17e3f56b305bff48a28bfa27b69bf0c00dabe80e8ebbc6dee00bf0a6148bfa083fd3d7c1c86bffa808c3fd062913ff0cd683f2022763e90e044bea07f893fec6f473fa0a5923f763fa9beb0918d3f202283bfdc689d3e9c40183f","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":256,"elem":"u8","hex":"0000ff7f0180ff7fff7f0180ff7f01800180ff7f01800000ff7f01800000004001800000004000c00000004000c00000004000c00000ff7f00c00000ff7f018080259d121e7f363e1c396c27b67dc01c7b346811866b8a6beb438a40bd4516108a2c5e7c444d6805df042038ea03f6737d121f096a334859c022e826444a8c0e8b747ef101800f2e0180f78e34c091f7f089e75b4adf1acbbe3b26041a320180bfdb01800fa4008df314693c443563450180ff7fff7f4a393daa4e2148d66255ae533114018054572b2e40f9f2640180de1e787f27bdbbab438b80c950fc89bfd09bd80f0180ff7fff7f6674c41e64e7ff7fb763ff7fb0d5ff7f01805a27204c","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RGBA16Snorm",
+  "variant": "release"
+}

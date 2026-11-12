@@ -1,0 +1,19 @@
+{
+  "area": "texture.access",
+  "case": "texture.write-out-of-bounds",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":8,"elem":"u32","hex":"000000a0010000a0020000a00000dec0040000a0050000a0060000a0070000a0","kind":"data","name":"1d.contents","rule":{"compare":"exact"}},
+    {"count":20,"elem":"u32","hex":"000000a0010000a0020000a0030000a0000100a00001dec0020100a0030100a0000200a0010200a0020200a0030200a0000300a0010300a0020300a0030300a0000000a10101dec0000100a1010100a1","kind":"data","name":"2d.contents","rule":{"compare":"exact"}},
+    {"count":8,"elem":"u32","hex":"000000a0010000a0000100a0010100a0000001a00002dec0000101a0010101a0","kind":"data","name":"2d-array.contents","rule":{"compare":"exact"}},
+    {"count":8,"elem":"u32","hex":"000000a0010000a0000100a0010100a0000001a0010001a00003dec0010101a0","kind":"data","name":"3d.contents","rule":{"compare":"exact"}},
+    {"count":24,"elem":"u32","hex":"000000a0010000a0000100a0010100a0000001a0010001a0000101a0010101a0000002a0010002a0000102a0010102a0000003a0010003a0000103a0010103a0000004a0010004a0000104a00004dec0000005a0010005a0000105a0010105a0","kind":"data","name":"cube.contents","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Shader writes at in-bounds and out-of-bounds coordinates, levels, slices, faces and depths",
+  "variant": "release"
+}

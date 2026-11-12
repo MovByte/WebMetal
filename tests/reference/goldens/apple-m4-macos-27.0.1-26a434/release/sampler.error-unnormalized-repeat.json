@@ -1,0 +1,17 @@
+{
+  "area": "sampler.errors",
+  "case": "sampler.error-unnormalized-repeat",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"newSamplerStateWithDescriptor"},
+    {"kind":"call","name":"create","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"returned-nil","rule":{"compare":"none","reason":"Metal does not define the result of an invalid creation call without its debug layer"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "Unnormalized coordinates with the repeat address mode (MTLSampler.h: results undefined)",
+  "variant": "release"
+}

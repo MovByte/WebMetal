@@ -1,0 +1,16 @@
+{
+  "area": "vertex.step-functions",
+  "case": "vertex.step-base-instance",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple3","value":true},
+    {"count":32,"elem":"u32","hex":"00000000000000002f0100002f01000001000000010000002f0100002f01000000000000000000002f0100002f01000001000000010000002f0100002f01000000000000000000003001000030010000010000000100000030010000300100000000000000000000300100003001000001000000010000003001000030010000","kind":"data","layout":{"bytes_per_row":32,"format":"RGBA32Uint","height":4,"width":2,"x":0,"y":3},"name":"fetched","rule":{"compare":"none","reason":"Apple's documentation of MTLVertexStepFunctionPerInstance does not state how baseInstance enters the fetch index"}}
+  ],
+  "status": "ok",
+  "title": "Per-instance attribute fetch index with a nonzero baseInstance",
+  "variant": "release"
+}

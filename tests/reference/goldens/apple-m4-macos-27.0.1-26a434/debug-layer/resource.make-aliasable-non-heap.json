@@ -1,0 +1,16 @@
+{
+  "area": "heap.errors",
+  "case": "resource.make-aliasable-non-heap",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugBuffer makeAliasable]:244: failed assertion `This resource was not allocated on a heap.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"make-aliasable"}
+  ],
+  "status": "terminated",
+  "title": "Error path: makeAliasable on a buffer created from the device",
+  "variant": "debug-layer"
+}

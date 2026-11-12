@@ -1,0 +1,17 @@
+{
+  "area": "storage.errors",
+  "case": "storage.memoryless-store-action",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "_MTLDebugValidateRenderPassDescriptorAndTrackAttachments:487: failed assertion `RenderPass Descriptor Validation\nMemoryless attachment content cannot be stored in memory.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"require","name":"family.apple2","value":true},
+    {"kind":"step","name":"create-encoder"}
+  ],
+  "status": "terminated",
+  "title": "Error path: a memoryless depth attachment with store action store",
+  "variant": "debug-layer"
+}

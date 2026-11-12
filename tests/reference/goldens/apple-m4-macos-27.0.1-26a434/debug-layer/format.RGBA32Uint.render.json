@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RGBA32Uint.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"u32","hex":"fce17a252f85cc971bdf3e92240fbdf8c151badbb7cfead92d7de3f55f582411e282f353d346f765a85cb33a4a320575d45a56278c4b29e5b4a69497af2460bbd56ac3f6b698fb5f15c6955b14a3d6f2f1a5b618e61e517ea53bac7ae9a0365f3fa4164581f6d3e3edf0b890389d909672e0f0d2620346c97a61f8c628fad79bb91ec509112af0449f1e5bace4c919b8f0f46d50b364fcc2c327e9f05c832e74e85f4b40004f4444ad226a489a6f7f0e6a43e6dd121f7295475902094deb83868a51b0f0d84c5d748236696b5dea437dc1513e176a49ef0e3f6f2e97f7e05c3284151c098a86b9e7b0b601ec8c9186b923675c646f582a326e606bbe6a17e900dc4c4f496c9a5296814e62a7333d308b3c4067de84432a088ac3233b80385357455b2e7ca21f742fb0d34e7a2d461fc765e252beea8338645565b0899c6a19205d25e852a9f29a22bba1e335ee7c8509c53047d2daa9311934f58e9c5547692a3cff1a05e32dc485d3abf8c9d5cca2856ca4a6cb187b4c176019388170d33607de293b21e38f20a28dd33518a447e47557047fd3bae78662e020f3886cd31ee349eb9774fecd75046d81bb7ecb3e2100379a83cc29dd17a2d52c88444168f397bdcfa4b3a5b3ddb3aa63b09927527153a646ab18ca6b84deb82b810cefd1903475af945956c1c8595fde0b50c5c7788058ca9abe86e34b6c91ac86824c25ab25","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":256,"elem":"u8","hex":"fce17a252f85cc971bdf3e92240fbdf8c151badbb7cfead92d7de3f55f582411e282f353d346f765a85cb33a4a320575d45a56278c4b29e5b4a69497af2460bbd56ac3f6b698fb5f15c6955b14a3d6f2f1a5b618e61e517ea53bac7ae9a0365f3fa4164581f6d3e3edf0b890389d909672e0f0d2620346c97a61f8c628fad79bb91ec509112af0449f1e5bace4c919b8f0f46d50b364fcc2c327e9f05c832e74e85f4b40004f4444ad226a489a6f7f0e6a43e6dd121f7295475902094deb83868a51b0f0d84c5d748236696b5dea437dc1513e176a49ef0e3f6f2e97f7e05c3284151c098a86b9e7b0b601ec8c9186b923675c646f582a326e606bbe6a17e900","kind":"data","name":"render.representable","rule":{"compare":"exact"}},
+    {"kind":"value","name":"render.representable-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":256,"elem":"u8","hex":"dc4c4f496c9a5296814e62a7333d308b3c4067de84432a088ac3233b80385357455b2e7ca21f742fb0d34e7a2d461fc765e252beea8338645565b0899c6a19205d25e852a9f29a22bba1e335ee7c8509c53047d2daa9311934f58e9c5547692a3cff1a05e32dc485d3abf8c9d5cca2856ca4a6cb187b4c176019388170d33607de293b21e38f20a28dd33518a447e47557047fd3bae78662e020f3886cd31ee349eb9774fecd75046d81bb7ecb3e2100379a83cc29dd17a2d52c88444168f397bdcfa4b3a5b3ddb3aa63b09927527153a646ab18ca6b84deb82b810cefd1903475af945956c1c8595fde0b50c5c7788058ca9abe86e34b6c91ac86824c25ab25","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a RGBA32Uint color attachment",
+  "variant": "debug-layer"
+}

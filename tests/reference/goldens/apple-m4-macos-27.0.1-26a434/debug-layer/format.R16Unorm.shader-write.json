@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R16Unorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bf30f22f3f70a93d3ff83f1b3f8a5e3a3f5c3e5b3f6429ae3e9610983f56a215bff583f43ee062d63e4ede963ff8cdc6be653e643f000d693ea0ba993e10078dbecb99c93e182d9b3fb8f738be1cae48bfc280403b1a829bbfbe2776bf60d081bfd84bd73e26651ebfae9b12bf4a40973f566b563fbca600bfe0bb1f3e3cd38ebfa97d17bf16a677bf3495ef3e15f25ebf28f8d93e3eae833f3c05dc3ee842b13e009c3fbdd82b823ff28241bfa0e2b93e20ee45bf78d806bf98d9733e705a323e7096f53e8095a93d78a98b3f40d3133ed4c380bf4ac4cdbe885d2e3ed02b7bbe5876593fcc47f1beb84583be6ebdcebe40ea463fa013003e24df3dbfbc528fbf0858d13edf1b87bf0000b1b95a65943f2049d03deeb208bf500e1c3eeea7983ff4b8b03e748295be78b50d3f221c3f3f489b043f8ff347bf880d873e0ac58bbff53a8dbf38df843f989b5a3e60c4b1bdc047563d0d1314bf60ac6d3f6061633de1d682bf7fd38dbf02942fbf7c1d86bfa8dd503fe07db1bda40a593f8455443f","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":64,"elem":"u8","hex":"0000ffff0000ffff0000000000800000f2af3edb427a3ee4cd64c100a66b6ad60000fc6c00000000cb7a000075d9e9c6ac68091a5c589b840000640d0000ddd0","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R16Unorm",
+  "variant": "debug-layer"
+}

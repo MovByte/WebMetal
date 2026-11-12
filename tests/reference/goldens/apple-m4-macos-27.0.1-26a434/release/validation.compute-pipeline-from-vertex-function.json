@@ -1,0 +1,19 @@
+{
+  "area": "validation.pipelines",
+  "case": "validation.compute-pipeline-from-vertex-function",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"call"},
+    {"kind":"call","name":"call","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"state-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":3,"description":"RasterizationEnabled is false but the vertex shader's return type is not void","domain":"AGXMetalG16G_B0","kind":"error","name":"error","nil":0,"rule":{"compare":"device"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "newComputePipelineStateWithFunction:error: with a vertex function",
+  "variant": "release"
+}

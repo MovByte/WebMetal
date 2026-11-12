@@ -1,0 +1,16 @@
+{
+  "area": "sampler.errors",
+  "case": "sampler.error-anisotropy-zero",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateMTLSamplerDescriptor:79: failed assertion `Sampler Descriptor Validation\nMTLSamplerDescriptor's maxAnisotropy value (0) is invalid. Should be in [1, 16] range\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newSamplerStateWithDescriptor"}
+  ],
+  "status": "terminated",
+  "title": "maxAnisotropy of 0 (the default and minimum are 1)",
+  "variant": "debug-layer"
+}

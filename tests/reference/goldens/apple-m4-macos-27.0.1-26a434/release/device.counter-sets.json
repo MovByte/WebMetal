@@ -1,0 +1,20 @@
+{
+  "area": "device.counters",
+  "case": "device.counter-sets",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"counter-sets","rule":{"compare":"device"},"type":"strings","value":["timestamp: GPUTimestamp"]},
+    {"kind":"value","name":"supports-counter-sampling.stage","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"supports-counter-sampling.draw","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-counter-sampling.dispatch","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-counter-sampling.tile-dispatch","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-counter-sampling.blit","rule":{"compare":"device"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "counterSets with their counter names and supportsCounterSampling: for every sampling point",
+  "variant": "release"
+}

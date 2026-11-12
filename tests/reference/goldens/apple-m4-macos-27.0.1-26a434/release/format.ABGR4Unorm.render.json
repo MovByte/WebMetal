@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.ABGR4Unorm.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f0000803f00000000000000000000803f000000000000803f0000000000000000000000000000803f0000803f0000803f0000803f0000803f0000803f00000000000000000000803f00000000000000000000803f000000000000803f0000803f000000000000000000000000000000000000803f0000803f0000803f000000000000803f0000803f0000803f0000803f00000000000000000000803f0000803f000000000000803f000000000000803f0000803f0000803f0000803f000000000000803f000000000000803f0000803f0000803f0000803f0000803f0000803f00000000000000000000803f00000000000000000000000056a3893f2fbd013eee15d4bdeffb0a3ecd87373f3eda803eb2764abe6ff6313fb3b4233f40afde3b40a7e3bd2753933f146c2f3f8e97963e7a80be3d6936653fe1ec933face2863fa0514d3c53a2023f6f0a6e3ff2de433f9bc3823f3cdf99bd3a22893f044db23e05d4823f7e2b85bd204e873f2768313e9490143f58d8003df121ffbd98ca443f8a0b993ea019e93bab3b583f7f83383e2966523e75cd6e3f6312043f8027813f75de933fb06ed13e94db3e3ffd08523f1f8b323f589e8b3ce25e813f2fe3603f8e46883de05997bd5e20493f76a0183fabc3843f3705003e82fb46be2cf0d83e09187f3e3a2ae13eb7c6273e07d52b3ecce98e3ff4b0ea3e","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u8","hex":"f00f0f0f0f00ffff0ff0f00000ffff00fff000ff0fffff0ff0f0ffff00ff00f0","kind":"data","name":"render.representable","rule":{"compare":"exact"}},
+    {"kind":"value","name":"render.representable-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":32,"elem":"u8","hex":"02f20ab40fa01da408fff0ebf0f590f3400c3ed3f68fa0bc10fdf2c94706f723","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a ABGR4Unorm color attachment",
+  "variant": "release"
+}

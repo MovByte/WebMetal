@@ -1,0 +1,21 @@
+{
+  "area": "format.color",
+  "case": "format.RG8Sint.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":64,"elem":"u8","hex":"8080818100007f7f808081811eb9f024fda25ba9e9479f48146f02cc022f50f112cc7682c60354363db5314f9c48a7e4516e78e4d9446948f5eec2843d2e335a","kind":"data","layout":{"bytes_per_row":16,"format":"RG8Sint","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"8080818100007f7f808081811eb9f024fda25ba9e9479f48146f02cc022f50f112cc7682c60354363db5314f9c48a7e4516e78e4d9446948f5eec2843d2e335a","kind":"data","layout":{"bytes_per_row":16,"format":"RG8Sint","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"kind":"value","name":"getbytes-equals-readback","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"i32","hex":"80ffffff80ffffff000000000100000081ffffff81ffffff0000000001000000000000000000000000000000010000007f0000007f000000000000000100000080ffffff80ffffff000000000100000081ffffff81ffffff00000000010000001e000000b9ffffff0000000001000000f0ffffff240000000000000001000000fdffffffa2ffffff00000000010000005b000000a9ffffff0000000001000000e9ffffff4700000000000000010000009fffffff480000000000000001000000140000006f000000000000000100000002000000ccffffff0000000001000000020000002f000000000000000100000050000000f1ffffff000000000100000012000000ccffffff00000000010000007600000082ffffff0000000001000000c6ffffff030000000000000001000000540000003600000000000000010000003d000000b5ffffff0000000001000000310000004f00000000000000010000009cffffff480000000000000001000000a7ffffffe4ffffff0000000001000000510000006e000000000000000100000078000000e4ffffff0000000001000000d9ffffff44000000000000000100000069000000480000000000000001000000f5ffffffeeffffff0000000001000000c2ffffff84ffffff00000000010000003d0000002e0000000000000001000000330000005a0000000000000001000000","kind":"data","name":"read.exact","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.within-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Upload, readback and shader read conversion of RG8Sint",
+  "variant": "debug-layer"
+}

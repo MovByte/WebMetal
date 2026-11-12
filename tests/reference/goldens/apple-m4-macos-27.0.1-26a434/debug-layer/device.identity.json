@@ -1,0 +1,26 @@
+{
+  "area": "device.identity",
+  "case": "device.identity",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"name","rule":{"compare":"device"},"type":"string","value":"Apple M4"},
+    {"kind":"value","name":"architecture","rule":{"compare":"device"},"type":"string","value":"applegpu_g16g"},
+    {"kind":"value","name":"has-unified-memory","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"low-power","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"headless","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"removable","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"location","rule":{"compare":"device"},"type":"u64","value":0},
+    {"kind":"value","name":"location-number","rule":{"compare":"device"},"type":"u64","value":0},
+    {"kind":"value","name":"max-transfer-rate","rule":{"compare":"device"},"type":"u64","value":0},
+    {"kind":"value","name":"peer-group-id","rule":{"compare":"device"},"type":"u64","value":0},
+    {"kind":"value","name":"peer-index","rule":{"compare":"device"},"type":"u64","value":0},
+    {"kind":"value","name":"peer-count","rule":{"compare":"device"},"type":"u64","value":0}
+  ],
+  "status": "ok",
+  "title": "Device name, architecture and memory model",
+  "variant": "debug-layer"
+}

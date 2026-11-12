@@ -1,0 +1,16 @@
+{
+  "area": "validation.cpu-access",
+  "case": "validation.private-texture-get-bytes",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "_validateGetBytes:75: failed assertion `Get Bytes Validation\nCPU access for textures with MTLResourceStorageModePrivate storage mode is disallowed.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "getBytes:bytesPerRow:fromRegion:mipmapLevel: on a private-storage texture",
+  "variant": "debug-layer"
+}

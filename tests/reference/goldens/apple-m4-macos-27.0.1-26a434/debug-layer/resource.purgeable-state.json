@@ -1,0 +1,36 @@
+{
+  "area": "resource.purgeable",
+  "case": "resource.purgeable-state",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"shared-buffer.query-initial","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"shared-buffer.set-volatile","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"shared-buffer.query-volatile.volatile-or-empty","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"shared-buffer.set-nonvolatile.volatile-or-empty","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"shared-buffer.query-nonvolatile","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"shared-buffer.set-empty","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"shared-buffer.query-empty","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"kind":"value","name":"shared-buffer.set-nonvolatile-after-empty","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"kind":"value","name":"shared-buffer.query-final","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"private-texture.query-initial","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"private-texture.set-volatile","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"private-texture.query-volatile.volatile-or-empty","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"private-texture.set-nonvolatile.volatile-or-empty","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"private-texture.query-nonvolatile","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"private-texture.set-empty","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"private-texture.query-empty","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"kind":"value","name":"private-texture.set-nonvolatile-after-empty","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"kind":"value","name":"private-texture.query-final","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"heap.query-initial","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"heap.set-volatile","rule":{"compare":"exact"},"type":"u64","value":2},
+    {"kind":"value","name":"heap.set-nonvolatile.volatile-or-empty","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"heap.query-final","rule":{"compare":"exact"},"type":"u64","value":2}
+  ],
+  "status": "ok",
+  "title": "setPurgeableState: answers through volatile, nonvolatile and empty for a buffer, texture and heap",
+  "variant": "debug-layer"
+}

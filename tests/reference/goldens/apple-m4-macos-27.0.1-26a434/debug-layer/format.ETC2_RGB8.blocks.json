@@ -1,0 +1,25 @@
+{
+  "area": "format.compressed",
+  "case": "format.ETC2_RGB8.blocks",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":32,"elem":"u8","hex":"5ffeb83caf8851ac241d07934fc31fdd605e32a657234255e4e6cfb56f10a739","kind":"data","layout":{"block_bytes":8,"block_height":4,"block_width":4,"bytes_per_row":16,"format":"ETC2_RGB8","height":8,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"kind":"step","name":"getBytes"},
+    {"count":32,"elem":"u8","hex":"5ffeb83caf8851ac241d07934fc31fdd605e32a657234255e4e6cfb56f10a739","kind":"data","layout":{"block_bytes":8,"block_height":4,"block_width":4,"bytes_per_row":16,"format":"ETC2_RGB8","height":8,"width":8},"name":"getbytes","rule":{"compare":"exact"}},
+    {"kind":"step","name":"copyFromTexture:toBuffer:"},
+    {"count":32,"elem":"u8","hex":"5ffeb83caf8851ac241d07934fc31fdd605e32a657234255e4e6cfb56f10a739","kind":"data","name":"readback","rule":{"compare":"exact"}},
+    {"kind":"step","name":"copyFromTexture:toTexture:"},
+    {"kind":"value","name":"copy-equals-source","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"step","name":"read"},
+    {"count":256,"elem":"f32","hex":"b5b4b43e0000803fc1c0403f0000803fb5b4b43e0000803fc1c0403f0000803f9190903edddc5c3e000000000000803f0000803f0000803f0000803f0000803f9392923ee1e0e03d9f9e1e3f0000803f8180803ea5a4243eb0af2f3f0000803fdddc5c3ed5d4543ec2c1413f0000803fb5b4343e8584843ed3d2523f0000803fb5b4b43e0000803fc1c0403f0000803fcdcccc3e0000803fcdcc4c3f0000803fd1d0503fc0bf3f3fb3b2b23e0000803fd1d0503fc0bf3f3fb3b2b23e0000803f9f9e9e3eabaaaa3e9594143f0000803f8d8c8c3ec3c2c23ea6a5253f0000803ff5f4743edddcdc3eb7b6363f0000803fcdcc4c3ef5f4f43ec9c8483f0000803fcdcccc3e0000803fcdcc4c3f0000803fb5b4b43e0000803fc1c0403f0000803fd1d0503fc0bf3f3fb3b2b23e0000803f0000803f0000803f0000803f0000803fabaaaa3e8f8e0e3f8b8a0a3f0000803f9998983e9b9a1a3f9c9b1b3f0000803f8786863ea8a7273fadac2c3f0000803fe5e4643eb4b3333fbebd3d3f0000803f8988883eefee6e3fabaa2a3f0000803f8988883eefee6e3fabaa2a3f0000803fd1d0503fc0bf3f3fb3b2b23e0000803fd1d0503fc0bf3f3fb3b2b23e0000803fb7b6b63ec7c6463ffffefe3e0000803fa5a4a43ed4d3533f9291113f0000803f9392923ee0df5f3fa3a2223f0000803ffdfc7c3eedec6c3fb4b3333f0000803f9998983da1a0203d000000000000803fb4b3333fabaa2a3f8281013f0000803fbdbcbc3e8b8a8a3ef5f4743e0000803fbdbcbc3e8b8a8a3ef5f4743e0000803f0000803f0000803f0000803f0000803f9f9e1e3f9f9e1e3ff9f8f83e0000803f9f9e1e3f9f9e1e3ff9f8f83e0000803f0000803f0000803fe5e4643f0000803f9796963e8584843ec9c8c83d0000803f9796963e8584843ec9c8c83d0000803fa5a4a43ee5e4643ec5c4443e0000803fd1d0d03e9f9e9e3e8f8e8e3e0000803f0000803f0000803fe5e4643f0000803f0000803f0000803f0000803f0000803f9f9e1e3f9f9e1e3ff9f8f83e0000803f9f9e1e3f9f9e1e3ff9f8f83e0000803fb4b3333fabaa2a3f8281013f0000803fb4b3333fabaa2a3f8281013f0000803fbdbcbc3e8b8a8a3ef5f4743e0000803fa5a4a43ee5e4643ec5c4443e0000803fb9b8b83efdfcfc3e0000803f0000803fb9b8b83efdfcfc3e0000803f0000803f00000000b1b0b03db0af2f3f0000803fb1b0303e9d9c9c3ee8e7673f0000803ff7f6f63ee5e4e43e9392923e0000803ff7f6f63ee5e4e43e9392923e0000803fd1d0d03e9f9e9e3e8f8e8e3e0000803fd1d0d03e9f9e9e3e8f8e8e3e0000803f9594143fb7b6363f0000803f0000803fb9b8b83efdfcfc3e0000803f0000803fb1b0303e9d9c9c3ee8e7673f0000803f9594143fb7b6363f0000803f0000803f","kind":"data","layout":{"components":4,"height":8,"width":8},"name":"read.decoded","rule":{"compare":"none","reason":"Metal does not state the output precision of compressed-format decoding for shader reads"}}
+  ],
+  "status": "ok",
+  "title": "Block upload, readback, copy and decoded read of ETC2_RGB8",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R32Sint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"i32","hex":"00000000d0aac7dc7054c7ff90c01734ffffffff5f75e49735b0eb15a560fefb7f000000c852a5ce01c958a8cce27ab980000000c217d6f9c67dd110770d21bc80ffffffb39c86205e0c4f1475eaaede7fffffff79b81b6b564c17d9bd34cb7bff7f0000f22253098c55bcfbc931631000800000ae5e9a8aa602742233a87f8e0080fffff7c402dd15a9a05d1d823fa5ff7fffff4f8388890b3715f915b42fedffffff7f02f12f779eb5d0f6e219e8e9000000808ea4f966c1b408eedd8452e79eb89a762ac3fb2208f9b85c589a74ba1a03a03305d41d092db1412b2d7aa84d13dd219cc71437b0e752940b17b81125e04ca0e0a5aa347ebdabeb8ca7f5b95e4147c4cd5dfc05a06e98bb566e62c92c776b5e051de7d7469fd72e2be9a2233df3718efae18cb621c45eff7fec6012c2016268fa640655db089f9e47b8a65c9259c940a6f3f86fe562bc04f1a32e57b3216e90b71618ba3bd3e5278d70061c0f2929a41b516fd6a4e3b74c079469bc8cc5039900c1a9402695038b066f37c7c88a398839b46e9b95ec034e90a274c9f6db1c54e5434a99fd6efbaef4db0bb0c289eebbd384cef4fd2c08b3b1f8896ae207d239ff6dc7119b424a98db780149bd43382caa3d9d94966e791512cb67a5efb69dd315fac2f20be32d92e2c8544c9b87eeaf747c603d016e0dd10640bbe11897e2efffd8ea08715cbb0639e738b772","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"00000000ffffffff7f0000008000000080ffffff7fffffffff7f0000008000000080ffffff7fffffffffff7f000000809eb89a761a03a03313dd219ce04ca0e04147c4cd776b5e05f3718efa016268fa59c940a6216e90b72929a41bc50399008a398839db1c54e589eebbd307d239ff43382caab69dd31587eeaf7497e2efff","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R32Sint",
+  "variant": "debug-layer"
+}

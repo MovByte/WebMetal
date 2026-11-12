@@ -1,0 +1,23 @@
+{
+  "area": "msaa.resolve",
+  "case": "msaa.depth-stencil-resolve",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple5","value":true},
+    {"kind":"require","name":"device.texture-sample-count-4","value":true},
+    {"count":64,"elem":"f32","hex":"0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e0000803f0000003e0000003f0000c03e","kind":"data","name":"depth-samples","rule":{"compare":"exact"}},
+    {"count":16,"elem":"f32","hex":"0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f","kind":"data","name":"sample0.resolved-depth","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"03030303030303030303030303030303","kind":"data","name":"sample0.resolved-stencil","rule":{"compare":"exact"}},
+    {"count":16,"elem":"f32","hex":"0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e0000003e","kind":"data","name":"min.resolved-depth","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"09090909090909090909090909090909","kind":"data","name":"min.resolved-stencil","rule":{"compare":"exact"}},
+    {"count":16,"elem":"f32","hex":"0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f","kind":"data","name":"max.resolved-depth","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"03030303030303030303030303030303","kind":"data","name":"max.resolved-stencil","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Depth resolve filters sample0, min and max with stencil resolve sample0 and depthResolvedSample",
+  "variant": "debug-layer"
+}

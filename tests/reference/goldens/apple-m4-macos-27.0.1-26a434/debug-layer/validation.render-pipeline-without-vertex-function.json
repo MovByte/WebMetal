@@ -1,0 +1,16 @@
+{
+  "area": "validation.pipelines",
+  "case": "validation.render-pipeline-without-vertex-function",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateWithDevice:5101: failed assertion `Render Pipeline Descriptor Validation\nvertexFunction must not be nil.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newRenderPipelineStateWithDescriptor:error: with only a fragment function",
+  "variant": "debug-layer"
+}

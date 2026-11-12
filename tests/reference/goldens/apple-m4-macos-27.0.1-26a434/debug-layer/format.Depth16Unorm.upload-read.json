@@ -1,0 +1,20 @@
+{
+  "area": "format.depth-stencil",
+  "case": "format.Depth16Unorm.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"count":32,"elem":"u16","hex":"0000ffff082024e64cbbca57b553f18d6eb05ff09d49693995f23f65b8af5923091834c240e3cc7ee2d13bd33d488600c2056d65994df4562a62e7e68e63ddba","kind":"data","layout":{"bytes_per_row":16,"format":"Depth16Unorm","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u16","hex":"0000ffff082024e64cbbca57b553f18d6eb05ff09d49693995f23f65b8af5923091834c240e3cc7ee2d13bd33d488600c2056d65994df4562a62e7e68e63ddba","kind":"data","layout":{"bytes_per_row":16,"format":"Depth16Unorm","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"count":32,"elem":"f32","hex":"000000000000803f8020003ee624663fbb4c3b3fb094af3ea76aa73e8ef10d3fb06e303ff05f703f933a933ee6a4653ef395723fca7eca3eb0b82f3f8d640d3ec048c03dc234423fe340633ffe98fd3ed2e2513fd33b533f907a903e8600063bb840b83ccbdaca3e9b329b3eaee8ad3ec454c43ee7e7663fc71cc73ebbdd3a3f","kind":"data","name":"read.normalized","rule":{"bound":"1.5","compare":"bounded","ideal":"0000000000000000000000000000f03f100410041004c03f9dc49cc49cc4ec3f976997699769e73f96f295f295f2d53f55ed54ed54edd43f32be31be31bee13fd60dd60dd60de63ffe0bfe0bfe0bee3f526752675267d23f9db49cb49cb4cc3fbe52be52be52ee3fd94fd94fd94fd93f16f715f715f7e53f92ac91ac91acc13f180918091809b83f984698469846e83f1c681c681c68ec3f20b31fb31fb3df3f5a3c5a3c5a3cea3f7a677a677a67ea3f520f520f520fd23f11c010c010c0603f170817081708973f595b595b595bd93f536653665366d33f16bd15bd15bdd53f998a988a988ad83ffddcfcdcfcdcec3f99e398e398e3d83fb75bb75bb75be73f","model":"ulp","reference":"MSL 4.1 section 8.7.1.1, table 8.6"}},
+    {"count":2,"elem":"f32","hex":"000000000000803f","kind":"data","name":"read.exact","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.within-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Depth16Unorm upload and readback through blits and depth read conversion",
+  "variant": "debug-layer"
+}

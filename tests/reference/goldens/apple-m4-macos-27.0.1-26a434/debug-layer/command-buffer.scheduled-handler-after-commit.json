@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.scheduled-handler-after-commit",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[_MTLCommandBuffer addScheduledHandler:]:807: failed assertion `Scheduled handler provided after commit call'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"add-scheduled-handler"}
+  ],
+  "status": "terminated",
+  "title": "Error path: addScheduledHandler: after the buffer completed",
+  "variant": "debug-layer"
+}

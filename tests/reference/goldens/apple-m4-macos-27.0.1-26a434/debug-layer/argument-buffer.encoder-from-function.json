@@ -1,0 +1,17 @@
+{
+  "area": "argument-buffer.encoding",
+  "case": "argument-buffer.encoder-from-function",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"encoded-length","rule":{"compare":"device"},"type":"u64","value":40},
+    {"kind":"value","name":"alignment","rule":{"compare":"device"},"type":"u64","value":8},
+    {"count":48,"elem":"u32","hex":"000040400000c8420000c8420000c0400000ce420000ce42000010410000d4420000d442000040410000da420000da42000070410000e0420000e042000090410000e6420000e6420000a8410000ec420000ec420000c0410000f2420000f2420000d8410000f8420000f8420000f0410000fe420000fe4200000442000002430000024300001042000005430000054300001c4200000843000008430000284200000b4300000b430000344200000e4300000e43000040420000114300001143","kind":"data","name":"results","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newArgumentEncoderWithBufferIndex: on a kernel; buffer, texture, sampler and constant read through it",
+  "variant": "debug-layer"
+}

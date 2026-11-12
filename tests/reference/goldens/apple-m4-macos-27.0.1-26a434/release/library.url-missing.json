@@ -1,0 +1,16 @@
+{
+  "area": "library.data",
+  "case": "library.url-missing",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"library-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":6,"description":"library not found","domain":"MTLLibraryErrorDomain","kind":"error","name":"error","nil":0,"rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newLibraryWithURL:error: for a file that does not exist",
+  "variant": "release"
+}

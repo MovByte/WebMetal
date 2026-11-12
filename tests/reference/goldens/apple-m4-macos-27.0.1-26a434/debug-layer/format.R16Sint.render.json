@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R16Sint.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"i32","hex":"3988ffffd0ffffff96ffffffe1ffffffceb4ffff2a0000000e000000dbffffff7de0ffffadffffff4d0000002b000000e97300009dffffffd4ffffff7d000000f5fdffff3400000047000000c4ffffffa55a0000540000002200000012000000c3d6ffff350000002300000049000000cdddffff040000001c000000b4ffffff750700001e00000004000000d4ffffff0f620000d1ffffffe5ffffff94ffffff3b23000079000000a2ffffffb8ffffff574c0000b8ffffffa5ffffff460000005a590000afffffffddffffffb2ffffffb04b0000cbffffff49000000580000003ca8fffffaffffff74000000d5ffffffacb2ffff91ffffffb4ffffff69000000b1817cd0699f8ea82aead8d55eb34d73665336a46d01b28c3031075bbfe1519346a84063aef61e2c3940dc07f82dac91f468ba9115514899b555b4dd5e78207f221ae629145c233b3628fdc065f68ece2bbc93004c6a39fa11e1b2fef893562560b562bfd5dfe8f101efc01be50d7eade28e05dc989f2aee371ba3682c8082a5e43f0bcab6b5ae60497b31dac8481bab09ee865b33c4198054ec55926627450345ff4a2bf768c5e54f414efc96483175bb466e9466afba65e35253b40774fb3cf0138621ca6adc5221b3d099e07739388067d55b90c7a86ce87c1f1833c3a5c0205811bb744eac6a308812b82ba327d7f9c81a91d6d9195479f2fc2fa49c5e56","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u8","hex":"3988ceb47de0e973f5fda55ac3d6cddd75070f623b23574c5a59b04b3ca8acb2","kind":"data","name":"render.representable","rule":{"compare":"exact"}},
+    {"kind":"value","name":"render.representable-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":32,"elem":"u8","hex":"00800080ff7f0080ff7fff7f008000800080ff7fff7f0080ff7fff7f00800080","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a R16Sint color attachment",
+  "variant": "debug-layer"
+}

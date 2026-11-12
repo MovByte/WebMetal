@@ -1,0 +1,16 @@
+{
+  "area": "blend.equations",
+  "case": "blend.dual-source",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":32,"elem":"f16","hex":"002e003200310037403a8039c039c03940390035002e002cc03b803a403840384039003700330037c03b803b403bc039002e002c0028002c403a803880354038","kind":"data","layout":{"bytes_per_row":128,"format":"RGBA16Float","height":4,"width":16},"name":"results","rule":{"compare":"exact"}},
+    {"kind":"value","name":"results.equals-documented-equations","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Dual-source blending with the Source1 blend factors",
+  "variant": "debug-layer"
+}

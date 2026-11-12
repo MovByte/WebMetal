@@ -1,0 +1,16 @@
+{
+  "area": "storage.errors",
+  "case": "storage.private-texture-replace-region",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"replace-region"},
+    {"kind":"call","name":"replace-region","raised":0,"rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Error path: replaceRegion on a private texture",
+  "variant": "release"
+}

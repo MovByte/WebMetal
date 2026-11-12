@@ -1,0 +1,16 @@
+{
+  "area": "draw.indexed",
+  "case": "draw.error.index-offset-unaligned",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder validateDrawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:function:]:6673: failed assertion `Draw Indexed Primitives Validation\nindexBufferOffset(2) must be a multiple of 4 bytes.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"draw"}
+  ],
+  "status": "terminated",
+  "title": "drawIndexedPrimitives with a uint32 index buffer offset that is not a multiple of 4 (invalid use)",
+  "variant": "debug-layer"
+}

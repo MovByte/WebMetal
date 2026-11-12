@@ -1,0 +1,18 @@
+{
+  "area": "drawable.layer",
+  "case": "drawable.pool-exhaustion",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"drawable-0-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"drawable-1-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"extra-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"extra-waited-at-least-0.9s","rule":{"compare":"none","reason":"timing; CAMetalLayer.h states a 1 second timeout"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "nextDrawable when every drawable of the pool is held and not presented",
+  "variant": "release"
+}

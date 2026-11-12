@@ -1,0 +1,17 @@
+{
+  "area": "vertex.attribute-stride",
+  "case": "vertex.attribute-stride",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple3","value":true},
+    {"kind":"require","name":"family.apple4","value":true},
+    {"count":48,"elem":"u32","hex":"003000000130000000000000010000000230000003300000000000000100000004300000053000000000000001000000063000000730000000000000010000000130000002300000000000000100000005300000063000000000000001000000093000000a30000000000000010000000d3000000e30000000000000010000000230000003300000000000000100000005300000063000000000000001000000083000000930000000000000010000000b3000000c3000000000000001000000","kind":"data","layout":{"bytes_per_row":64,"format":"RGBA32Uint","height":3,"width":4,"x":0,"y":0},"name":"fetched","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "MTLBufferLayoutStrideDynamic with setVertexBuffer:offset:attributeStride:atIndex:",
+  "variant": "release"
+}

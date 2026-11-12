@@ -1,0 +1,16 @@
+{
+  "area": "validation.resources",
+  "case": "validation.texture-width-over-max",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation\nMTLTextureDescriptor has width (65536) greater than the maximum allowed size of 16384.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newTextureWithDescriptor: with a 2D width of 65536",
+  "variant": "release"
+}

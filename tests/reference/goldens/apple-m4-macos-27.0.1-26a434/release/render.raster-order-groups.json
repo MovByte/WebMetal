@@ -1,0 +1,17 @@
+{
+  "area": "render.raster-order-groups",
+  "case": "render.raster-order-groups",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"device.raster-order-groups","value":true},
+    {"kind":"require","name":"device.read-write-texture-tier-1","value":true},
+    {"count":64,"elem":"u32","hex":"12000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000120000001200000012000000","kind":"data","layout":{"bytes_per_row":32,"format":"R32Uint","height":8,"width":8},"name":"result","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Read-modify-write of a read_write texture in raster order group 0 by overlapping primitives",
+  "variant": "release"
+}

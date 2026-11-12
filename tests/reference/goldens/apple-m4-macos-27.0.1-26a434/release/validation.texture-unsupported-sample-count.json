@@ -1,0 +1,18 @@
+{
+  "area": "validation.resources",
+  "case": "validation.texture-unsupported-sample-count",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation\nMTLTextureDescriptor sampleCount (3) is not supported by device.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"require","name":"unsupported-sample-count-exists","value":true},
+    {"kind":"value","name":"sample-count","rule":{"compare":"device"},"type":"u64","value":3},
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newTextureWithDescriptor: with a sample count the device does not support",
+  "variant": "release"
+}

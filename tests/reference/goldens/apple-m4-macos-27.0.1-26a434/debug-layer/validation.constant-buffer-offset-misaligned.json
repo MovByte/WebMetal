@@ -1,0 +1,18 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.constant-buffer-offset-misaligned",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateComputeFunctionArguments:1064: failed assertion `Compute Function(pip_constant_vector): the offset into the buffer v that is bound at Buffer index 0 must be a multiple of 16 but was set to 4.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"set-buffer"},
+    {"kind":"call","name":"set-buffer","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"dispatch"}
+  ],
+  "status": "terminated",
+  "title": "A constant float4 argument bound at offset 4 and dispatched (encoded, not committed)",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,26 @@
+{
+  "area": "drawable.layer",
+  "case": "drawable.layer-defaults",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"maximum-drawable-count","rule":{"compare":"exact"},"type":"u64","value":3},
+    {"kind":"value","name":"presents-with-transaction","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"allows-next-drawable-timeout","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"opaque","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"display-sync-enabled","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"device-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"pixel-format","rule":{"compare":"none","reason":"default not stated in CAMetalLayer.h"},"type":"u64","value":80},
+    {"kind":"value","name":"framebuffer-only","rule":{"compare":"none","reason":"default not stated in CAMetalLayer.h"},"type":"bool","value":true},
+    {"exception":"CAMetalLayerInvalidMaximumDrawableCount","kind":"call","name":"set-maximum-drawable-count-4","raised":1,"reason":"failed trying to set maximumDrawableCount to 4 outside of the valid range of [2, 3]","rule":{"compare":"exact"}},
+    {"kind":"value","name":"maximum-drawable-count-after-4","rule":{"compare":"exact"},"type":"u64","value":3},
+    {"kind":"call","name":"set-maximum-drawable-count-2","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"maximum-drawable-count-after-2","rule":{"compare":"exact"},"type":"u64","value":2}
+  ],
+  "status": "ok",
+  "title": "CAMetalLayer default properties and the maximumDrawableCount range",
+  "variant": "debug-layer"
+}

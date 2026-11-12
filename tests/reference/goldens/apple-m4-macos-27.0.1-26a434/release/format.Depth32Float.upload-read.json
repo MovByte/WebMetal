@@ -1,0 +1,19 @@
+{
+  "area": "format.depth-stencil",
+  "case": "format.Depth32Float.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"count":32,"elem":"f32","hex":"000000000000803f0000003fd93a423f8ef6e53e18086f3fbf9e343f909a813e96d2b93ea657243f9cda843e443fc13e73cc263f0099db3b4fa5123fcaa13f3fe0e6d03c0ca6d03e3c44553e58cfe83ed9a9233f8bca763fbe253e3fb670f23ed04efd3ede9eed3e173e473f1ba8653fb91f143f86a9d53e16a98a3ec76e2e3f","kind":"data","layout":{"bytes_per_row":32,"format":"Depth32Float","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":32,"elem":"f32","hex":"000000000000803f0000003fd93a423f8ef6e53e18086f3fbf9e343f909a813e96d2b93ea657243f9cda843e443fc13e73cc263f0099db3b4fa5123fcaa13f3fe0e6d03c0ca6d03e3c44553e58cfe83ed9a9233f8bca763fbe253e3fb670f23ed04efd3ede9eed3e173e473f1ba8653fb91f143f86a9d53e16a98a3ec76e2e3f","kind":"data","layout":{"bytes_per_row":32,"format":"Depth32Float","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"count":32,"elem":"f32","hex":"000000000000803f0000003fd93a423f8ef6e53e18086f3fbf9e343f909a813e96d2b93ea657243f9cda843e443fc13e73cc263f0099db3b4fa5123fcaa13f3fe0e6d03c0ca6d03e3c44553e58cfe83ed9a9233f8bca763fbe253e3fb670f23ed04efd3ede9eed3e173e473f1ba8653fb91f143f86a9d53e16a98a3ec76e2e3f","kind":"data","name":"read","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read-equals-stored","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Depth32Float upload and readback through blits and depth read",
+  "variant": "release"
+}

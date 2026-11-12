@@ -1,0 +1,19 @@
+{
+  "area": "texture.mipmaps",
+  "case": "texture.generate-mipmaps",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"mipmap-level-count","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"count":256,"elem":"u8","hex":"ed45b4fcbb18eb7c9e3921c821b0b8f4dff15d1074dcda41cb00354879c9f2d0670cefb0eb6961da8125ff8d5dedd907f68e3c32a1ddfd6c697fa5edc65202db015744fead8c7579e4c58d3429c2b7a261733d514dc12077a798b1c072fee1f537a00c2027ca4b071296da8cd98e4f47acfd4ca42cf59f343d3af1f835d568792e381591c2dc3674d815dc49bb6a5c62bac35202df65e1c67ee2259e449544bd1a43624dfa8ab443e8b34ea002915f245c6c21ea66ea9ec040b4616e98a4b18c4def2223ae32259902b46333fdaeea9639b4ae299ad169251568a5ee87334968d81fb06204cc1607870a759d1cd19c391c8829378ef92c6d7d8967fef3de346a","kind":"data","layout":{"bytes_per_row":32,"depth":1,"format":"RGBA8Unorm","height":8,"level":0,"width":8},"name":"level0","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"be35bcc0677fac94bace9c3c9d6774b8439344687eab9b6a62c9526863a9bbc9817858659f71795c979f7d9c67b45f9576834349698f97685fc15b3d838062af","kind":"data","layout":{"bytes_per_row":16,"depth":1,"format":"RGBA8Unorm","height":4,"level":1,"width":4},"name":"level1","rule":{"compare":"none","reason":"Metal does not specify the filter generateMipmapsForTexture: uses"}},
+    {"count":16,"elem":"u8","hex":"7a7d928987aa8789807f6b5d78a56687","kind":"data","layout":{"bytes_per_row":8,"depth":1,"format":"RGBA8Unorm","height":2,"level":2,"width":2},"name":"level2","rule":{"compare":"none","reason":"Metal does not specify the filter generateMipmapsForTexture: uses"}},
+    {"count":4,"elem":"u8","hex":"7e937b7e","kind":"data","layout":{"bytes_per_row":4,"depth":1,"format":"RGBA8Unorm","height":1,"level":3,"width":1},"name":"level3","rule":{"compare":"none","reason":"Metal does not specify the filter generateMipmapsForTexture: uses"}}
+  ],
+  "status": "ok",
+  "title": "generateMipmapsForTexture: on an 8x8 RGBA8Unorm texture with four levels",
+  "variant": "release"
+}

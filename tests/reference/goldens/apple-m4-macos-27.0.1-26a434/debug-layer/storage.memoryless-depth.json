@@ -1,0 +1,17 @@
+{
+  "area": "storage.memoryless",
+  "case": "storage.memoryless-depth",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple2","value":true},
+    {"kind":"value","name":"depth.storage-mode","rule":{"compare":"exact"},"type":"u64","value":3},
+    {"count":256,"elem":"u8","hex":"031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff031effff","kind":"data","layout":{"bytes_per_row":32,"format":"RGBA8Uint","height":8,"width":8},"name":"color","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "A memoryless depth attachment cleared, tested and discarded within one render pass",
+  "variant": "debug-layer"
+}

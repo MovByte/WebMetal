@@ -1,0 +1,17 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.encoder-use-after-end-encoding",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"set-pipeline-after-end"},
+    {"kind":"call","name":"set-pipeline-after-end","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "setComputePipelineState: on a compute encoder after endEncoding",
+  "variant": "release"
+}

@@ -1,0 +1,19 @@
+{
+  "area": "validation.pipelines",
+  "case": "validation.function-constant-type-mismatch",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"call"},
+    {"kind":"call","name":"call","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"function-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":3,"description":"Function pip_constants: constant pip_fc_a (0) is of type MTLDataTypeUInt but value found has type MTLDataTypeFloat","domain":"MTLLibraryErrorDomain","kind":"error","name":"error","nil":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "newFunctionWithName:constantValues:error: with a constant value of the wrong type",
+  "variant": "release"
+}

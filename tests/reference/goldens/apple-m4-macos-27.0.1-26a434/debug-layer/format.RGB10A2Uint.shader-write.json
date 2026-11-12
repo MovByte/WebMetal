@@ -1,0 +1,20 @@
+{
+  "area": "format.color",
+  "case": "format.RGB10A2Uint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"u32","hex":"0000000001000000ff0000000001000001000000ff00000000010000ffff0000ff00000000010000ffff00000000010000010000ffff000000000100ff030000ffff000000000100ff0300000004000000000100ff03000000040000ffffffffff03000000040000ffffffff0000008000040000ffffffff0000008000000000ffffffff000000800000000001000000000000800000000001000000ff000000a11405ca444a8f482baa33d73b259a547d6918e21267a1aff2400d1ad3b8d7a1ac6874a373469fa0ea1019505969fece60bb9d8df3a6f5881b58a8682afb31a2edcfb0ff8b0056539bf09d47e8529b5f5546bd95817814917079e86ac597374a18ce961098ac02766a1411269341c33f39dd215bdeb6906a0c9f962e9109aa4e3d2df7f56d33879231e6b26d4136b359a389adf5b2da8ba3d09e79047c3a09090f4c34e60db567198653e8f832477cfc90581a2f3d7f9ab3dd25489be22369c1943cc67339ba73e2bca05d0da74def308db395bcd417942603298bdb62fd7fa6c14084208f237bb9b490db4fd000010ca10a82e9c321f5222a43dc23f71d5533a4f308f7a025f1ad3e565531a0f19147f8e8f241ec6115e3b34f510c89beed07039f2dd3dc73d9f89434c1f5a67bcc7886d68c2f0fcf58c63d2cbd557c8f9fabef636d788558f81727bfeb953af0c4866dd922640764a3da25aaaf023174b315","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"count":0,"elem":"u8","hex":"","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"u8","hex":"0004f0cf01fc03d0ff00f4ff00fdffffffffffffffffffffffffffffffffff3fffff0f40ff0310c0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","kind":"data","name":"write.undefined","rule":{"compare":"none","reason":"MSL 4.1 section 8.7.6 defines saturation only for 8- and 16-bit integer channels"}}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RGB10A2Uint",
+  "variant": "debug-layer"
+}

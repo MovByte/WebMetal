@@ -1,0 +1,19 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.purgeable-empty-resource",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"committed"},
+    {"kind":"value","name":"finished-within-30s","rule":{"compare":"none","reason":"MTLResource.h: access to a resource whose contents were discarded is undefined"},"type":"bool","value":true},
+    {"kind":"value","name":"status","rule":{"compare":"none","reason":"MTLResource.h: access to a resource whose contents were discarded is undefined"},"type":"u64","value":4},
+    {"kind":"error","name":"error","nil":1,"rule":{"compare":"none","reason":"MTLResource.h: access to a resource whose contents were discarded is undefined"}},
+    {"kind":"value","name":"encoder-states","rule":{"compare":"none","reason":"MTLResource.h: access to a resource whose contents were discarded is undefined"},"type":"strings","value":[]}
+  ],
+  "status": "ok",
+  "title": "A compute pass that reads and writes a buffer made purgeable-empty before commit",
+  "variant": "release"
+}

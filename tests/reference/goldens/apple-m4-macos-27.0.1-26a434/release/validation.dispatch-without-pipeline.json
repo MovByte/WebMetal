@@ -1,0 +1,15 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.dispatch-without-pipeline",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "kind": "signal",
+    "signal": 11
+  },
+  "records": [
+    {"kind":"step","name":"dispatch"}
+  ],
+  "status": "terminated",
+  "title": "dispatchThreadgroups without a compute pipeline state (encoded, not committed)",
+  "variant": "release"
+}

@@ -1,0 +1,16 @@
+{
+  "area": "storage.errors",
+  "case": "storage.buffer-length-zero",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugDevice newBufferWithLength:options:]:796: failed assertion `Buffer Validation\nCannot create buffer of zero length.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"create"}
+  ],
+  "status": "terminated",
+  "title": "Error path: newBufferWithLength:0",
+  "variant": "debug-layer"
+}

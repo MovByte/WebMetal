@@ -1,0 +1,29 @@
+{
+  "area": "pipeline.binary-archive",
+  "case": "archive.round-trip",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"create.archive-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"create.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"create.same-device","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"add.result","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"error","name":"add.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"serialize.result","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"error","name":"serialize.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"serialize.file-nonempty","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"load.archive-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"load.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"hit.state-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"hit.error","nil":1,"rule":{"compare":"exact"}},
+    {"count":4,"elem":"u32","hex":"0d6000000e6000000f60000010600000","kind":"data","name":"hit.marker","rule":{"compare":"exact"}},
+    {"kind":"value","name":"miss.state-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":3,"description":"Unable to find function \"pip_reflect_compute\" (compute pipeline) in binary archives. \n Expected <MTLBinaryKey: 0x> Key: \n 5113D94727078727F88AB8554AA3DE91A60AFE56707924A95B5253C0F6ADAC5D Function hash\n 0000000000000000000000000000000000000000000000000000000000000000 air-nt \n E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855 air-nt plugin\n 0000000000000000000000000000000000000000000000000000000000000000 metal framework \n ","domain":"AGXMetalG16G_B0","kind":"error","name":"miss.error","nil":0,"rule":{"compare":"device"}}
+  ],
+  "status": "ok",
+  "title": "MTLBinaryArchive: add a compute pipeline, serialize, reload and build with failOnBinaryArchiveMiss",
+  "variant": "release"
+}

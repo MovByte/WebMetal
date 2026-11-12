@@ -1,0 +1,16 @@
+{
+  "area": "storage.initial-contents",
+  "case": "storage.new-buffer-initial-contents",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"shared.all-zero","rule":{"compare":"none","reason":"MTLDevice.h, newBufferWithLength:options: does not state the initial contents"},"type":"bool","value":true},
+    {"kind":"value","name":"private.all-zero","rule":{"compare":"none","reason":"MTLDevice.h, newBufferWithLength:options: does not state the initial contents"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Initial contents of new shared and private buffers",
+  "variant": "debug-layer"
+}

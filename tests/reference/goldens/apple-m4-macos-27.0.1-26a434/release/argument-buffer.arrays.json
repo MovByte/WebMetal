@@ -1,0 +1,16 @@
+{
+  "area": "argument-buffer.encoding",
+  "case": "argument-buffer.arrays",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"encoded-length","rule":{"compare":"device"},"type":"u64","value":64},
+    {"count":36,"elem":"u32","hex":"00000000e8030000aaaa000000003041d1070000bbbb00000000a041ba0b0000aaaa00000000f841eb030000bbbb000000000000d4070000aaaa000000003041bd0b0000bbbb00000000a041ee030000aaaa00000000f841d7070000bbbb000000000000c00b0000aaaa000000003041f1030000bbbb00000000a041da070000aaaa00000000f841c30b0000bbbb0000","kind":"data","name":"results","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Arrays of textures, buffers and constants in an argument buffer, set with range setters",
+  "variant": "release"
+}

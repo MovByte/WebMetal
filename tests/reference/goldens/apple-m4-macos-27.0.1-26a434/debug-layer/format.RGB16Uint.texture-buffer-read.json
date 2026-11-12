@@ -1,0 +1,17 @@
+{
+  "area": "format.texture-buffer",
+  "case": "format.RGB16Uint.texture-buffer-read",
+  "format": "webmetal-reference/1",
+  "message": "requirement family.apple11 is not met",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"api.available","value":true},
+    {"kind":"require","name":"family.apple11","value":false}
+  ],
+  "status": "unsupported",
+  "title": "Texture-buffer read conversion of RGB16Uint",
+  "variant": "debug-layer"
+}

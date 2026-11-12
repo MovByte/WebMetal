@@ -1,0 +1,17 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.set-buffer-index-over-limit",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"set-buffer"},
+    {"kind":"call","name":"set-buffer","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "setBuffer:offset:atIndex: at index 31 of a compute encoder (encoded, not committed)",
+  "variant": "release"
+}

@@ -1,0 +1,16 @@
+{
+  "area": "validation.resources",
+  "case": "validation.texture-mipmap-count-over-max",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation\nMTLTextureDescriptor requests 8 mipmap levels, but the dimensions (64, 64, 1) can only support a maxiumum of 7 levels\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newTextureWithDescriptor: with more mipmap levels than the size allows",
+  "variant": "debug-layer"
+}

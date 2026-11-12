@@ -1,0 +1,16 @@
+{
+  "area": "render.framebuffer-fetch",
+  "case": "render.framebuffer-fetch",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple2","value":true},
+    {"count":64,"elem":"u32","hex":"3a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a0000003a000000","kind":"data","layout":{"bytes_per_row":32,"format":"R32Uint","height":8,"width":8},"name":"result","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "[[color(0)]] input with three overlapping primitives: order-dependent result on R32Uint",
+  "variant": "release"
+}

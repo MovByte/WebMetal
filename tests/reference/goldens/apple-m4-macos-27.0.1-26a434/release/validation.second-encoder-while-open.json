@@ -1,0 +1,16 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.second-encoder-while-open",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[AGXG16GFamilyCommandBuffer blitCommandEncoderCommon:]:891: failed assertion `A command encoder is already encoding to this command buffer'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"create-second-encoder"}
+  ],
+  "status": "terminated",
+  "title": "blitCommandEncoder while a compute encoder of the same command buffer is still open",
+  "variant": "release"
+}

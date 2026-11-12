@@ -1,0 +1,17 @@
+{
+  "area": "raster.scissor",
+  "case": "raster.error.scissor-outside",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder setScissorRect:]:4174: failed assertion `Set Scissor Rect Validation\n(rect.x(10) + rect.width(10))(20) must be <= render pass width(16)\n(rect.y(10) + rect.height(10))(20) must be <= render pass height(16)\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"encode"},
+    {"kind":"step","name":"set-scissor"}
+  ],
+  "status": "terminated",
+  "title": "Scissor rectangle extending past the attachment (invalid use)",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,18 @@
+{
+  "area": "blit.copy",
+  "case": "blit.texture-to-texture-region",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":256,"elem":"u8","hex":"564262c3c1064d63441ac899140ec33ec46ee9bab72bf38e1311ad579a14207c5d2f4eb800838d13f104317316ea8cb620947abc10be326838f308ab71b00b0a12c130883249834c22f10dde135c54d2e2ac065945b57e13506f568f4fb8f93de561460ddbdb4790f6b135d881bd07621d3d877fabb036f97fa478f5c76934d9a86ee32c0fbc102784c53a79790e2bf670a16391bf1ebeefe3226eb1d93abe585218ae41473ecf3e41deae7c4d4b656d8473b21554d73576be1a90142fc8fc0d1c70b16d35113a1c6d5699dbf97c1db5d2461b8edce35609850d2c618d9ae4cd346e7d7a717e854f3eca126aa5464f81c6171ae62d41da759418d14dafaf9584","kind":"data","layout":{"bytes_per_image":256,"bytes_per_row":32,"depth":1,"format":"RGBA8Unorm","height":8,"width":8},"name":"b.slice0","rule":{"compare":"exact"}},
+    {"count":256,"elem":"u8","hex":"3541258a0af50e674b55c9939784087173994d380c7a9258065c0c8661f3b41f8d7c9326d8c616c9549b67e2830095d6c1e2db7f90c1713f8cde4adfd119770f54416694c608eaaeee0fe4e0780b1ad46b1a83339c7a2a0d869a36650fc379a533c8eb3dd850e2decc35d5e936b4cf67910b12fd2a9313bc80b7022e0ee3ef1d1170bfb15d3bad6ed152bf73eb56c64a564262c3c1064d63441ac899140ec33ed7ba85861a750e5f903131541ecb98bf5d2f4eb800838d13f104317316ea8cb682dd05c8be4982f4edcf47e0cb222ea312c130883249834c22f10dde135c54d2c16f1d42312b36a5c8a0acf491dd82b5e561460ddbdb4790f6b135d881bd0762","kind":"data","layout":{"bytes_per_image":256,"bytes_per_row":32,"depth":1,"format":"RGBA8Unorm","height":8,"width":8},"name":"b.slice1","rule":{"compare":"exact"}},
+    {"count":256,"elem":"u8","hex":"1440e0c5db2514d56e2102a41d2afdc07b91dc213fc37917f475a962bacde30b8c5473d2222468cea58124c534e9d0826c67e0cc5c14c5eb588a9952bc3f77c834f1b2de2bc4643ffe6f38e54ec68504ee0e45f398362d42bfe10e38b00ab97fa8297bca64f0aad42371522cb3cd8a816d77342b621e8ade311bccedd2357530cbf17e9c35d7cd65ab9c64d7f369797ac163bdc950d9fddf7d35fe08e07690157f982179b9bfc86d62099fad686af3cd38bc722dfa856ca65ac59786aa9322fba5e2f31e6df180279d3c91fe6832c7d7e98762bbeee120f5c3bf2528a4fd67897949266c06de9b8d21867abf7606baf7ed0c137f2da03395fa8141f6337ce66a","kind":"data","layout":{"bytes_per_image":256,"bytes_per_row":32,"depth":1,"format":"RGBA8Unorm","height":8,"width":8},"name":"b.slice2","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u16","hex":"1440e0c5db2514d56e2102a41d2afdc07b91dc213fc37917f475a962bacde30b8c5473d2222468ce34e9065d3d9ed0821b56bda8ab98c5eb588a9952bc3f77c834f1b2de2bc4643f593b2e5d685a8504df4ed1ef6e9b2d42bfe10e38b00ab97fa8297bca64f0aad477e63f4846acaa6ae81a636d32c9441a2a719f6ed2357530","kind":"data","layout":{"bytes_per_image":32,"bytes_per_row":8,"depth":4,"format":"R16Float","height":4,"width":4},"name":"w","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Region copies between textures across slices, levels and origins, including 3D and one texture to itself",
+  "variant": "release"
+}

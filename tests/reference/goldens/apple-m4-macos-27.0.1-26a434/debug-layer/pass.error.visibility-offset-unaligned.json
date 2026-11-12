@@ -1,0 +1,16 @@
+{
+  "area": "pass.visibility",
+  "case": "pass.error.visibility-offset-unaligned",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder setVisibilityResultMode:offset:]:4734: failed assertion `Set Visibility Result Mode Validation\noffset(4) must be a multiple of result-size(8) bytes.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"encode"}
+  ],
+  "status": "terminated",
+  "title": "setVisibilityResultMode:offset: with an offset that is not a multiple of 8 (invalid use)",
+  "variant": "debug-layer"
+}

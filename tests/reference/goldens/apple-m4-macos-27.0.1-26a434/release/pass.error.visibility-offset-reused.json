@@ -1,0 +1,18 @@
+{
+  "area": "pass.visibility",
+  "case": "pass.error.visibility-offset-reused",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"encode"},
+    {"kind":"step","name":"completed"},
+    {"kind":"value","name":"offset-0","rule":{"compare":"none","reason":"reusing a visibility offset within an encoder is invalid"},"type":"u64","value":32},
+    {"kind":"value","name":"offset-8","rule":{"compare":"none","reason":"reusing a visibility offset within an encoder is invalid"},"type":"u64","value":8}
+  ],
+  "status": "ok",
+  "title": "Counting visibility results at the same offset for two draws in one encoder (invalid use)",
+  "variant": "release"
+}

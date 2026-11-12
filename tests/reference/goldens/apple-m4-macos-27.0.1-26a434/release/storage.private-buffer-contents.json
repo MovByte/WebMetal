@@ -1,0 +1,17 @@
+{
+  "area": "storage.errors",
+  "case": "storage.private-buffer-contents",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"contents"},
+    {"kind":"call","name":"contents","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"contents-is-null","rule":{"compare":"none","reason":"the documentation states NULL while the debug layer treats the call as invalid use"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "Error path: contents of a private buffer",
+  "variant": "release"
+}

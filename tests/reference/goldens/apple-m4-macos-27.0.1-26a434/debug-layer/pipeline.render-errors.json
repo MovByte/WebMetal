@@ -1,0 +1,18 @@
+{
+  "area": "pipeline.errors",
+  "case": "pipeline.render-errors",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"unmatched-varying.state-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":3,"description":"Fragment input(s) `user(normal)` mismatching vertex shader output type(s) or not written by vertex shader","domain":"AGXMetalG16G_B0","kind":"error","name":"unmatched-varying.error","nil":0,"rule":{"compare":"device"}},
+    {"kind":"value","name":"stage-in-without-descriptor.state-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":1,"description":"Vertex function has input attributes but no vertex descriptor was set.","domain":"CompilerError","kind":"error","name":"stage-in-without-descriptor.error","nil":0,"rule":{"compare":"device"}}
+  ],
+  "status": "ok",
+  "title": "Render pipeline creation failures that return an NSError",
+  "variant": "debug-layer"
+}

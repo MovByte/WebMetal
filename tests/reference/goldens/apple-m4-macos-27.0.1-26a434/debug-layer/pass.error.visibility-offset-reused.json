@@ -1,0 +1,16 @@
+{
+  "area": "pass.visibility",
+  "case": "pass.error.visibility-offset-reused",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder setVisibilityResultMode:offset:]:4734: failed assertion `Set Visibility Result Mode Validation\nusing the same offset (0) in the visibility buffer twice in the same command encoder is not allowed.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"encode"}
+  ],
+  "status": "terminated",
+  "title": "Counting visibility results at the same offset for two draws in one encoder (invalid use)",
+  "variant": "debug-layer"
+}

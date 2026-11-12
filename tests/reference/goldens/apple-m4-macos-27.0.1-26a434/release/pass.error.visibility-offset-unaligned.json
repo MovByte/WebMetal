@@ -1,0 +1,17 @@
+{
+  "area": "pass.visibility",
+  "case": "pass.error.visibility-offset-unaligned",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"encode"},
+    {"kind":"step","name":"completed"},
+    {"count":32,"elem":"u8","hex":"1000000000000000000000000000000000000000000000000000000000000000","kind":"data","name":"results","rule":{"compare":"none","reason":"the result of an unaligned visibility offset is not defined"}}
+  ],
+  "status": "ok",
+  "title": "setVisibilityResultMode:offset: with an offset that is not a multiple of 8 (invalid use)",
+  "variant": "release"
+}

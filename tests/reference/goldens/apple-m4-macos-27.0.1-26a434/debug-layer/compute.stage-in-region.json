@@ -1,0 +1,16 @@
+{
+  "area": "compute.stage-in",
+  "case": "compute.stage-in-region",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":32,"elem":"u32","hex":"4baf44890f451bbf9c78db39e76a62bf676347d0d25205bf7df2451e86ca66bf28bd8cf6cdef023f41196e842961163f2a5145d6b007083f3d102e5a348c1e3f67c073785b385a3ffaac7ba21223223fbcba4f09a69c63bf76e03e51491d57bf1dfb412010605f3f662d97e39fbc763f9f765a884bf223bf24a02115e0845bbf","kind":"data","name":"input","rule":{"compare":"exact"}},
+    {"count":48,"elem":"u32","hex":"411900006e8400002961163f000000002a51000045d60000b007083f010000003d1000002e5a0000348c1e3f0200000067c00000737800005b385a3f03000000faac00007ba200001223223f04000000bcba00004f090000a69c63bf05000000411900006e8400002961163f000100002a51000045d60000b007083f010100003d1000002e5a0000348c1e3f0201000067c00000737800005b385a3f03010000faac00007ba200001223223f04010000bcba00004f090000a69c63bf05010000","kind":"data","name":"fetched","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Compute stage_in fetched through MTLStageInputOutputDescriptor and setStageInRegion:",
+  "variant": "debug-layer"
+}

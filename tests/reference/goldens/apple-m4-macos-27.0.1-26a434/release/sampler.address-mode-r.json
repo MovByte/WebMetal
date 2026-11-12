@@ -1,0 +1,19 @@
+{
+  "area": "sampler.address-modes",
+  "case": "sampler.address-mode-r",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":28,"elem":"f32","hex":"0000c03e0000203f000090bf000000000000c03e0000203f000000be000000000000c03e0000203f0000003e000000000000c03e0000203f0000603f000000000000c03e0000203f0000903f000000000000c03e0000203f0000d03f000000000000c03e0000203f0000184000000000","kind":"data","name":"coordinates","rule":{"compare":"exact"}},
+    {"count":28,"elem":"f32","hex":"0000803f00000040000040400000f8410000803f00000040000040400000f8410000803f00000040000000000000803f0000803f00000040000040400000f8410000803f00000040000000000000803f0000803f00000040000000400000a8410000803f000000400000803f00003041","kind":"data","name":"r-repeat","rule":{"compare":"exact"}},
+    {"kind":"value","name":"r-repeat.match-header-description","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":28,"elem":"f32","hex":"0000803f00000040000000000000803f0000803f00000040000000000000803f0000803f00000040000000000000803f0000803f00000040000040400000f8410000803f00000040000040400000f8410000803f00000040000040400000f8410000803f00000040000040400000f841","kind":"data","name":"r-clamp-to-edge","rule":{"compare":"exact"}},
+    {"kind":"value","name":"r-clamp-to-edge.match-header-description","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "rAddressMode on a 3D texture: repeat and clampToEdge along depth",
+  "variant": "release"
+}

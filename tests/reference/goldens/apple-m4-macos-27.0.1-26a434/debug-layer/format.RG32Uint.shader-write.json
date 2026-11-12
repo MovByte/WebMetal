@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RG32Uint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"u32","hex":"00000000010000002cac35c91c81185701000000ff0000003a1e8922e78a86d7ff00000000010000951495939d535ead00010000ffff000039952031fbd007fbffff0000000001008d5661cd0afedf7700000100ff0300004c27ea6e3e54680bff030000000400008dbd49d5ad5a8f6a00040000ffffffffd71eb9703ccc8864ffffffff00000080cf2ca05dac0f82b10000008000000000ea7bfec01f513e0cfb90e329933a1d37d526697c113dc31f09f67904a9ed79f7718c5375cd522b36d3987b2a24087b815b546eada7d52ec404b1ca2b0426e36edd84906ff79c6cce6497bcd08ce0f2c45911bea179687edc56170170fab925aa0f1b7e3e3f84d9ab0070b96d0950ea0d5f4b7be007879a9ae70f937c77b26a1c11da6710229fc0c9843b211f15fb122bac458f15783404f2b5fbe5e59a3737e54067bafbeea20e7a73424c036cdab622ebf43be20cfa333b2ae24eab9c1df1924384c9ce9b77a033bfdfc4f6f1515245361bcc11dcc2b01181f5e22e7b824c75f3730309c429a3e597bf7915081f9986de2a41d3f17af2a63c132d89c99f9adac35c793631d18bee918ac425d7d892248c9cd838a3d4158dfbb35f9ffeae9e837f5c0a3bc9720a0d240eeac48ba07de0e13218bb3ce0daab356b43b94686e144ab1f2f0cef20b2944bb3322c1e00f92a066bc50424b765ec5e26fd03e971025e40a23b4b5ad97f2f","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":256,"elem":"u8","hex":"000000000100000001000000ff000000ff0000000001000000010000ffff0000ffff00000000010000000100ff030000ff0300000004000000040000ffffffffffffffff000000800000008000000000fb90e329933a1d3709f67904a9ed79f7d3987b2a24087b8104b1ca2b0426e36e6497bcd08ce0f2c456170170fab925aa0070b96d0950ea0de70f937c77b26a1c843b211f15fb122bb5fbe5e59a3737e573424c036cdab6222ae24eab9c1df192bfdfc4f6f151524581f5e22e7b824c7597bf7915081f99863c132d89c99f9ada918ac425d7d89224fbb35f9ffeae9e83240eeac48ba07de0356b43b94686e1444bb3322c1e00f92a5e26fd03e971025e","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RG32Uint",
+  "variant": "debug-layer"
+}

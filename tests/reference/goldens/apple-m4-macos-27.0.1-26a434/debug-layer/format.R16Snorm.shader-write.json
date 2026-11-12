@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R16Snorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bf2e29973de000b43daada6fbf7fcb81bfb7a55b3ee06440be98f8663ff6b194bf3aad1c3ed660983fccd1303f2034e3be1441093c20aa10be686659bf30d4523e3be61c3f600d333f205030bdd0fdbc3df4d4793f8cb904bf4049843f90c4b0bebf865f3f406dda3cf0fe213ed0961f3e907a473fe0f3dd3edaf73cbfd084793f6a6ca6be60fc9c3fdd4c00bf5036663f5095d73d50e2553fec25163f7f955bbf109f79be508967be74a7c9becc1d853ffe538abe9c8fb5be4b5d1dbfc82fc43e309014bf78e62d3fbcc87fbf78cb863fd8a2cbbee04548bee46742bf49f489bff04d8a3f50d6a83e79b64abfd82bbbbe9ce87c3fbff727bfc08eddbcd0b121be580d79bed84d923e067f023f048e9c3fb058f7bd00a6993ba82b62bed8fff43eaccd3e3f3073983fcde260bfcc17b6be0448073f54f898bedcc99cbffc74b13e842b753f11a36bbf0010e83b322f9ebe30fd9ebe46c494bfd0a9013fac4fadbe40b82c3d44e4ea3e5408de3ea8ce9e3fb845ef3e58f6c73e5e73833fd7af9bbf","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":64,"elem":"u8","hex":"0000ff7f0180ff7f01800000004000c07209741b96131301734eea7cc26fbd6365d6790dcce06bddb8b518cdff7f737edfe08bf0665fa343957a41d86605d13b","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R16Snorm",
+  "variant": "debug-layer"
+}

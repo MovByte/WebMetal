@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.BGR10A2Unorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bf0000003f0c2a283c0f3bec3c5555553f7cefbd3e5e78e13e881f7e3f5555553f5e73cd3e8f3c723d8924123d0000003fa48d363f5965953e6cae393e0000003f0d33cc3c6fbb6d3eb5d5563f5555553fb6d9663f595f7d3fa798623f5555553f9248223f9b6cb23eecae3b3e5555553f954f3e3f289d743fbdf1c63eacaa2a3e804593bf02ef223f63f488bf84a11e3f0890d03e8acd74bf94bb1b3f0467653f208bdc3e813f46bf88116abf3811f43e76ad89bf6026743d527b0f3f8eca913f0c57143f6a44323f7a936abfac34903fe8472ebf60f0e03d50d396be90576bbee4b457bf1403243f5ce198bf96548b3f603ed2bd606381bdf5118abfb098ec3e005330bed0aebcbd31fa30bfa2a4843f9885073f20a82dbf00b2083c804122bd00449b3f5278eebe68f36d3ff87dd4be60f6073e02d889bfc011f73c801b16bf508cff3d7afa033fbc9897be00ed153dc8b1963f48f7a73e101858be10012dbee217903f88ed11bfbe0264bf48dd18be757885bfae84e5be40d35f3f1890603f","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"00fc0fc0ff03f03f00fc0f000000f0bf0002000000000800000000e0ff0300001e2c00a0f80bc79724f0b099baa8a4ad5abba3818ad7afb9bc9085a88e499f6f002c0a806e0210da0000905b3df600c000201be500c00100003c0ac000000040000000c00900e021b703f03f1f008008003c08080040f53f0000f03f7e0300c0","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to BGR10A2Unorm",
+  "variant": "release"
+}

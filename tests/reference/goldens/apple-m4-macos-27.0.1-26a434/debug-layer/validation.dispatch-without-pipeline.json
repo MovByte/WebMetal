@@ -1,0 +1,16 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.dispatch-without-pipeline",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugComputeCommandEncoder dispatchThreadgroups:threadsPerThreadgroup:]:1375: failed assertion `computePipelineState must not be nil.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"dispatch"}
+  ],
+  "status": "terminated",
+  "title": "dispatchThreadgroups without a compute pipeline state (encoded, not committed)",
+  "variant": "debug-layer"
+}

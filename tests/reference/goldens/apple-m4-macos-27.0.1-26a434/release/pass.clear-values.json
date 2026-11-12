@@ -1,0 +1,21 @@
+{
+  "area": "pass.load-store",
+  "case": "pass.clear-values",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":64,"elem":"u8","hex":"00ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff00","kind":"data","layout":{"bytes_per_row":16,"format":"RGBA8Unorm","height":4,"width":4},"name":"rgba8unorm","rule":{"compare":"exact"}},
+    {"count":64,"elem":"f16","hex":"003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014003600c1ff7b0014","kind":"data","layout":{"bytes_per_row":32,"format":"RGBA16Float","height":4,"width":4},"name":"rgba16float","rule":{"compare":"exact"}},
+    {"count":64,"elem":"f32","hex":"0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f0000c03e000020c0020080490000803f","kind":"data","layout":{"bytes_per_row":64,"format":"RGBA32Float","height":4,"width":4},"name":"rgba32float","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u32","hex":"0000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b070000000001000000ffffffff15cd5b07","kind":"data","layout":{"bytes_per_row":64,"format":"RGBA32Uint","height":4,"width":4},"name":"rgba32uint","rule":{"compare":"exact"}},
+    {"count":64,"elem":"i16","hex":"0080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff00000080ff7fffff0000","kind":"data","layout":{"bytes_per_row":32,"format":"RGBA16Sint","height":4,"width":4},"name":"rgba16sint","rule":{"compare":"exact"}},
+    {"count":16,"elem":"f32","hex":"0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e0000c03e","kind":"data","name":"depth","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5","kind":"data","name":"stencil","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Clear colours, depth and stencil values that are exactly representable in each attachment format",
+  "variant": "release"
+}

@@ -1,0 +1,17 @@
+{
+  "area": "format.color",
+  "case": "format.BGR10_XR_sRGB.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bf134d343f5d75d53eb9e5963e5ca4303f1962883e975b6e3fb2c8223f7086e33ed1430f3fdf7df73e5554513f9448343f1658603f5965953e289e783f86ab133f6081053fcb2cb33d9d74d23ea8e4b13e7ae6993ea79a6a3fc40e3b3f609c59bec1020b3fcf3aeb3d081f7c3f0f3766bff4cf3f3f2080003fdd72cb3e13a436bf5ec98cbea852763f700d9a3d00f1163d884b4cbe93fc3fbfaecf29bf00b4f53ca0d36b3f00677bbd502a913ffc43e1be50602b3e9cca1b3f382d813fa88d73bf08f08ebe36c360bffc6e203f5e8f913f2870643ea0b1f53d10584dbeaac896beb05992be4a02a9be2c9070bf08fb3a3e8e58323f2078953f78aa1bbed81b85bef4805a3fa4b1e53e20c0d23e0ee89f3f044eef3ef096423fc08089bdcc5d473f34c7933fd8985ebec8fe823f96e4e8beb08d343f4048f53e38b055bee6e2943f38ab5e3f7c1fb83ed02b96be14350bbf744b473fe61c9f3f25f118bfa2197abfdc6fa33e488a9cbfdc0b77bfe2da50bf8bdf0abf90a55ebe7cac393fc6a372bf","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"count":128,"elem":"u8","hex":"00f80dd8ff03e0f700fc0fc08001f0fff70206c009dc0bd8802570ef7e0396c0a76a5bf321bbade953c7abf0779b1af6d79ee8ef3cafadea7bfb58f0d2e21bf41bd62dc6000090c89bd3c3f680673ce61f0300c6890849e80024d1c5a7883ef3d896cbf5ed10cdee83fff1f984c05bf3590c0bf600c49ef4000020eb3bff01c0","kind":"data","name":"write.xr-texels","rule":{"compare":"none","reason":"The encoding of extended-range (XR) channels is not stated in MTLPixelFormat.h or the MSL specification"}}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to BGR10_XR_sRGB",
+  "variant": "debug-layer"
+}

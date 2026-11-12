@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RG8Sint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"i32","hex":"00000000ffffffffe0354860d217eb66ffffffff7f0000005e0367c162b0fe167f00000080000000e5b2775b3b4089d28000000080ffffff379dcb1c8af2179b80ffffff7fffffff9e3c486f7a7c6a7e7fffffffff7f00003c78b6daba46a60cff7f0000008000008bb5c6f889795b3d008000000080ffffcf925acc59e3bf050080ffffff7fffffb71377b4e8c665bdff7fffffffffff7fcb06d9ccb8cc2570ffffff7f000000803121ca642e28aacb000000800000000087def5c755187dc2c5bd6d477c2589e9612440946ac1367298a59a241191401d7cb0491571cbb2e3b7805c97436a9c80f9f9ce8590fb9f595bdb66f52e30304c8bc94117b1f55029427137aaebd413851a4308872fe53e02080cca781cf1c4c53a338138001640967d6d3ad64d80a6edb59b89987d9d9b2e6524882f82fe4dca36adc93ac2ffc8c10ad482511cfb2b0ceec75664d05222c06cf3cb389219be247a9ebf6fa687f65a8fe4be158cd6a007ca95042692642f9ef5ec5d6d2fe562b58e4c1b2420733c0b1d143b302c932eccfe3d1ecb586aef944cce938dfede2c289e46773ace94e681850c25b2446f7f438a7d007222f4fcfcf1561bb12e3f8e8e91731328a5b5c64f6a77da20c78fe78b786813991c08e40140bbbb9681593dbfba6f21526c5249034e660cb4ff933b6d87d336d7bdf37796ea87f542db3de603bf52f76b6dced992","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":64,"elem":"u8","hex":"00ffff7f7f7f7f808080807f7f7f7f808080807f7f8080007f807f7f8080807f80807f8080807f807f7f7f7f7f7f7f807f80807f807f80807f808080807f7f7f","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RG8Sint",
+  "variant": "release"
+}

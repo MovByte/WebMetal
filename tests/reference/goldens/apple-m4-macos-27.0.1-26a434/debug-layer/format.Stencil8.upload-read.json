@@ -1,0 +1,19 @@
+{
+  "area": "format.depth-stencil",
+  "case": "format.Stencil8.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"count":32,"elem":"u8","hex":"00ff073412037d506680006abc77cf73d14f6a6b15a1e3a072963b5098769a54","kind":"data","layout":{"bytes_per_row":8,"format":"Stencil8","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u8","hex":"00ff073412037d506680006abc77cf73d14f6a6b15a1e3a072963b5098769a54","kind":"data","layout":{"bytes_per_row":8,"format":"Stencil8","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u32","hex":"00000000ff000000070000003400000012000000030000007d000000500000006600000080000000000000006a000000bc00000077000000cf00000073000000d10000004f0000006a0000006b00000015000000a1000000e3000000a000000072000000960000003b0000005000000098000000760000009a00000054000000","kind":"data","name":"read.stencil","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.stencil-equals-stored","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Stencil8 upload and readback through blits and stencil read",
+  "variant": "debug-layer"
+}

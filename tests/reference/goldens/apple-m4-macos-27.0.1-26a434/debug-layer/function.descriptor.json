@@ -1,0 +1,19 @@
+{
+  "area": "function.constants",
+  "case": "function.descriptor",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"error","name":"error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"name","rule":{"compare":"exact"},"type":"string","value":"pip_constants_specialized"},
+    {"kind":"value","name":"options","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"count":8,"elem":"u32","hex":"78563412010000000000c03fffff0000003c0000fdffffff07000000efbe0000","kind":"data","name":"results","rule":{"compare":"exact"}},
+    {"count":1,"elem":"u32","hex":"a9f10000","kind":"data","name":"extra","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newFunctionWithDescriptor:error: with a specialized name and constant values",
+  "variant": "debug-layer"
+}

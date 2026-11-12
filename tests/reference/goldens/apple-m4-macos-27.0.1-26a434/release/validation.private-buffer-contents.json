@@ -1,0 +1,18 @@
+{
+  "area": "validation.cpu-access",
+  "case": "validation.private-buffer-contents",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"call"},
+    {"kind":"call","name":"call","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"contents-null","rule":{"compare":"none","reason":"the result of invalid use is undefined in Metal unless the call documents an error; recorded for the defined-error table"},"type":"bool","value":false},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "contents of a private-storage buffer",
+  "variant": "release"
+}

@@ -1,0 +1,21 @@
+{
+  "area": "format.color",
+  "case": "format.RGBA16Sint.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":256,"elem":"u8","hex":"008000800080008001800180018001800000000000000000ff7fff7fff7fff7f008000800080008001800180018001801de73653c0026522de52e028dcd515daad10c643b2ef1278adc893ad2166cf322d98099190521ddd002d7c46e549878c48a3e039601d098e813fe31be94990fc115067615810c167c486648484c172d60cacb4f2382f9121c4d0b41cbb59da450f49d218303c19133091ef06370e40025dac34348885382d1cf47f3d01ee337e64df3922a944a6569008f16fdcf1d44ff5b491aa2e99fa9fbb1278f1c992d4db69b4ffbac7cf3dd855f4a2a21db47d74eb9151820a27992a636f089f3e88bf2bc6366e6e9a2fc89c44067aba1004306d","kind":"data","layout":{"bytes_per_row":64,"format":"RGBA16Sint","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":256,"elem":"u8","hex":"008000800080008001800180018001800000000000000000ff7fff7fff7fff7f008000800080008001800180018001801de73653c0026522de52e028dcd515daad10c643b2ef1278adc893ad2166cf322d98099190521ddd002d7c46e549878c48a3e039601d098e813fe31be94990fc115067615810c167c486648484c172d60cacb4f2382f9121c4d0b41cbb59da450f49d218303c19133091ef06370e40025dac34348885382d1cf47f3d01ee337e64df3922a944a6569008f16fdcf1d44ff5b491aa2e99fa9fbb1278f1c992d4db69b4ffbac7cf3dd855f4a2a21db47d74eb9151820a27992a636f089f3e88bf2bc6366e6e9a2fc89c44067aba1004306d","kind":"data","layout":{"bytes_per_row":64,"format":"RGBA16Sint","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"kind":"value","name":"getbytes-equals-readback","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"i32","hex":"0080ffff0080ffff0080ffff0080ffff0180ffff0180ffff0180ffff0180ffff00000000000000000000000000000000ff7f0000ff7f0000ff7f0000ff7f00000080ffff0080ffff0080ffff0080ffff0180ffff0180ffff0180ffff0180ffff1de7ffff36530000c002000065220000de520000e0280000dcd5ffff15daffffad100000c6430000b2efffff12780000adc8ffff93adffff21660000cf3200002d98ffff0991ffff905200001dddffff002d00007c460000e5490000878cffff48a3ffffe0390000601d0000098effff813f0000e31b0000e949000090fcffff115000006761000058100000c1670000c486ffff6484ffff84c1ffff72d6ffff0cacffffb4f2ffff382f000091210000c4d0ffffb41c0000bb590000da4500000f490000d2180000303c0000191300003091ffffef060000370e0000400200005dacffff343400008885ffff382d00001cf4ffff7f3d000001eeffff337e000064dfffff39220000a9440000a656000090080000f16f0000dcf1ffffd44f0000f5b4ffff91aaffff2e99fffffa9fffffbb12000078f1ffffc992ffffd4dbffff69b4ffffffbaffffc7cfffff3dd8ffff55f4ffffa2a2ffff1db4ffff7d740000eb91ffff5182ffff0a270000992a0000636f0000089fffff3e88ffffbf2b0000c63600006e6e00009a2f0000c89cffff440600007abaffff10040000306d0000","kind":"data","name":"read.exact","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.within-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Upload, readback and shader read conversion of RGBA16Sint",
+  "variant": "release"
+}

@@ -1,0 +1,24 @@
+{
+  "area": "function.constants",
+  "case": "function.constants",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"generic.constants","rule":{"compare":"exact"},"type":"strings","value":["pip_fc_a name=pip_fc_a type=33 index=0 required=1","pip_fc_flag name=pip_fc_flag type=53 index=1 required=1","pip_fc_half name=pip_fc_half type=16 index=4 required=1","pip_fc_named name=pip_fc_named type=41 index=6 required=1","pip_fc_optional name=pip_fc_optional type=33 index=3 required=0","pip_fc_scale name=pip_fc_scale type=3 index=2 required=1","pip_fc_vector name=pip_fc_vector type=30 index=5 required=1"]},
+    {"kind":"error","name":"flag-on.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"flag-on.name","rule":{"compare":"exact"},"type":"string","value":"pip_constants"},
+    {"kind":"value","name":"flag-on.constants","rule":{"compare":"exact"},"type":"strings","value":[]},
+    {"count":8,"elem":"u32","hex":"78563412010000000000c03fffff0000003c0000fdffffff07000000efbe0000","kind":"data","name":"flag-on.results","rule":{"compare":"exact"}},
+    {"count":1,"elem":"u32","hex":"a9f10000","kind":"data","name":"flag-on.extra","rule":{"compare":"exact"}},
+    {"count":8,"elem":"u32","hex":"78563412000000000000c03f2a000000003c0000fdffffff07000000efbe0000","kind":"data","name":"flag-off.results","rule":{"compare":"exact"}},
+    {"count":8,"elem":"u32","hex":"bc0a0000000000000000c03fbc0a0000003c0000fdffffff07000000efbe0000","kind":"data","name":"range.results","rule":{"compare":"exact"}},
+    {"kind":"value","name":"missing-required.nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":3,"description":"Constant pip_fc_a (0) value is required by function pip_constants","domain":"MTLLibraryErrorDomain","kind":"error","name":"missing-required.error","nil":0,"rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "Function constant reflection, specialization by index and by name, optional constants",
+  "variant": "debug-layer"
+}

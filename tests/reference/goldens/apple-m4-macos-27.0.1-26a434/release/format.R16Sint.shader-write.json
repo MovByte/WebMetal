@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R16Sint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"i32","hex":"00000000207be6214326e122df543097ffffffffbd5732f3d4073a5cd90badd57f000000cc55026b263a7aa01a0e5f5880000000b87f0afc59000014001ae0e980ffffff9faf3637bacc5c8b98ee81727fffffff0cb345fd71be4fb1f124ef3cff7f00002456af64f3fc68b00cbe995f00800000d12449dec283e08021e5b19c0080ffffb03ef6436dbc121e7e9437a4ff7fffff9f63e4123641a46bad7f7a85ffffff7fbaf47a63ce6c5c405db10ba800000080d5685f37c60b7942fd8d2c1b17614bf7620cf30d3d10cd6780e1480f33b3d7cb428d5d55aee8f589367eb15dd3139d6a9111dc0312b65efcf4797d450e3605d6546bb3c74a6ba15861c500e55b5ad61a5be64d151b26be4e4217623718d2e9ae7fa9527dcb9193d929e8a19f261d1e7769fd83d89e647438a5006c2705fb7844311a1edea1d3ee56334c5063669ae97f89803e20ddd35de5fc19f563fe6f1b1d95a7d100fb0c6f46fc08e8d0469fbe3c4a514d934765c3f680301fce1d42864edd4062c5b22ca0499807d8a3a82b249508b22c73e7f4a3a9501109d9080b8ef735a389bda17db6a4c61a41a1444c3cb7888e4048623018249dd97f8bdd283a50c63bcedeeccd8325906fd1b27f13320929f1f2aeb13b0d675acf7d9c4da9121936347a77b6d06c10f3beb099f712166abfc35b8b89f54bd772957136dc87971bf7a607344a57fa7f33a18217","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":64,"elem":"u8","hex":"0000ffff7f00800080ff7fffff7fff7f00800080ff7f008000800080ff7f0080ff7f0080ff7fff7fff7fff7fff7fff7f008000800080ff7fff7fff7fff7fff7f","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to R16Sint",
+  "variant": "release"
+}

@@ -1,0 +1,20 @@
+{
+  "area": "event.shared",
+  "case": "event.shared-listener",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"already-reached","rule":{"compare":"exact"},"type":"strings","value":["at-2:2:3"]},
+    {"kind":"value","name":"fired-before-value-reached","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"fired-beyond-signaled-value","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"after-gpu-signal-6.sorted","rule":{"compare":"none","reason":"the value passed and signaledValue observed by a block are not documented"},"type":"strings","value":["at-4:4:6","at-6:6:6"]},
+    {"kind":"value","name":"after-gpu-signal-6.notified","rule":{"compare":"exact"},"type":"strings","value":["at-4","at-6"]},
+    {"kind":"value","name":"after-cpu-signal-10.notified","rule":{"compare":"exact"},"type":"strings","value":["at-9"]}
+  ],
+  "status": "ok",
+  "title": "notifyListener:atValue:block: for values reached before, at and after registration",
+  "variant": "debug-layer"
+}

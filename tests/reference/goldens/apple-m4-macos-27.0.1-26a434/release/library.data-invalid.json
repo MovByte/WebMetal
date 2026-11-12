@@ -1,0 +1,16 @@
+{
+  "area": "library.data",
+  "case": "library.data-invalid",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"library-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":1,"description":"Invalid library file","domain":"MTLLibraryErrorDomain","kind":"error","name":"error","nil":0,"rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newLibraryWithData:error: with bytes that are not a metallib",
+  "variant": "release"
+}

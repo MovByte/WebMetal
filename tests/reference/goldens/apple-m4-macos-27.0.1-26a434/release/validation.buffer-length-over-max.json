@@ -1,0 +1,18 @@
+{
+  "area": "validation.resources",
+  "case": "validation.buffer-length-over-max",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"call"},
+    {"kind":"call","name":"call","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"buffer-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "newBufferWithLength: one byte above maxBufferLength",
+  "variant": "release"
+}

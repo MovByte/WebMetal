@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.BGRA8Unorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bf9897973eb1b0b03ca2a0203c5353533fb9b8383dafae2e3e0706063f4545453f9493933e3333333f7b7a7a3fe7e5e53e7372723f6f6e6e3f4141413f9b99993e5151513f4342423fcac8483d7170703f8684843d8d8c8c3d4949493f2d2c2c3fd6d4d43dbfbdbd3efffe7e3e1b1b1b3f2d2c2c3f1515153f0303033f6564643f5472f8be031657bf81608bbf10eadbbe00f8073e16fc083f3c9b653fa01e45be361f163f001e113c987efcbe005fb3bc181743bf5f5e9bbf90a6e83eb4fb45bf00bcdf3a638168bfa41e6d3fc05b34bd08191fbe083b703ffd1785bf0c35ce3e78999a3feed88f3f44046a3f000f21bdac106d3f00e6053bce5763bf4c2e8fbe48ec8d3eb0f2793e286464bf8069433fa2bd42bf8aa696bf36b6febe90e558beb0e8923dbcf3743f481a693f00c8583d50914abe7c51e63e7418b43ed03fe4be081371be702f2bbf6032743d002273bb00ca863cb02b6b3fa48e383f14add33efc7c77bf8ef99fbe7076a0be487f103f1844a73eccb2243f1457f3bef8d6403f","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"00ff00ffff00ff0000ff00000000ff808000000000800000000080ffff00000003064cd2862c0cc4fab24a73c0eef24d0dc2d0f0c81211ac405f1b9a8294ace400000000e58822000002960074000000ec00000000ef0067e9ffff000001ec00003e47c300000000e8f4120d5a7300000f000000b8ea04690000009000a453c0","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to BGRA8Unorm",
+  "variant": "release"
+}

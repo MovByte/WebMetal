@@ -1,0 +1,16 @@
+{
+  "area": "validation.pipelines",
+  "case": "validation.render-pipeline-blending-integer-format",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateWithDevice:5101: failed assertion `Render Pipeline Descriptor Validation\nBlending is enabled for render target 0; however, the pixelformat MTLPixelFormatRGBA32Uint for this render target is not blendable.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newRenderPipelineStateWithDescriptor:error: with blending enabled on an integer color format",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RG8Uint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"u32","hex":"0000000001000000ef7a496a519d202901000000ff0000004b4ec61099576a75ff00000000010000402d21caaeaa90b200010000ffff000083b089682a5b6b9effff00000000010052c2a151112b247800000100ff030000ea8dd630fa3d2694ff03000000040000b13126c93e70933800040000ffffffff30812017906964c1ffffffff00000080e284f2be7a9e88010000008000000000d739d47d5e77256451cc0d2c759cf2dce0ce554c7da85719e4d38d7e5800036a12f75020076c847b5b10d9e2f77d3101e1bd9eaf589f05644e49ac1c4e439924fd46bc0c6b82668442813caf033f2f6a0f93701ba460526d5d9748fa052cd7a763662dcb9600defbcde7417df8d18bd9acdcaabc295e8b123bb5cc7be7342c7fb543bf7759b8a38dd2f524c42a6022c3ab42a40fa80ab86525a246b068a233bd49333014e6e5fcedf1ddf3c724cbc6c52b4e4d25b0b59bab322e1c8c24821f19483573e92f413f8b51e5cde3b5d585175963bde2f52dd930075518154517a9c9e4632851fe932ae9548e03eed8712583c258d7430924e695c46896c85eb19a5d07971512e35b3b3483a0ce6e93009c3ca385eec35e65ea535538fd42360de94caf0e9f9db11d2efc9f191f41aec645fa7448bbbde5a918b44ffbdf58af690c9225312076df86b16384ee62b5d83e02e4372a45f73b8ea2aa7f9d530d1b7d1d38b14646ed55442ee1","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":64,"elem":"u8","hex":"000101ffffffffffffffffffffffffffffffff00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RG8Uint",
+  "variant": "release"
+}

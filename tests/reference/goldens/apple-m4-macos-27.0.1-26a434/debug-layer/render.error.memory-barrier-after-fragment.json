@@ -1,0 +1,17 @@
+{
+  "area": "render.barriers",
+  "case": "render.error.memory-barrier-after-fragment",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder memoryBarrierWithScope:afterStages:beforeStages:]:8355: failed assertion `Memory Barrier With Scope Validation\nafterStages (0x2) can not contain MTLRenderStageTile or MTLRenderStageFragment on this device\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"encode"},
+    {"kind":"step","name":"barrier"}
+  ],
+  "status": "terminated",
+  "title": "memoryBarrierWithScope: with afterStages containing the fragment stage (rejected on Apple-family GPUs)",
+  "variant": "debug-layer"
+}

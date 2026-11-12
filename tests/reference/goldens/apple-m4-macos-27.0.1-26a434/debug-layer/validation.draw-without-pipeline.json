@@ -1,0 +1,16 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.draw-without-pipeline",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder validateCommonDrawErrors:instanceCount:baseInstance:maxVertexID:]:5903: failed assertion `Draw Errors Validation\nrenderPipelineState must be set.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"draw"}
+  ],
+  "status": "terminated",
+  "title": "drawPrimitives without a render pipeline state (encoded, not committed)",
+  "variant": "debug-layer"
+}

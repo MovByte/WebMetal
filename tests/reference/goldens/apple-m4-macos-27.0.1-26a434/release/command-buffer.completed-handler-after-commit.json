@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.completed-handler-after-commit",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[_MTLCommandBuffer addCompletedHandler:]:1011: failed assertion `Completed handler provided after commit call'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"add-completed-handler"}
+  ],
+  "status": "terminated",
+  "title": "Error path: addCompletedHandler: after commit",
+  "variant": "release"
+}

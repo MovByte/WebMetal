@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RGBA8Unorm.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"f32","hex":"000000000000803f000080bf000000400000803f000080bf00000040000000c0000080bf00000040000000c00000c07f00000040000000c00000c07f0000003f000000c00000c07f0000003f000000bf0000c07f0000003f000000bf000000000000003f000000bf000000000000803f000000bf000000000000803f000080bf5b5a5a3fb4b2323ec6c4c43d4545453fbcba3a3ef1f0f03c7574743f3332323f9c9a1a3e6969693f6f6f6f3f3b3b3b3f7979793f4343433fecebeb3e5958583fc4c2423ecccbcb3e6968683f6363633f6f6f6f3fdcdbdb3e5151513f6161613fb6b4b43d7b7a7a3ff4f2723e2323233f5756563ffffdfd3e7b7b7b3f8684843d96ef3cbf48e9883fbca969bf0000023b94514b3ff6ae94bf1c285d3f9cdf00bf9057fa3dca083e3f346e473f683d6b3f9cd4f23e54279cbf1d9092bf227dd3be401ebf3ce04d7c3d120b1a3f402a3dbe24ccf43e507d253fc87edabee0d9e73d90d7423f3e4e1b3fc2d20a3fd83385be4869803e802daf3e9e6ff6bef25d253fbc8ab8be3c9ff0be887b023f289ac53e4471af3ea83c7abf8a1786be7c1e8cbe7003c43dfc862b3f00d4d93a7ae190bfc4a45fbfcaa7853f2c48433fd49987bfdbf69fbf3049883f7b6881bf007a843dc89b813f9fbd5ebfe9e684bf0454853f04b9f6befc56de3eb0e77abfb03a683ff6c49ebe40e78cbe7b176abfd8cb713f","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"00ff00ffff00ff0000ff0000ff0000800000800000800000800000ff0000ff00da2d19c42f08f4b227e8eebaf8c276d83166e8e2ee6ed0e017fa3da2d67ffa1100ff0001cb00dc001fbdc7ea79000000061099007aa5001dc29b8a00405700a5000082625700000018ab000000ffc30000ff0010ff0000ff006f00e7000000f1","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RGBA8Unorm",
+  "variant": "debug-layer"
+}

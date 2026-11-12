@@ -1,0 +1,16 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.threadgroup-above-pipeline-limit",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugComputeCommandEncoder _validateThreadsPerThreadgroup:]:1314: failed assertion `(threadsPerThreadgroup.width(1024) * threadsPerThreadgroup.height(2) * threadsPerThreadgroup.depth(1))(2048) must be <= 1024. (device threadgroup size limit)'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"dispatch"}
+  ],
+  "status": "terminated",
+  "title": "dispatchThreadgroups with more threads per threadgroup than the pipeline allows (encoded, not committed)",
+  "variant": "debug-layer"
+}

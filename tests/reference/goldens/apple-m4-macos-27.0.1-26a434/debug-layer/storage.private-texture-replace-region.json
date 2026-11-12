@@ -1,0 +1,16 @@
+{
+  "area": "storage.errors",
+  "case": "storage.private-texture-replace-region",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "_validateReplaceRegion:181: failed assertion `Replace Region Validation\nCPU access for textures with MTLResourceStorageModePrivate storage mode is disallowed.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"replace-region"}
+  ],
+  "status": "terminated",
+  "title": "Error path: replaceRegion on a private texture",
+  "variant": "debug-layer"
+}

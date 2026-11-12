@@ -1,0 +1,16 @@
+{
+  "area": "validation.resources",
+  "case": "validation.texture-width-zero",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation\nMTLTextureDescriptor has width of zero.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newTextureWithDescriptor: with width 0",
+  "variant": "release"
+}

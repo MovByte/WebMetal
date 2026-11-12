@@ -1,0 +1,18 @@
+{
+  "area": "resource.accounting",
+  "case": "resource.device-memory",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"recommended-max-working-set-size","rule":{"compare":"device"},"type":"u64","value":19069665280},
+    {"kind":"value","name":"has-unified-memory","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"max-buffer-length","rule":{"compare":"device"},"type":"u64","value":14302248960},
+    {"kind":"value","name":"residency-set-created","rule":{"compare":"device"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "recommendedMaxWorkingSetSize, hasUnifiedMemory, maxBufferLength and residency set support",
+  "variant": "debug-layer"
+}

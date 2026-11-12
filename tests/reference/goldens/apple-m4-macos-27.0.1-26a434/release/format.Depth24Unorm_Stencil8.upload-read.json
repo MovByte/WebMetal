@@ -1,0 +1,16 @@
+{
+  "area": "format.depth-stencil",
+  "case": "format.Depth24Unorm_Stencil8.upload-read",
+  "format": "webmetal-reference/1",
+  "message": "requirement depth24-stencil8-pixel-format-supported is not met",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"depth24-stencil8-pixel-format-supported","value":false}
+  ],
+  "status": "unsupported",
+  "title": "Depth24Unorm_Stencil8 and X24_Stencil8, gated by depth24Stencil8PixelFormatSupported",
+  "variant": "release"
+}

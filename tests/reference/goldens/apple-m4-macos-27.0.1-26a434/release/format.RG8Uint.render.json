@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RG8Uint.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"u32","hex":"430000003a000000ba000000ef0000003100000095000000110000001b000000ac000000b4000000ab0000001f000000cd000000950000008e000000d700000031000000990000002f000000cd000000cb0000000c000000390000009900000017000000dc000000e1000000fb000000bc0000003c0000006e0000008500000003000000700000000b000000500000008a0000008800000084000000e70000005d000000360000000c0000001800000050000000b5000000f10000003c00000016000000ba00000081000000ea000000cd000000470000009a00000085000000ad000000e8000000e900000005000000ff000000400000001d0000001e000000273debb7caa948649d11cc2735fba45645351371f59dcc8e4ee32bf5cfb15381b2417ad0ed6bbf370c670c30f52778d3d43184654ce965fa5db56a9f8bd18cf1b55dfc91b917dbdec0b5ed00295be006e7fd9491fd4ff7e3a2d9ae512bdb817e77cf11602a5b20751fe9be0f9011b853f8999b8700c9e1e261552b704a1570ef189b2cb16677a7906cd74530917df4e7c58d9e6458d70a60f207f62443673f968213b8f2ece719918ef5b81b55f5a4ad3357a98696999df7a0914f0c260704721019ab694d5d6b06e4c166435f115c108235181a099bde897b9d537e1ffba43a53a5656413b3f5058e571c9862b9f44b5ad3de873a03035882e340bdc279f2a0","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":32,"elem":"u8","hex":"433a3195acb4cd953199cb0c17dcbc3c03708a885d3650b516bacd47ade8ff40","kind":"data","name":"render.representable","rule":{"compare":"exact"}},
+    {"kind":"value","name":"render.representable-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":32,"elem":"u8","hex":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a RG8Uint color attachment",
+  "variant": "release"
+}

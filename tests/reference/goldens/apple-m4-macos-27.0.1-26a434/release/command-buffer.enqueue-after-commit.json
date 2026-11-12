@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.enqueue-after-commit",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[_MTLCommandBuffer enqueue]:677: failed assertion `enqueue an already enqueued command buffer'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"enqueue"}
+  ],
+  "status": "terminated",
+  "title": "Error path: enqueue on a committed command buffer",
+  "variant": "release"
+}

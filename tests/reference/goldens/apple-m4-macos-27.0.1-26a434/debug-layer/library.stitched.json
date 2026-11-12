@@ -1,0 +1,21 @@
+{
+  "area": "library.stitched",
+  "case": "library.stitched",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"supports-function-pointers","value":true},
+    {"kind":"value","name":"stitchable.type","rule":{"compare":"exact"},"type":"i64","value":5},
+    {"kind":"value","name":"stitched.library-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"stitched.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"stitched.function-names","rule":{"compare":"exact"},"type":"strings","value":["wmref_stitched"]},
+    {"kind":"value","name":"stitched.type","rule":{"compare":"exact"},"type":"i64","value":5},
+    {"count":8,"elem":"i32","hex":"0f00000014000000190000001e00000023000000280000002d00000032000000","kind":"data","name":"results","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newLibraryWithStitchedDescriptor:error: building (a + b) * c from stitchable functions, called through a visible function table",
+  "variant": "debug-layer"
+}

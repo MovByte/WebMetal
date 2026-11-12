@@ -1,0 +1,22 @@
+{
+  "area": "device.limits",
+  "case": "device.sparse-page-sizes",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family.apple6","value":true},
+    {"kind":"require","name":"sparse-tile-size-nonzero","value":true},
+    {"kind":"value","name":"tile-size-in-bytes.16","rule":{"compare":"device"},"type":"u64","value":16384},
+    {"kind":"value","name":"tile-size-in-bytes.64","rule":{"compare":"device"},"type":"u64","value":65536},
+    {"kind":"value","name":"tile-size-in-bytes.256","rule":{"compare":"device"},"type":"u64","value":262144},
+    {"kind":"value","name":"tile.2d-rgba8.width","rule":{"compare":"device"},"type":"u64","value":64},
+    {"kind":"value","name":"tile.2d-rgba8.height","rule":{"compare":"device"},"type":"u64","value":64},
+    {"kind":"value","name":"tile.2d-rgba8.depth","rule":{"compare":"device"},"type":"u64","value":1}
+  ],
+  "status": "ok",
+  "title": "sparseTileSizeInBytesForSparsePageSize: for each MTLSparsePageSize",
+  "variant": "release"
+}

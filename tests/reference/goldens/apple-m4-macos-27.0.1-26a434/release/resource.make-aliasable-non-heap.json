@@ -1,0 +1,17 @@
+{
+  "area": "heap.errors",
+  "case": "resource.make-aliasable-non-heap",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"make-aliasable"},
+    {"kind":"call","name":"make-aliasable","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"is-aliasable-after","rule":{"compare":"none","reason":"MTLResource.h calls the use illegal and does not define its effect"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "Error path: makeAliasable on a buffer created from the device",
+  "variant": "release"
+}

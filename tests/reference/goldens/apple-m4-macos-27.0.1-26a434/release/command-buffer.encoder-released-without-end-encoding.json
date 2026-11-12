@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.encoder-released-without-end-encoding",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[_MTLCommandEncoder dealloc]:134: failed assertion `Command encoder released without endEncoding'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"release-encoder"}
+  ],
+  "status": "terminated",
+  "title": "Error path: an encoder released without endEncoding",
+  "variant": "release"
+}

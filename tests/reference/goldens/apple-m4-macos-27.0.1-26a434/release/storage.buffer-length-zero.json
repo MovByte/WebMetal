@@ -1,0 +1,17 @@
+{
+  "area": "storage.errors",
+  "case": "storage.buffer-length-zero",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"create"},
+    {"kind":"call","name":"create","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"is-nil","rule":{"compare":"none","reason":"MTLDevice.h does not define a zero length"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Error path: newBufferWithLength:0",
+  "variant": "release"
+}

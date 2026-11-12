@@ -1,0 +1,16 @@
+{
+  "area": "storage.texture-cpu-access",
+  "case": "storage.texture-replace-region-ordering",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"copy-sees-later-bytes","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":256,"elem":"u8","hex":"60ec767f9a19d033883fcc22e48a6ae65d40b7f2a547e76ad89e41e5de9cf6eae4e85ce4158cb87857cc9ea23ce8b9b2f1fc3b08176095bd2256a764dc63c349239cf3ae6c734bff106542aef20b07de6685c7563c8679aeb911d1f5812705687acb95af4d1eff60d6ece4666c19d005c17e59824bd51bc6f37df81afb4e3c4687d55bb8edcaa2e18feefc9e64121f0dcce73e61f6786300a3055c9823a93f8cefbbeda5e14527655f0f5600a8a1f3bd4e1312a81cdf0b8a35f201926f82e83fe309057435452f65b289df2549c72c93686a11b1da4a8f096347b9a1af19075ba0f737ba653c509c9bc8692118cbc81bdfa5ab9754c5a5df0c7fd14d8ec870ed","kind":"data","name":"copied","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "replaceRegion after a copy is encoded but before its command buffer is committed",
+  "variant": "release"
+}

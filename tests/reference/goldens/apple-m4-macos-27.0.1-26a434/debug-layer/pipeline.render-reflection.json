@@ -1,0 +1,18 @@
+{
+  "area": "pipeline.reflection",
+  "case": "pipeline.render-reflection",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"vertex-bindings","rule":{"compare":"exact"},"type":"strings","value":["type=0 index=0 vertexBuffer.0 access=0 used=1 argument=0 alignment=4 size=28 data=1 pointer(element=1 access=0 alignment=4 size=28 argument-buffer=0) struct(none)","type=0 index=1 mvp access=0 used=1 argument=1 alignment=16 size=64 data=15 pointer(element=15 access=0 alignment=16 size=64 argument-buffer=0) struct(none)","type=0 index=2 offsets access=0 used=1 argument=1 alignment=8 size=8 data=4 pointer(element=4 access=0 alignment=8 size=8 argument-buffer=0) struct(none)"]},
+    {"kind":"value","name":"fragment-bindings","rule":{"compare":"exact"},"type":"strings","value":["type=0 index=0 tint access=0 used=1 argument=1 alignment=16 size=16 data=6 pointer(element=6 access=0 alignment=16 size=16 argument-buffer=0) struct(none)","type=2 index=0 t access=0 used=1 argument=1 texture-type=2 data=3 depth=0 array-length=1","type=3 index=0 s access=0 used=1 argument=1"]},
+    {"kind":"value","name":"vertex-arguments","rule":{"compare":"exact"},"type":"strings","value":["type=0 index=0 vertexBuffer.0 access=0 active=1 alignment=4 size=28 data=1 pointer(element=1 access=0 alignment=4 size=28 argument-buffer=0) struct(none)","type=0 index=1 mvp access=0 active=1 alignment=16 size=64 data=15 pointer(element=15 access=0 alignment=16 size=64 argument-buffer=0) struct(none)","type=0 index=2 offsets access=0 active=1 alignment=8 size=8 data=4 pointer(element=4 access=0 alignment=8 size=8 argument-buffer=0) struct(none)"]},
+    {"kind":"value","name":"fragment-arguments","rule":{"compare":"exact"},"type":"strings","value":["type=0 index=0 tint access=0 active=1 alignment=16 size=16 data=6 pointer(element=6 access=0 alignment=16 size=16 argument-buffer=0) struct(none)","type=2 index=0 t access=0 active=1 texture-type=2 data=3 depth=0 array-length=1","type=3 index=0 s access=0 active=1"]}
+  ],
+  "status": "ok",
+  "title": "Render pipeline reflection for the vertex and fragment stages",
+  "variant": "debug-layer"
+}

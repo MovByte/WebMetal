@@ -1,0 +1,16 @@
+{
+  "area": "blit.copy",
+  "case": "blit.copy-buffer-unaligned",
+  "format": "webmetal-reference/1",
+  "message": "requirement platform.unaligned-buffer-copies-valid is not met",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"platform.unaligned-buffer-copies-valid","value":false}
+  ],
+  "status": "unsupported",
+  "title": "Buffer copy with byte offsets and size that are not multiples of 4 (valid on iOS)",
+  "variant": "debug-layer"
+}

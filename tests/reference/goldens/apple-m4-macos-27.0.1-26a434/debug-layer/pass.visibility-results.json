@@ -1,0 +1,23 @@
+{
+  "area": "pass.visibility",
+  "case": "pass.visibility-results",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"boolean.passing.value","rule":{"compare":"none","reason":"Metal documents only that the value is nonzero"},"type":"u64","value":1},
+    {"kind":"value","name":"boolean.passing.nonzero","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"boolean.failing","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"counting.passing","rule":{"compare":"exact"},"type":"u64","value":12},
+    {"kind":"value","name":"counting.failing","rule":{"compare":"exact"},"type":"u64","value":0},
+    {"kind":"value","name":"counting.offset-32","rule":{"compare":"exact"},"type":"u64","value":12},
+    {"kind":"value","name":"counting.offset-40","rule":{"compare":"exact"},"type":"u64","value":20},
+    {"kind":"require","name":"device.texture-sample-count-4","value":true},
+    {"kind":"value","name":"counting.4x","rule":{"compare":"exact"},"type":"u64","value":24}
+  ],
+  "status": "ok",
+  "title": "Visibility result modes boolean and counting at 1x and 4x, results at buffer offsets",
+  "variant": "debug-layer"
+}

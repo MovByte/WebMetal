@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R8Uint.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"u32","hex":"ad000000d0000000a3000000a900000004000000ff0000001700000047000000ff00000092000000d8000000eb0000002b000000a3000000710000006d00000055000000ac000000170000007d00000045000000a4000000f10000002a0000008c000000b50000001f000000f90000005d000000da0000005f00000082000000130000000d000000090000001d00000053000000a000000045000000660000002d000000700000006a000000e10000006700000041000000110000009900000026000000aa000000b10000006c0000004a000000580000006d000000b700000020000000c900000003000000350000003a000000b10000008400000044000000cb69297d1cc56630ed058ddcf96bc8b7cef3fbfb465b9c89c1839817d1a988a8382dd641f6a3714eb77fb4124b2955791ec1128fb53191eee0957557d9216936c239d8bdcca17f5612a9a1e2cec55fb374d9a674b74dbde57829b539662935d6099d537f3e63c1ac26d765b5f6772d1defe73de3f9f9ddb13b5b3676c9d1ece616a546d306dbbbf883c96dc21b09bdc38e638f8f58d332e944811792617d2ebff2c535f9af7b41bf9e9fb61019d554537089bc2a7b7121e3a515c76ba38fcece3e53a02759dbfff515791b239bdbc47413a7b1f309d76fb9332761e03f5ba1e03229d9e9ce65e32f62732adc7c1bda8ea9d5f71fbb47d2cd951944c4472f3c08","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"ad04ff2b55458c5d13532d67264a203a","kind":"data","name":"render.representable","rule":{"compare":"exact"}},
+    {"kind":"value","name":"render.representable-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":16,"elem":"u8","hex":"ffffffffffffffffffffffffffffffff","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a R8Uint color attachment",
+  "variant": "debug-layer"
+}

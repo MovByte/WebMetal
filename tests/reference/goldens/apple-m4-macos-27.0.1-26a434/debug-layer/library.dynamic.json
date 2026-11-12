@@ -1,0 +1,27 @@
+{
+  "area": "library.dynamic",
+  "case": "library.dynamic",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"supports-dynamic-libraries","value":true},
+    {"kind":"value","name":"source.type","rule":{"compare":"exact"},"type":"i64","value":1},
+    {"kind":"value","name":"source.install-name-matches","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"dynamic.nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"dynamic.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"serialize.result","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"error","name":"serialize.error","nil":1,"rule":{"compare":"exact"}},
+    {"count":8,"elem":"u32","hex":"39300000eaa9379e9b236f3c4c9da6dafd16de78ae9015175f0a4db510848453","kind":"data","name":"client.results","rule":{"compare":"exact"}},
+    {"kind":"value","name":"from-executable.nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":5,"description":"Expected a library with type MTLLibraryTypeDynamic, found invalid type: null","domain":"MTLBinaryArchiveDomain","kind":"error","name":"from-executable.error","nil":0,"rule":{"compare":"device"}},
+    {"kind":"value","name":"load.nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"error","name":"load.error","nil":1,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"load.install-name-matches","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "MTLDynamicLibrary compiled from source, linked by an executable library and used by a pipeline",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,16 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.render-target-without-usage",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "_MTLDebugValidateRenderPassDescriptorAndTrackAttachments:370: failed assertion `RenderPass Descriptor Validation\nTexture at colorAttachment[0] has usage (0x01) which doesn't specify MTLTextureUsageRenderTarget (0x04)\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"create-encoder"}
+  ],
+  "status": "terminated",
+  "title": "renderCommandEncoderWithDescriptor: with a color texture that lacks the render-target usage",
+  "variant": "debug-layer"
+}

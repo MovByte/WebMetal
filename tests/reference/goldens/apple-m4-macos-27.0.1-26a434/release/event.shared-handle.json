@@ -1,0 +1,22 @@
+{
+  "area": "event.shared",
+  "case": "event.shared-handle",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"handle.label","rule":{"compare":"exact"},"type":"string","value":"shared-event"},
+    {"kind":"value","name":"keyed-archiver.refused","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"keyed-archiver.error-domain","rule":{"compare":"exact"},"type":"string","value":"NSCocoaErrorDomain"},
+    {"kind":"value","name":"keyed-archiver.error-code","rule":{"compare":"exact"},"type":"i64","value":4866},
+    {"kind":"value","name":"first.sees-7","rule":{"compare":"exact"},"type":"u64","value":7},
+    {"kind":"value","name":"second.sees-7","rule":{"compare":"exact"},"type":"u64","value":7},
+    {"kind":"value","name":"original.sees-9","rule":{"compare":"exact"},"type":"u64","value":9},
+    {"kind":"value","name":"original.sees-gpu-12","rule":{"compare":"exact"},"type":"u64","value":12}
+  ],
+  "status": "ok",
+  "title": "newSharedEventHandle and newSharedEventWithHandle: share one value; keyed archiving is refused",
+  "variant": "release"
+}

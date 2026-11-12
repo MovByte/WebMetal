@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.handlers",
+  "case": "command-buffer.handler-order",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"sequence","rule":{"compare":"exact"},"type":"strings","value":["scheduled-1","scheduled-2","scheduled-3","completed-1","completed-2","completed-3"]},
+    {"kind":"value","name":"any-handler-on-main-thread","rule":{"compare":"none","reason":"MTLCommandBuffer documentation does not specify the thread that runs handlers"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "Order of three scheduled and three completed handlers, and whether the waiting main thread runs one",
+  "variant": "release"
+}

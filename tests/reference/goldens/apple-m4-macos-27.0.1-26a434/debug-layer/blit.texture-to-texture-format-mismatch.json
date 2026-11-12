@@ -1,0 +1,16 @@
+{
+  "area": "validation.blit",
+  "case": "blit.texture-to-texture-format-mismatch",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugBlitCommandEncoder internalValidateCopyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:options:]:389: failed assertion `Copy From Texture Validation\n[sourceTexture pixelFormat](MTLPixelFormatRGBA8Unorm) must equal [destinationTexture pixelFormat](MTLPixelFormatRGBA8Uint) \n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"encode-mismatched-copy"}
+  ],
+  "status": "terminated",
+  "title": "Texture copy between different pixel formats, which the documentation does not allow",
+  "variant": "debug-layer"
+}

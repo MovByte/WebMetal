@@ -1,0 +1,17 @@
+{
+  "area": "msaa.coverage",
+  "case": "msaa.error.sample-count-mismatch",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder setRenderPipelineState:]:1654: failed assertion `Set Render Pipeline State Validation\nFor color attachment 0, the texture sample count (4) does not match the renderPipelineState colorSampleCount (1).\nThe color sample count (4) does not match the renderPipelineState's color sample count (1)\nThe raster sample count (4) does not match the renderPipelineState's raster sample count (1)\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"require","name":"device.texture-sample-count-4","value":true},
+    {"kind":"step","name":"draw"}
+  ],
+  "status": "terminated",
+  "title": "Pipeline with rasterSampleCount 1 used with a 4x attachment (invalid use)",
+  "variant": "debug-layer"
+}

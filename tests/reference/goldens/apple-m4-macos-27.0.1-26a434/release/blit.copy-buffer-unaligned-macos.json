@@ -1,0 +1,19 @@
+{
+  "area": "validation.blit",
+  "case": "blit.copy-buffer-unaligned-macos",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"platform.macos","value":true},
+    {"kind":"step","name":"encode-unaligned-copy"},
+    {"kind":"step","name":"end-encoding"},
+    {"kind":"value","name":"status","rule":{"compare":"none","reason":"misuse on macOS: the result is not defined"},"type":"i64","value":4},
+    {"count":128,"elem":"u8","hex":"000000000000007f9a19d033883fcc22e48a6ae65d40b7f2a547e76ad89e41e5de9cf6eae4e85ce4158cb87857cc9ea23ce8b9b2f1fc3b08176095bd2256a764dc63c349000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","kind":"data","name":"destination","rule":{"compare":"none","reason":"misuse on macOS: the result is not defined"}}
+  ],
+  "status": "ok",
+  "title": "Buffer copy with unaligned offsets on macOS, where the documentation requires multiples of 4",
+  "variant": "release"
+}

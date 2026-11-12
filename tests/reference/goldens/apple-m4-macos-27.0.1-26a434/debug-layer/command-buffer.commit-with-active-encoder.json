@@ -1,0 +1,16 @@
+{
+  "area": "command-buffer.errors",
+  "case": "command-buffer.commit-with-active-encoder",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugCommandBuffer preCommit]:1167: failed assertion `encoding in progress'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"commit"}
+  ],
+  "status": "terminated",
+  "title": "Error path: commit while a compute encoder has not ended encoding",
+  "variant": "debug-layer"
+}

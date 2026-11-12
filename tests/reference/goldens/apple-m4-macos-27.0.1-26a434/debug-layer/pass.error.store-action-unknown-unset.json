@@ -1,0 +1,16 @@
+{
+  "area": "pass.load-store",
+  "case": "pass.error.store-action-unknown-unset",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder endEncoding_private]:7949: failed assertion `End Encoding Validation\nendEncoding called with store action for color attachment index 0 still set to MTLStoreActionUnknown\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"encode"}
+  ],
+  "status": "terminated",
+  "title": "MTLStoreActionUnknown never finalized before endEncoding (invalid use)",
+  "variant": "debug-layer"
+}

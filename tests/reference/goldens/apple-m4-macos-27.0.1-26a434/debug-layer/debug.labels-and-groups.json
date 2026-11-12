@@ -1,0 +1,27 @@
+{
+  "area": "debug.labels",
+  "case": "debug.labels-and-groups",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"queue.initial-label","rule":{"compare":"exact"},"type":"string","value":null},
+    {"kind":"value","name":"command-buffer.initial-label","rule":{"compare":"exact"},"type":"string","value":null},
+    {"kind":"value","name":"encoder.initial-label","rule":{"compare":"exact"},"type":"string","value":null},
+    {"kind":"value","name":"encoder.label","rule":{"compare":"exact"},"type":"string","value":"encoder-label"},
+    {"kind":"value","name":"queue.label","rule":{"compare":"exact"},"type":"string","value":"queue-label"},
+    {"kind":"value","name":"buffer.label","rule":{"compare":"exact"},"type":"string","value":"buffer-label"},
+    {"kind":"value","name":"texture.label","rule":{"compare":"exact"},"type":"string","value":"texture-label"},
+    {"kind":"value","name":"heap.label","rule":{"compare":"exact"},"type":"string","value":"heap-label"},
+    {"kind":"value","name":"event.label","rule":{"compare":"exact"},"type":"string","value":"event-label"},
+    {"kind":"value","name":"sampler.label","rule":{"compare":"exact"},"type":"string","value":"sampler-label"},
+    {"kind":"value","name":"command-buffer.label","rule":{"compare":"exact"},"type":"string","value":"command-buffer-label"},
+    {"kind":"value","name":"status","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"kind":"value","name":"result-written","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Object labels read back; debug groups and signposts in a command buffer that completes",
+  "variant": "debug-layer"
+}

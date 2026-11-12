@@ -1,0 +1,26 @@
+{
+  "area": "msaa.sample-positions",
+  "case": "msaa.default-sample-positions",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"programmable-sample-positions-supported","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"supports-1","rule":{"compare":"device"},"type":"bool","value":true},
+    {"count":2,"elem":"f32","hex":"0000003f0000003f","kind":"data","name":"positions-1","rule":{"compare":"device"}},
+    {"kind":"value","name":"supports-2","rule":{"compare":"device"},"type":"bool","value":true},
+    {"count":4,"elem":"f32","hex":"0000403f0000403f0000803e0000803e","kind":"data","name":"positions-2","rule":{"compare":"device"}},
+    {"kind":"value","name":"supports-3","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-4","rule":{"compare":"device"},"type":"bool","value":true},
+    {"count":8,"elem":"f32","hex":"0000c03e0000003e0000603f0000c03e0000003e0000203f0000203f0000603f","kind":"data","name":"positions-4","rule":{"compare":"device"}},
+    {"kind":"value","name":"supports-5","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-6","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-7","rule":{"compare":"device"},"type":"bool","value":false},
+    {"kind":"value","name":"supports-8","rule":{"compare":"device"},"type":"bool","value":false}
+  ],
+  "status": "ok",
+  "title": "getDefaultSamplePositions:count: for every supported sample count",
+  "variant": "debug-layer"
+}

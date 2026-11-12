@@ -1,0 +1,18 @@
+{
+  "area": "validation.resources",
+  "case": "validation.sampler-anisotropy-zero",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"call"},
+    {"kind":"call","name":"call","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"sampler-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "newSamplerStateWithDescriptor: with maxAnisotropy 0",
+  "variant": "release"
+}

@@ -1,0 +1,22 @@
+{
+  "area": "format.yuv422",
+  "case": "format.BGRG422.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"count":64,"elem":"u8","hex":"3e0001ff65882311696348e6f3f06bec6ac4878bf8cda3d690524c750802f8d10490eb9bab8d2416d2853de33ff37a0474f9796c2e28c3cf5dc4d530b0eb15b1","kind":"data","layout":{"bytes_per_row":16,"format":"BGRG422","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"3e0001ff65882311696348e6f3f06bec6ac4878bf8cda3d690524c750802f8d10490eb9bab8d2416d2853de33ff37a0474f9796c2e28c3cf5dc4d530b0eb15b1","kind":"data","layout":{"bytes_per_row":16,"format":"BGRG422","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"count":32,"elem":"f32","hex":"000000000000803f8988083f8988883dc7c6c63ee7e6663ff1f0703fedec6c3fc5c4443f8c8b0b3fcecd4d3fd7d6563fa5a4a43eebeaea3e8180003cd2d1513f9190103f9c9b1b3f8e8d0d3fb1b0b03d8685053fe4e3633ff4f3733f8180803cfaf9793fd9d8d83ea1a0203ed0cf4f3fc5c4443fc1c0403eeceb6b3fb2b1313f","kind":"data","name":"read.luma","rule":{"bound":"1.5","compare":"bounded","ideal":"0000000000000000000000000000f03f111111111111e13f111111111111b13fd9d8d8d8d8d8d83fdddcdcdcdcdcec3f1e1e1e1e1e1eee3f9e9d9d9d9d9ded3f999898989898e83f717171717171e13fbab9b9b9b9b9e93fdbdadadadadaea3f959494949494d43f5d5d5d5d5d5ddd3f101010101010803f3a3a3a3a3a3aea3f121212121212e23f737373737373e33fb2b1b1b1b1b1e13f161616161616b63fb1b0b0b0b0b0e03f7c7c7c7c7c7cec3f7e7e7e7e7e7eee3f101010101010903f3f3f3f3f3f3fef3f1b1b1b1b1b1bdb3f141414141414c43ffaf9f9f9f9f9e93f999898989898e83f181818181818c83f7d7d7d7d7d7ded3f363636363636e63f","model":"ulp","reference":"MSL 4.1 section 8.7.1.1, table 8.6"}},
+    {"count":2,"elem":"f32","hex":"000000000000803f","kind":"data","name":"read.luma-corners","rule":{"compare":"exact"}},
+    {"count":32,"elem":"f32","hex":"0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f0000803f","kind":"data","name":"read.alpha","rule":{"compare":"exact"}},
+    {"count":64,"elem":"f32","hex":"8180803bf9f8783ea1a0203d9190903ed9d8d83db7b6b63eb1b0303ecdcccc3efdfc7c3ed1d0d03ea3a2a23e8d8c0c3fc5c4c43ed2d1513fd7d6d63ef4f3733f8887073fd5d4d43e8f8e0e3f8f8e0e3f9d9c1c3fd6d5553f8e8d0d3fdfde5e3fc5c4c43eabaa2a3fefeeee3edddcdc3ececd4d3fa9a8283ef9f8783f8180003deceb6b3f8180803cbab9393fb9b8383eadacac3e8281013fa9a8283eb6b5353fdddc5c3ec9c8483f9998983eaead2d3fd7d6d63ec9c8c83ef5f4f43efdfc7c3ef3f2f23ee9e8e83e8d8c0c3fc7c6c63eb2b1313f8180803ec9c8483fe9e8683ed2d1513fa3a2a23ea6a5253fe5e4e43e8b8a8a3e9c9b1b3fa9a8a83db1b0303f","kind":"data","name":"read.chroma","rule":{"compare":"none","reason":"MTLPixelFormat.h states that two pixels share Cb and Cr but not how a read at one pixel reconstructs them"}},
+    {"kind":"value","name":"read.within-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "BGRG422 upload, readback and read",
+  "variant": "debug-layer"
+}

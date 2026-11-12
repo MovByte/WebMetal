@@ -1,0 +1,16 @@
+{
+  "area": "sampler.errors",
+  "case": "sampler.error-unnormalized-repeat",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "validateMTLSamplerDescriptor:79: failed assertion `Sampler Descriptor Validation\nMTLSamplerDescriptor:non-normalized coords require MTLSamplerAddressModeClampToEdge, MTLSamplerAddressModeClampToZero or MTLSamplerAddressModeClampToBorderColor.\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newSamplerStateWithDescriptor"}
+  ],
+  "status": "terminated",
+  "title": "Unnormalized coordinates with the repeat address mode (MTLSampler.h: results undefined)",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,16 @@
+{
+  "area": "validation.cpu-access",
+  "case": "validation.private-buffer-contents",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLToolsResource validateCPUWriteable]:135: failed assertion `resourceOptions (0x20) specify MTLResourceStorageModePrivate, which is not CPU accessible.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "contents of a private-storage buffer",
+  "variant": "debug-layer"
+}

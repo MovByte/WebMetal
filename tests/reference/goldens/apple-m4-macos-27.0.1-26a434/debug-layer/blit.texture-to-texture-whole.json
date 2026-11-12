@@ -1,0 +1,31 @@
+{
+  "area": "blit.copy",
+  "case": "blit.texture-to-texture-whole",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":64,"elem":"u8","hex":"5295cd31f4a1d64e8ed93acc3c93ec856030a9d524c2c6667645ac03d36e52789e584c7d704f73f6a5a528387af09c8a9f61dd481d33b4c0c624eba5d817bf88","kind":"data","layout":{"bytes_per_image":64,"bytes_per_row":16,"depth":1,"format":"RG8Uint","height":4,"width":8},"name":"b.slice0.level0","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"96d995f81265db57c77170bc53df647f","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RG8Uint","height":2,"width":4},"name":"b.slice0.level1","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"da0d7da3","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RG8Uint","height":1,"width":2},"name":"b.slice0.level2","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"7394087e2571ccfcabadf1fbb63d1934683838cc177b2d29846c09e70850056c9f70ac898aad0df154bf6b1fcd19d9de32e4e6fbd1e6001412703828b531bf4f","kind":"data","layout":{"bytes_per_image":64,"bytes_per_row":16,"depth":1,"format":"RG8Uint","height":4,"width":8},"name":"b.slice1.level0","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"b7d850b7c3b5c1e5e205bb8bd97191ce","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RG8Uint","height":2,"width":4},"name":"b.slice1.level1","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"fb0cb8ec","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RG8Uint","height":1,"width":2},"name":"b.slice1.level2","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"10974f37ee828ff8a4e2f0f135b7d27bdfcf9c4eac2a4cff9121a836f3b7910f4f23711752e8962bf1203d8e58f3c0bed392473851994343a65d7a5c1598c34a","kind":"data","layout":{"bytes_per_image":64,"bytes_per_row":16,"depth":1,"format":"RG8Uint","height":4,"width":8},"name":"b.slice2.level0","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"d4db17fe084682e1ed4aba815afb5a81","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RG8Uint","height":2,"width":4},"name":"b.slice2.level1","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"980fffa5","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RG8Uint","height":1,"width":2},"name":"b.slice2.level2","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"10974f37ee828ff8a4e2f0f135b7d27b","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RG8Uint","height":2,"width":4},"name":"d.slice0.level0","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"d4db17fe","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RG8Uint","height":1,"width":2},"name":"d.slice0.level1","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"31968a783f52954a81963bc6bf1927ca","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RG8Uint","height":2,"width":4},"name":"d.slice1.level0","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"f5dad2b1","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RG8Uint","height":1,"width":2},"name":"d.slice1.level1","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"b7d850b7c3b5c1e5e205bb8bd97191ce","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RG8Uint","height":2,"width":4},"name":"d.slice2.level0","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"fb0cb8ec","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RG8Uint","height":1,"width":2},"name":"d.slice2.level1","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"d4db17fe084682e1ed4aba815afb5a81","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RG8Uint","height":2,"width":4},"name":"d.slice3.level0","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"980fffa5","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RG8Uint","height":1,"width":2},"name":"d.slice3.level1","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "copyFromTexture:toTexture: and the sliceCount/levelCount form",
+  "variant": "debug-layer"
+}

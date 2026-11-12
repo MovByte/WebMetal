@@ -1,0 +1,18 @@
+{
+  "area": "pipeline.binary-archive",
+  "case": "archive.invalid-file",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"missing.archive-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":1,"description":"Invalid URL","domain":"MTLBinaryArchiveDomain","kind":"error","name":"missing.error","nil":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"garbage.archive-nil","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"code":1,"description":"The file file://$TMPDIR/wmref-garbage.bin has an invalid format.","domain":"MTLBinaryArchiveDomain","kind":"error","name":"garbage.error","nil":0,"rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "newBinaryArchiveWithDescriptor:error: for a missing file and for a file that is not an archive",
+  "variant": "release"
+}

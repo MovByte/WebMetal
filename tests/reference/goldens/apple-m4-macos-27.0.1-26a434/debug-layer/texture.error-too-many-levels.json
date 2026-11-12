@@ -1,0 +1,16 @@
+{
+  "area": "texture.errors",
+  "case": "texture.error-too-many-levels",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation\nMTLTextureDescriptor requests 5 mipmap levels, but the dimensions (8, 8, 1) can only support a maxiumum of 4 levels\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"newTextureWithDescriptor"}
+  ],
+  "status": "terminated",
+  "title": "8x8 2D texture descriptor with five mipmap levels (the full chain has four)",
+  "variant": "debug-layer"
+}

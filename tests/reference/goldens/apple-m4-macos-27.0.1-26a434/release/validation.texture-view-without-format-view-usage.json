@@ -1,0 +1,18 @@
+{
+  "area": "validation.resources",
+  "case": "validation.texture-view-without-format-view-usage",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"call"},
+    {"kind":"call","name":"call","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"view-nil","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"step","name":"returned"}
+  ],
+  "status": "ok",
+  "title": "newTextureViewWithPixelFormat: to a different size-compatible format without the pixel-format-view usage",
+  "variant": "release"
+}

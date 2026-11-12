@@ -1,0 +1,19 @@
+{
+  "area": "blit.misc",
+  "case": "blit.optimize-contents",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":256,"elem":"u8","hex":"16490c1052c8cf7677deff49c05c0fa94a5dd36a5aaebf4444408e957a16eaf0b1d140cb19cf0914e9393847ca5c664d238262e34bf65840b282dec25cb11c8714f709cf22b05fb566097cb08b0822a3c18446ddd73c0722f5b2d8a1e5987572372b89b49392809c534afcc40b04f9356487a7663d362cb5ca484508edeb62517cfc098d87aacfc4b78e413a8f1122c3663c4ea78f253b8a34a4c8a59fe9cf43a3a462d13a735ecfa7694fbceb5ea67a2b3ad12531b45c3be10da15fee2d10bb0358afbbe05763ae6c359a70adc99bbd2ad8f5276aaea33fdfce7220e109a798bd4e3e89420ecbe2c7807114617efa64cd8015dac6fd560de5cd949119f8fe91","kind":"data","layout":{"bytes_per_image":256,"bytes_per_row":32,"depth":1,"format":"RGBA8Uint","height":8,"width":8},"name":"level0","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"3748c95f8318d5c452aa347e4af2fa18425542736917540bb6692b71a128bde4b0f9a03fe32d771318237b607db523198e0759508723ec9466d60d4f31971c40","kind":"data","layout":{"bytes_per_image":64,"bytes_per_row":16,"depth":1,"format":"RGBA8Uint","height":4,"width":4},"name":"level1","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"544b8e1648eb96c05de53574c9783157","kind":"data","layout":{"bytes_per_image":16,"bytes_per_row":8,"depth":1,"format":"RGBA8Uint","height":2,"width":2},"name":"level2","rule":{"compare":"exact"}},
+    {"count":4,"elem":"u8","hex":"754a4b59","kind":"data","layout":{"bytes_per_image":4,"bytes_per_row":4,"depth":1,"format":"RGBA8Uint","height":1,"width":1},"name":"level3","rule":{"compare":"exact"}},
+    {"kind":"value","name":"level0-unchanged","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "optimizeContentsForGPUAccess and ForCPUAccess leave texture contents unchanged",
+  "variant": "release"
+}

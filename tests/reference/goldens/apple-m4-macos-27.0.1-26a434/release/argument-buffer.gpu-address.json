@@ -1,0 +1,17 @@
+{
+  "area": "argument-buffer.tier2",
+  "case": "argument-buffer.gpu-address",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"family-metal3","value":true},
+    {"kind":"require","name":"argument-buffers-tier2","value":true},
+    {"count":8,"elem":"u32","hex":"120000000000003f510000000000c03fc702000000002040631b000000006040","kind":"data","name":"results","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "An argument buffer written by the CPU with gpuAddress and gpuResourceID (Metal 3, tier 2)",
+  "variant": "release"
+}

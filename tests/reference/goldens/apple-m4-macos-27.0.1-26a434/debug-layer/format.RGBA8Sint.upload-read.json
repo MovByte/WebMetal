@@ -1,0 +1,21 @@
+{
+  "area": "format.color",
+  "case": "format.RGBA8Sint.upload-read",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.available","value":true},
+    {"kind":"step","name":"replaceRegion"},
+    {"count":128,"elem":"u8","hex":"8080808081818181000000007f7f7f7f808080808181818184889cb70099ef7d458271bfd2fcf72ccf7fa71e795d4c1a9430f6e384332b31d0b6bad99bb29e6a090e4a02720f176355a6b2729e6ef5e8c6faf3d64c31f73fa265dd9a51998efe075e3224b5c0a3dc782147c3ab9fff961921bcfcf8d52cb49c423953e99b3da6","kind":"data","layout":{"bytes_per_row":32,"format":"RGBA8Sint","height":4,"width":8},"name":"input","rule":{"compare":"exact"}},
+    {"count":128,"elem":"u8","hex":"8080808081818181000000007f7f7f7f808080808181818184889cb70099ef7d458271bfd2fcf72ccf7fa71e795d4c1a9430f6e384332b31d0b6bad99bb29e6a090e4a02720f176355a6b2729e6ef5e8c6faf3d64c31f73fa265dd9a51998efe075e3224b5c0a3dc782147c3ab9fff961921bcfcf8d52cb49c423953e99b3da6","kind":"data","layout":{"bytes_per_row":32,"format":"RGBA8Sint","height":4,"width":8},"name":"readback","rule":{"compare":"exact"}},
+    {"kind":"value","name":"getbytes-equals-readback","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":128,"elem":"i32","hex":"80ffffff80ffffff80ffffff80ffffff81ffffff81ffffff81ffffff81ffffff000000000000000000000000000000007f0000007f0000007f0000007f00000080ffffff80ffffff80ffffff80ffffff81ffffff81ffffff81ffffff81ffffff84ffffff88ffffff9cffffffb7ffffff0000000099ffffffefffffff7d0000004500000082ffffff71000000bfffffffd2fffffffcfffffff7ffffff2c000000cfffffff7f000000a7ffffff1e000000790000005d0000004c0000001a00000094ffffff30000000f6ffffffe3ffffff84ffffff330000002b00000031000000d0ffffffb6ffffffbaffffffd9ffffff9bffffffb2ffffff9effffff6a000000090000000e0000004a00000002000000720000000f000000170000006300000055000000a6ffffffb2ffffff720000009effffff6e000000f5ffffffe8ffffffc6fffffffafffffff3ffffffd6ffffff4c00000031000000f7ffffff3f000000a2ffffff65000000ddffffff9affffff5100000099ffffff8efffffffeffffff070000005e0000003200000024000000b5ffffffc0ffffffa3ffffffdcffffff780000002100000047000000c3ffffffabffffff9fffffffffffffff96ffffff1900000021000000bcfffffffcfffffff8ffffffd5ffffff2c000000b4ffffff9cffffff420000003900000053000000e9ffffff9bffffff3d000000a6ffffff","kind":"data","name":"read.exact","rule":{"compare":"exact"}},
+    {"kind":"value","name":"read.within-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Upload, readback and shader read conversion of RGBA8Sint",
+  "variant": "debug-layer"
+}

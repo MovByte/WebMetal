@@ -1,0 +1,24 @@
+{
+  "area": "sampler.lod",
+  "case": "sampler.lod-selection",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"mipmap-level-count","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"count":12,"elem":"f32","hex":"000000000000803e0000403f0000803f0000a03f0000e03f0000004000001040000040409a9959400000e040000000c0","kind":"data","name":"explicit-levels","rule":{"compare":"exact"}},
+    {"count":12,"elem":"f32","hex":"00002041000020410000a0410000a0410000a0410000f0410000f0410000f04100002042000020420000204200002041","kind":"data","name":"level.mip-nearest","rule":{"compare":"exact"}},
+    {"count":12,"elem":"f32","hex":"000020410000204100002041000020410000204100002041000020410000204100002041000020410000204100002041","kind":"data","name":"level.not-mipmapped","rule":{"compare":"exact"}},
+    {"count":12,"elem":"f32","hex":"0000f0410000f0410000f0410000f0410000f0410000f0410000f0410000f0410000f0410000f0410000f0410000f041","kind":"data","name":"level.sampler-clamp-2-2.25","rule":{"compare":"exact"}},
+    {"count":8,"elem":"f32","hex":"000000000000803e0000403f0000803f000000400000304000001041000040c0","kind":"data","name":"biases","rule":{"compare":"exact"}},
+    {"count":8,"elem":"f32","hex":"00002041000020410000a0410000a0410000f041000020420000204200002041","kind":"data","name":"bias.mip-nearest","rule":{"compare":"exact"}},
+    {"count":8,"elem":"f32","hex":"00002041000020410000a0410000a0410000a0410000a0410000a04100002041","kind":"data","name":"bias.sampler-max-clamp-1","rule":{"compare":"exact"}},
+    {"count":8,"elem":"f32","hex":"0000f0410000f0410000f0410000f0410000f04100002042000020420000f041","kind":"data","name":"bias.sampler-min-clamp-2","rule":{"compare":"exact"}},
+    {"count":3,"elem":"f32","hex":"000020410000a04100002042","kind":"data","name":"gradient.mip-nearest","rule":{"compare":"none","reason":"Metal does not state the precision of the LOD computed from explicit gradients"}}
+  ],
+  "status": "ok",
+  "title": "Mip level selection: level(), bias(), gradients, sampler LOD clamps and mip filters",
+  "variant": "release"
+}

@@ -1,0 +1,18 @@
+{
+  "area": "render.barriers",
+  "case": "render.error.memory-barrier-after-fragment",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"step","name":"encode"},
+    {"kind":"step","name":"barrier"},
+    {"kind":"step","name":"completed"},
+    {"count":64,"elem":"u32","hex":"f5010000f6010000f7010000f8010000f9010000fa010000fb010000fc010000fd010000fe010000ff010000000200000102000002020000030200000402000005020000060200000702000008020000090200000a0200000b0200000c0200000d0200000e0200000f020000100200001102000012020000130200001402000015020000160200001702000018020000190200001a0200001b0200001c0200001d0200001e0200001f020000200200002102000022020000230200002402000025020000260200002702000028020000290200002a0200002b0200002c0200002d0200002e0200002f0200003002000031020000320200003302000034020000","kind":"data","layout":{"bytes_per_row":32,"format":"R32Uint","height":8,"width":8},"name":"result","rule":{"compare":"none","reason":"the barrier is invalid on this device family; ordering of the two draws' buffer accesses is then not defined"}}
+  ],
+  "status": "ok",
+  "title": "memoryBarrierWithScope: with afterStages containing the fragment stage (rejected on Apple-family GPUs)",
+  "variant": "release"
+}

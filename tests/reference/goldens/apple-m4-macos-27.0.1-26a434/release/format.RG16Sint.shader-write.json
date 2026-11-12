@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.RG16Sint.shader-write",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.write","value":true},
+    {"count":128,"elem":"i32","hex":"00000000ffffffffc84f78ac1de90ffaffffffff7f0000000f9513a2bd6aa9087f00000080000000710bf3e46dcf1ad68000000080ffffff038bd152b5a377ba80ffffff7fffffff5ccb8bc21c07ae627fffffffff7f0000028e61fc7e175026ff7f0000008000007e598107085a4f2d008000000080ffff83dd6dba99eecd340080ffffff7fffff83db33f9e4fa9f9fff7fffffffffff7f8d5423682f182acbffffff7f0000008059655bd599101354000000800000000097e5920809bee645320a037958e782723b9072a969d67d3091516f843757bbf37ff329db6d67682eb79bfde9846d36ca54d37ceeaec8a5abf9d91b3d7b8ecec357ef76fa89cded075662a2f92da3310602d2542da434311085d9c220dffe61c7d4969507b833f8c28e0776c7b531b340c3f205178a0f587c7a4128cb3bb4fc51bd6e5b99fded2c84c6d4704996ab8a91cbb4462683968d09908771117bfc36c79f381c28436940f31c4bed618c20d38d16cad17bb7d3331446400228202ad180ce4085f1d6341d2942b4f5cb513a00cfe219164a1d3a9040027ba4b9a17e2d76ca5a4aeed6a5809e32c0195ed579c046df16bedf2a631fb140c006193f6a27da3273d7f49ae674e4c0a4283ec1f4b6d0d162bea877ef10c8037cc9fe397e196c6820720e18df7d4fc068e2c4e4c4167753a1f08af966431666fd825ee54e91d0580fc47fec32205f","kind":"data","name":"write.input","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-texels","rule":{"compare":"exact"},"type":"u64","value":32},
+    {"count":128,"elem":"u8","hex":"0000ffffffff7f007f008000800080ff80ff7fff7fffff7fff7fff7fff7f0080008000800080ff7fff7f008000800000ff7fff7f0080008000800080ff7f00800080ff7fff7f00800080ff7f0080ff7fff7f0080ff7f0080ff7f0080ff7f0080008000800080ff7fff7fff7fff7f0080ff7f00800080ff7f0080ff7fff7f0080","kind":"data","name":"write.defined","rule":{"compare":"exact"}},
+    {"kind":"value","name":"write.defined-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "Shader texture write conversion to RG16Sint",
+  "variant": "release"
+}

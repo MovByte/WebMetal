@@ -1,0 +1,16 @@
+{
+  "area": "validation.encoding",
+  "case": "validation.set-buffer-index-over-limit",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugComputeCommandEncoder setBuffer:offset:attributeStride:atIndex:]:442: failed assertion `index(31) must be < 31.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"set-buffer"}
+  ],
+  "status": "terminated",
+  "title": "setBuffer:offset:atIndex: at index 31 of a compute encoder (encoded, not committed)",
+  "variant": "debug-layer"
+}

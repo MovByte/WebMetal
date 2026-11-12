@@ -1,0 +1,16 @@
+{
+  "area": "library.compile-options",
+  "case": "library.math-mode",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"count":8,"elem":"u32","hex":"0100000001000000010000000000807f000000800100000000000000000080ff","kind":"data","name":"safe.results","rule":{"compare":"exact"}},
+    {"count":8,"elem":"u32","hex":"0100000001000000010000000000807f000000800000000001000000000080ff","kind":"data","name":"fast.results","rule":{"compare":"none","reason":"MSL 4.1 section 8.1: with fast math the handling of NaN and INF is undefined"}}
+  ],
+  "status": "ok",
+  "title": "IEEE special values under safe math (defined) and fast math (undefined)",
+  "variant": "release"
+}

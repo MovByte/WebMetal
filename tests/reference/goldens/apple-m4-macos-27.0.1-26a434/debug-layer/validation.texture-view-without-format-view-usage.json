@@ -1,0 +1,16 @@
+{
+  "area": "validation.resources",
+  "case": "validation.texture-view-without-format-view-usage",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "_validateTextureView:748: failed assertion `Texture View Validation\ntexture usage (0x01) doesn't specify MTLTextureUsagePixelFormatView (0x10)\n'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"step","name":"call"}
+  ],
+  "status": "terminated",
+  "title": "newTextureViewWithPixelFormat: to a different size-compatible format without the pixel-format-view usage",
+  "variant": "debug-layer"
+}

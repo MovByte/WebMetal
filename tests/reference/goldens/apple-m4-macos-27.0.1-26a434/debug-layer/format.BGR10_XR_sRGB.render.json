@@ -1,0 +1,18 @@
+{
+  "area": "format.color",
+  "case": "format.BGR10_XR_sRGB.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"f32","hex":"0000803f0000803f00000000000000000000000000000000000000000000000000000000000000000000803f000000000000000000000000000000000000803f0000803f0000803f0000803f0000803f0000803f000000000000803f00000000000000000000803f0000803f0000803f0000803f000000000000803f0000803f00000000000000000000803f000000000000803f0000803f0000803f000000000000000000000000000000000000803f0000803f0000803f0000000000000000000000000000803f0000803f0000803f0000803f0000000000000000000000000000803f000000000000000000000000000000000000803f0000803f0000803fef153a3f2c58a43e205b2dbd0000803f5a0caa3e858f5d3f238b573f00000000b5a7673f136e123f31c1693f0000803fafef343e47b8943fec26c83e000000007677bc3de3eb083ea215873f0000803f94d70f3f86c0e53e6d22753f000000007a2e843fdb81063e5057903f0000803feaee893e1a00813f79337b3e0000803f9b9a0b3fdb6c573fd7967d3f0000803ff55937be21978e3f0f1f733e000000008c41c33e25825f3fa2e5863d0000803f883807be8c1c12bebb68963f000000004d8d8f3fd4c5923e32a22b3f0000000009d0123fd76a863f991f553e000000005ed8d73e9570853f181ada3e0000803f41ca5d3fc7d916be4dc3243f0000803f","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":64,"elem":"u8","hex":"80f9edf7800106d87e0306d8800106d87efbedf77e03e6f77efb0dd87e03e6f77e0306d87efbedf7800106d880f9edf77efb0dd88001e6f78001e6f77efb0dd8","kind":"data","name":"render.representable","rule":{"compare":"none","reason":"The encoding of extended-range (XR) channels is not stated in MTLPixelFormat.h or the MSL specification"}},
+    {"count":64,"elem":"u8","hex":"0ccdbaf3597f8deb6a3b8cf6d0869ee68a37b9e27497bbf09a2f59f89002bee97c676df08b5e5ec91182cdeca3b752cb2b938af97c26fef0dd22beed24abf2f5","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a BGR10_XR_sRGB color attachment",
+  "variant": "debug-layer"
+}

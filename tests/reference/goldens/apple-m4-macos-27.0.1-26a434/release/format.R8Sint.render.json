@@ -1,0 +1,19 @@
+{
+  "area": "format.color",
+  "case": "format.R8Sint.render",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"feature-table.color","value":true},
+    {"count":128,"elem":"i32","hex":"4e0000009bffffff2c000000aaffffff33000000c4ffffff82ffffff3c000000afffffffcafffffffdfffffffeffffff4a000000a3ffffff450000004d00000093ffffffd8ffffff5b00000096ffffff4c000000fdffffffa7ffffffeaffffffdaffffff36000000a5ffffffceffffff51000000dbffffff20000000cbffffff2a000000dfffffffdcffffff0f0000007c00000021000000d9ffffff0000000028000000adffffff3b00000032000000c2ffffff4f000000040000004b00000038000000a1ffffffb1ffffffdeffffff1c00000087ffffff6c0000002d00000055000000090000007500000081ffffffbcffffff1a000000ecffffffe3ffffff44ff5faa0fc0fe6c5b9b2fe7ffd07da7fd4bfdf8bd9f74334ef2a65888076bb397b5c8539142f560a9a699859ebe76325e47dc105f6def999f0a8c79fd3b5d1a3931a92bf491929fd720baa3ae23e6d82a0471c001d61cd84a8379bfefeefc07d79c20890761e4bcb520dc71913fdbb31d5e789b930a16cd517505031730fa045f3e7e0df239b0b7bfaca44a4a47b4c206c58acaf8bc849cdd5075ba4cb2f30af469de257815a2c0b76758a1654542fcd4e65ad9634246219b684bdeb727267dcb3d654630935d841958b307627b38c11ce7d53d27e75e94ac7860c48c8e5980f8a1b7e8e9c8daa6d28b59fcfa670fb23ccf51507b0729f69b0cf5427fa5cb7b","kind":"data","name":"render.input","rule":{"compare":"exact"}},
+    {"count":16,"elem":"u8","hex":"4e33af4a934cda512a7c28c2381c55bc","kind":"data","name":"render.representable","rule":{"compare":"exact"}},
+    {"kind":"value","name":"render.representable-equals-specification","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"count":16,"elem":"u8","hex":"80807f7f7f8080807f807f807f7f807f","kind":"data","name":"render.converted","rule":{"compare":"none","reason":"MSL 4.1 section 8.7 states conversion rules for the texture write functions; the rounding and range conversion of fragment outputs stored to color attachments is not stated"}}
+  ],
+  "status": "ok",
+  "title": "Fragment output stored to a R8Sint color attachment",
+  "variant": "release"
+}
