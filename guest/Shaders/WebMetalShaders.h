@@ -100,6 +100,10 @@ extern NSString *const kDriverErrorDomain;
 // (+[NSDictionary dictionaryWithObject:forKey:NSLocalizedDescriptionKey], -[NSError initWithDomain:code:userInfo:]).
 NSError *DriverError(NSInteger code, NSString *message);
 
+// The driver's shader-debug-information flag of a device (-shaderDebugInfoCaching), NO until it is set.
+bool ShaderDebugInfoCaching(WebMetalDevice *device);
+void SetShaderDebugInfoCaching(WebMetalDevice *device, bool caching);
+
 // The NSError of a failure Metal defines (a reply's status 1): its domain, code and message.
 NSError *MetalError(const wire::Failure &failure);
 

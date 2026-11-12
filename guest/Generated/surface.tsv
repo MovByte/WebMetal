@@ -2862,12 +2862,12 @@ AGXA10XDevice	instance	setMetalAssertionsEnabled:	MTLDeviceSPI	agx	driver	WebMet
 AGXA10XDevice	instance	setPluginData:	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	setRawBVHBuilderPtr:	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	setSegmentListShmemSize:	-	iogpu	driver	WebMetalDevice	loud
-AGXA10XDevice	instance	setShaderDebugInfoCaching:	MTLDeviceSPI	agx	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	setShaderDebugInfoCaching:	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	setWritableHeapsEnabled:	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	setupCompiler:	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	setupDeferred	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	setupMPSFunctionTable:	MTLDeviceSPI	none	absent	WebMetalDevice	not-answered
-AGXA10XDevice	instance	shaderDebugInfoCaching	MTLDeviceSPI	agx	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	shaderDebugInfoCaching	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	sharedMemorySize	MTLDeviceSPI	iogpu	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	shrinkHeaps	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	singleFPConfig	MTLDeviceSPI	agx	driver	WebMetalDevice	profile
@@ -3086,7 +3086,7 @@ AGXA10XDevice	instance	supportsYCBCRFormatsXR	MTLDeviceSPI	framework	framework	W
 AGXA10XDevice	instance	supportsYCBCRPackedFormats12	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	supportsYCBCRPackedFormatsPQ	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	supportsYCBCRPackedFormatsXR	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
-AGXA10XDevice	instance	targetDeviceArchitecture	MTLDeviceSPI	agx	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	targetDeviceArchitecture	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	targetDeviceInfo	MTLDeviceSPI	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	threadedRenderPassClass	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	tileSizeWithSparsePageSize:textureType:pixelFormat:sampleCount:	MTLDeviceSPI	agx	driver	WebMetalDevice	loud

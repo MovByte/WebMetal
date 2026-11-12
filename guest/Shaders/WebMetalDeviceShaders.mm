@@ -30,8 +30,11 @@ constexpr uint64_t kCompilerFlags = 0x21c;
 // Metal.framework's _MTLCompilePerformanceStatisticsEnabled answers YES (createComputePipeline and
 // createRenderPipeline, AGXMetalA10 0x21c8decb4 and 0x21c8e0338). The statistics come from the back end's reply, which
 // the host does not produce, so that case is LOUD.
-MTLPipelineOption compileOptions(id self, SEL _cmd, MTLPipelineOption options)
+MTLPipelineOption compileOptions(WebMetalDevice *self, SEL _cmd, MTLPipelineOption options)
 {
+    if (ShaderDebugInfoCaching(self))
+        WMLoudMethod(self, _cmd, "shader debug information is requested (setShaderDebugInfoCaching:), which the A10X "
+                                 "driver asks its back end for and the host does not produce");
     using Enabled = BOOL (*)(void);
     static Enabled enabled = (Enabled)dlsym(RTLD_DEFAULT, "_MTLCompilePerformanceStatisticsEnabled");
     if (!enabled)
@@ -347,17 +350,6 @@ id<MTLRenderPipelineState> newRenderPipeline(WebMetalDevice *self, SEL _cmd, MTL
 - (id<MTLLibrary>)newLibraryWithData:(dispatch_data_t)data error:(NSError **)error
 {
     return [super newLibraryWithData:data error:error];
-}
-
-// -[AGXA10FamilyDevice compiler] (AGXMetalA10 0x21c8d5020) answers the Metal.framework MTLCompiler that setupCompiler:
-// (0x21c8d92cc) binds to the AGX back end (AGXCompilerCore) with compiler flags 0x21c. The plugin has no back end: the
-// host compiles AIR, so the device has no MTLCompiler, which is also _MTLDevice's own answer (Metal 0x187b5770c).
-// Metal.framework's function specialization reads only the flags' 0x80 bit from it, which the A10X's compiler clears
-// as well (-[_MTLFunctionInternal newSpecializedFunctionWithDescriptor:destinationArchive:functionCache:sync:
-// completionHandler:], Metal 0x187aac790-0x187aac798); the specialization itself is MTLCompilerService's.
-- (id)compiler
-{
-    return nil;
 }
 
 #pragma mark - Compute pipelines
