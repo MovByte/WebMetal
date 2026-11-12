@@ -5190,10 +5190,77 @@ id = "5.10-vertex-normalized-conversion"
 plan = "5.10"
 question = "The normalized-integer conversion Metal specifies for vertex attributes."
 status = "open"
-reason = "MSL specifies normalized-integer conversion only for texture reads and writes (section 8.7.1); neither the MSL specification nor the MTLVertexFormat documentation pinned here defines it for vertex attributes. Vertex pulling must reproduce the A10X's vertex-fetch conversion, which needs a measurement on the device; the texture rule of 8.7.1.1 is the documented Metal convention but is not stated to apply to vertex fetch."
+reason = "MSL specifies normalized-integer conversion only for texture reads and writes (section 8.7.1); neither the MSL specification nor the MTLVertexFormat documentation pinned here defines it for vertex attributes. Vertex pulling must reproduce the A10X's vertex-fetch conversion, which needs a measurement on the device; the texture rule of 8.7.1.1 is the documented Metal convention but is not stated to apply to vertex fetch. Measured on an Apple M4 only (measurement vertex-fetch-mac; these are M4 data, not A10X facts): every code of the 8- and 16-bit normalized formats, of the 10-10-10-2 formats and of UChar4Normalized_BGRA converts to binary32 and to binary16 with one correct rounding of c / (2^n - 1) (unorm) and of max(-1, c / (2^(n-1) - 1)) (snorm), with one exception: the 10-bit components of Int1010102Normalized fetched as binary32 equal max(-1, c * RN(1/511)), the correctly rounded binary32 product with the binary32 nearest to 1/511, for every code, which differs from the correctly rounded quotient for 96 of the 1024 codes (each of the three 10-bit lanes takes every code). AirWgsl's vertex pulling reproduces these results; the A10X's conversion remains unmeasured."
 cite = [
   { src = "msl", ref = "8.7.1.1", quote = "For textures that have 8- or 16-bit normalized signed integer pixel values, the texture sample and read functions convert the pixel values from an 8- or 16-bit signed integer to a normalized single- or half-precision floating-point value in the range [-1.0 … 1.0]." },
   { src = "apple-mtlvertexformat", quote = "MTLVertexFormatChar2Normalized: A two-component vector with 8-bit, normalized, signed integer values." },
+  { measure = "vertex-fetch-mac", case = "meta", quote = "device: Apple M4" },
+  { measure = "vertex-fetch-mac", case = "UShortNormalized-as-float4", quote = "equal_to_correctly_rounded: 65536" },
+  { measure = "vertex-fetch-mac", case = "ShortNormalized-as-half4", quote = "equal_to_correctly_rounded: 65536" },
+  { measure = "vertex-fetch-mac", case = "Int1010102Normalized-as-float4", quote = "equal_to_reciprocal_product_10_bit: 3072" },
+  { measure = "vertex-fetch-mac", case = "Int1010102Normalized-as-float4", quote = "equal_to_correctly_rounded_10_bit: 2784" },
+  { measure = "vertex-fetch-mac", case = "UInt1010102Normalized-as-float4", quote = "equal_to_correctly_rounded_10_bit: 3072" },
+  { measure = "vertex-fetch-mac", case = "UChar4Normalized_BGRA-as-half4", quote = "equal_to_correctly_rounded_bytes_2_1_0_3: 4096" },
+]
+
+[[question]]
+id = "5.10-vertex-format-attribute-types"
+plan = "5.10"
+question = "Which vertex formats can a vertex function's attribute of each scalar type read?"
+status = "resolved"
+answer = "A float or half attribute reads every format except the 32-bit integer ones; an integer attribute of any width reads an integer format of the same signedness (8-, 16- and 32-bit), converting by truncation or extension; any other pairing fails pipeline creation. Measured on an Apple M4 for every format and the attribute types float4, half4, int4, uint4, short4, ushort4, char4 and uchar4 (measurement vertex-fetch-mac). The rule is Metal.framework's own: 21H461's -[MTLVertexDescriptorInternal validateWithVertexFunction:error:renderPipelineDescriptor:] (0x187bb874c, shared cache 590D839A82D230F1A17D0CC053420F73) checks each active attribute's data type against isVertexFormatInteger(format) in the same way before any compiler runs, with the error \"Vertex attribute %@(%d) of type %s cannot be read using %@\", so it applies on the A10X as written."
+cite = [
+  { measure = "vertex-fetch-mac", case = "accepts-UShort", quote = "attribute_types: float4 half4 uint4 ushort4 uchar4" },
+  { measure = "vertex-fetch-mac", case = "accepts-Int", quote = "attribute_types: int4 short4 char4" },
+  { measure = "vertex-fetch-mac", case = "accepts-UCharNormalized", quote = "attribute_types: float4 half4" },
+  { measure = "vertex-fetch-mac", case = "accepts-Float4", quote = "attribute_types: float4 half4" },
+]
+
+[[question]]
+id = "5.10-vertex-fetch-conversions"
+plan = "5.10"
+question = "How does vertex fetch convert integer, binary16 and binary32 components to an attribute of another type?"
+status = "open"
+reason = "Neither MSL nor the MTLVertexFormat documentation states these conversions. Measured on an Apple M4 only (measurement vertex-fetch-mac; M4 data, not A10X facts): integers fetched into half round to nearest even (every 16-bit code), binary32 into half rounds to nearest even with every NaN becoming 0x7e00, binary16 into float is exact with every NaN becoming 0x7fc00000, and a component fetched into its own type keeps its bits. The A10X's conversions remain unmeasured."
+cite = [
+  { measure = "vertex-fetch-mac", case = "UShort-as-half4", quote = "equal_to_round_to_nearest_even: 65536" },
+  { measure = "vertex-fetch-mac", case = "Float-as-half4", quote = "nan_results: 0x7e00" },
+  { measure = "vertex-fetch-mac", case = "Half-as-float4", quote = "nan_results: 0x7fc00000" },
+]
+
+[[question]]
+id = "5.10-vertex-fetch-index"
+plan = "5.10"
+question = "Which element do the per-instance and constant step functions fetch when the draw has a base instance?"
+status = "open"
+reason = "Apple's documentation of MTLVertexStepFunction does not state how baseInstance enters the fetch index (the V1 case vertex.step-base-instance records it with rule none). Measured on an Apple M4 only (measurement vertex-fetch-mac; M4 data): per-instance with step rate r fetches element baseInstance + (instance_id - baseInstance) / r, and constant fetches element 0 whatever the base instance. The A10X remains unmeasured."
+cite = [
+  { measure = "vertex-fetch-mac", case = "per-instance-rate-2-base-3", quote = "fetched_elements: 3 3 4 4" },
+  { measure = "vertex-fetch-mac", case = "constant-base-3", quote = "fetched_elements: 0 0 0 0" },
+]
+
+[[question]]
+id = "5.10-stage-in-region"
+plan = "5.10"
+question = "Which element does a kernel's stage-in attribute fetch for a thread, given the region set with setStageInRegion:?"
+status = "open"
+reason = "MSL defines grid_origin and grid_size only as the grid over which threads that read stage-in data are launched. Measured on an Apple M4 only (measurement vertex-fetch-mac; M4 data): ThreadPositionInGridX with step rate r fetches origin.x + min(gid.x / r, size.x - 1), ThreadPositionInGridY the same in y, the indexed forms fetch index[min(gid / r, size - 1)] + origin for both index types, and constant fetches element 0; threads beyond the region read the clamped element. The A10X remains unmeasured."
+cite = [
+  { measure = "vertex-fetch-mac", case = "stage-in-x-rate-1-origin-5-size-6", quote = "5 6 7 8 9 10 10 10" },
+  { measure = "vertex-fetch-mac", case = "stage-in-x-rate-2-origin-1-size-6", quote = "1 1 2 2 3 3 4 4" },
+  { measure = "vertex-fetch-mac", case = "stage-in-y-rate-1-origin-1-size-2", quote = "2 2 2 2 2 2 2 2" },
+  { measure = "vertex-fetch-mac", case = "stage-in-x-indexed-uint32-rate-1-origin-1-size-5", quote = "101 104 107 110 113 113 113 113" },
+]
+
+[[question]]
+id = "5.10-unaligned-vertex-fetch"
+plan = "5.10"
+question = "What does Metal do with a vertex descriptor whose strides or offsets are not multiples of 4 on a device that reports supportsUnalignedVertexFetch = NO, as the A10X does?"
+status = "resolved"
+answer = "21H461's Metal.framework does not validate it: -[MTLVertexDescriptorInternal validateWithVertexFunction:error:renderPipelineDescriptor:] and newSerializedDescriptor check only that an attribute's buffer has a stride, the step rates and the format against the attribute's type, and the only use of supportsUnalignedVertexFetch is MTLGetCompilerOptions (0x187a9acdc), which sets compiler option bit 0x20000 when the device supports it, so the pipeline is created and the vertex compiler is told the device cannot fetch unaligned data. Only the API validation layer (MetalTools, MTL_DEBUG_LAYER) checks, at draw and stage-in dispatch time: -[MTLDebugRenderCommandEncoder validateCommonDrawErrors:instanceCount:baseInstance:maxVertexID:] (0x216edd054) and -[MTLDebugComputeCommandEncoder dispatchThreadgroups:threadsPerThreadgroup:] (0x216eaa5a4) report \"providing stride of %u to buffer-layout index %u, but device only supports strides that are a multiple of 4 bytes.\" for a static or dynamic stride that is not a multiple of 4; attribute offsets are not checked. Without the layer the result of fetching unaligned data on the A10X is not defined. On a device with unaligned fetch (measured on an Apple M4) such descriptors fetch the addressed bytes."
+cite = [
+  { measure = "vertex-fetch-mac", case = "UShort3-stride-6", quote = "equal_to_the_bytes_read: 192" },
+  { measure = "vertex-fetch-mac", case = "UInt-offset-2", quote = "equal_to_the_bytes_read: 63" },
 ]
 
 [[question]]
