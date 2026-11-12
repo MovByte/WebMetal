@@ -395,7 +395,7 @@ fn bind_groups<A: Api>(
                     };
                     Resource::Buffer { ty, min_binding_size: *min_binding_size }
                 }
-                airwgsl::BindingResource::Sampler { .. } => Resource::Sampler,
+                airwgsl::BindingResource::Sampler { ty } => Resource::Sampler { ty: gpu::sampler_type(*ty) },
                 airwgsl::BindingResource::Texture { sample_type, view_dimension, multisampled } => Resource::Texture {
                     sample_type: gpu::sample_type(*sample_type),
                     view_dimension: gpu::view_dimension(*view_dimension),

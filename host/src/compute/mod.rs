@@ -11,7 +11,8 @@
 //! | `setStageInRegion:` | Uniform values of the variant. |
 //! | `memoryBarrierWithScope:`, `memoryBarrierWithResources:count:`, the concurrent dispatch type | Dispatches of a WebGPU pass run in order and each sees the writes of those before it, which is one schedule a concurrent encoder allows and what every barrier asks for. |
 //! | `useResource:usage:`, `useResources:count:usage:` | Resources used through argument buffers: a write usage makes the memory module read the resource back. |
-//! | Samplers, dynamic attribute strides, the indirect stage-in region, imageblocks, function tables, acceleration structures, indirect command buffers, counter sampling, the SPI substreams and GPU control flow | Refused (see each record). |
+//! | `setSamplerState:atIndex:`, `setSamplerStates:withRange:` | The state's WebGPU sampler for the binding's type ([`crate::state::SamplerObject`]); a state with no WebGPU form is refused when a dispatch uses it. |
+//! | Per-binding sampler LOD clamps, dynamic attribute strides, the indirect stage-in region, imageblocks, function tables, acceleration structures, indirect command buffers, counter sampling, the SPI substreams and GPU control flow | Refused (see each record). |
 //!
 //! The memory module's duties (its `service` module documentation) are kept: textures the encoder binds are brought up
 //! to date before the pass ([`Memory::prepare_texture`], [`Memory::prepare_linear`]); every writable binding is noted
@@ -42,6 +43,7 @@ use crate::gpu::{
 use crate::mem::buffer::Buffer;
 use crate::mem::texture::{Prepare, Texture, usage};
 use crate::mem::{MemError, Memory};
+use crate::state::SamplerObject;
 
 use pipeline::{ComputePipelineState, ComputeVariant, Resource, Source, TextureSlot, UniformValue, VariantKey};
 
@@ -100,7 +102,7 @@ struct State<A: Api> {
     pipeline: Option<Rc<ComputePipelineState<A>>>,
     buffers: BTreeMap<u64, BufferSlot<A>>,
     textures: BTreeMap<u64, Rc<TexEntry<A>>>,
-    samplers: BTreeMap<u64, Handle>,
+    samplers: BTreeMap<u64, Rc<SamplerObject<A>>>,
     threadgroup_memory: BTreeMap<u64, u64>,
     stage_in: Option<([u32; 3], [u32; 3])>,
     /// Textures over buffers a dispatch wrote, to copy back after the pass.
@@ -279,16 +281,16 @@ impl<A: Api> ComputeService<A> {
                 }
                 Ok(())
             }
-            Command::ComputeSetSamplerState(r) => set_sampler(st, r.sampler, r.index),
+            Command::ComputeSetSamplerState(r) => set_sampler(objects, st, r.sampler, r.index),
             Command::ComputeSetSamplerStates(r) => {
                 for (i, s) in r.samplers.iter().enumerate() {
-                    set_sampler(st, *s, r.range.location + i as u64)?;
+                    set_sampler(objects, st, *s, r.range.location + i as u64)?;
                 }
                 Ok(())
             }
             Command::ComputeSetSamplerStateLodMinClampLodMaxClamp(_)
             | Command::ComputeSetSamplerStatesLodMinClampsLodMaxClamps(_) => {
-                refused("per-binding LOD clamps: sampler states are not served by the host yet")
+                refused("per-binding LOD clamps: the encoder binds each sampler state's own WebGPU sampler")
             }
             Command::ComputeSetThreadgroupMemoryLength(r) => {
                 const CALL: &str = "-[MTLComputeCommandEncoder setThreadgroupMemoryLength:atIndex:]";
@@ -651,6 +653,7 @@ impl<A: Api> ComputeService<A> {
             enum Owned<A: Api> {
                 Buffer(A::Buffer, u64, u64),
                 View(A::TextureView),
+                Sampler(A::Sampler),
             }
             let mut owned: Vec<(u32, Owned<A>)> = Vec::new();
             for b in &group.entries {
@@ -754,11 +757,14 @@ impl<A: Api> ComputeService<A> {
                         }
                         owned.push((b.binding, Owned::View(view)));
                     }
-                    (Source::Sampler { index }, Resource::Sampler) => {
-                        return Err(failure::unimplemented(format!(
-                            "{CALL}: the function samples with sampler index {index}; sampler states are not served by \
-                             the host yet"
-                        )));
+                    (Source::Sampler { index }, Resource::Sampler { ty }) => {
+                        let s = st.samplers.get(index).ok_or_else(|| {
+                            undefined(CALL, format!("the function uses sampler index {index} and none is bound"))
+                        })?;
+                        let gpu = s.sampler(*ty).map_err(|why| {
+                            failure::host_unsupported(format!("{CALL}: sampler index {index}: {why}"))
+                        })?;
+                        owned.push((b.binding, Owned::Sampler(gpu.clone())));
                     }
                     (Source::Uniforms(block), Resource::Buffer { ty, .. }) => {
                         let mut bytes = vec![0u8; block.size as usize];
@@ -822,6 +828,7 @@ impl<A: Api> ComputeService<A> {
                         size: Some(size64(*size, "createBindGroup")?),
                     }),
                     Owned::View(v) => BindingResource::TextureView(v),
+                    Owned::Sampler(s) => BindingResource::Sampler(s),
                 };
                 entries.push(BindGroupEntry::new(*binding, resource));
             }
@@ -846,17 +853,21 @@ fn dims(call: &'static str, s: &Size) -> Result<[u32; 3], Failure> {
     Ok([v(s.width)?, v(s.height)?, v(s.depth)?])
 }
 
-fn set_sampler<A: Api>(st: &mut State<A>, sampler: Option<Handle>, index: u64) -> Result<(), Failure> {
+fn set_sampler<A: Api>(objects: &Table, st: &mut State<A>, sampler: Option<Handle>, index: u64) -> Result<(), Failure> {
+    const CALL: &str = "-[MTLComputeCommandEncoder setSamplerState:atIndex:]";
     if index >= MAX_SAMPLERS {
-        return Err(undefined(
-            "-[MTLComputeCommandEncoder setSamplerState:atIndex:]",
-            format!("index {index} of {MAX_SAMPLERS} sampler entries"),
-        ));
+        return Err(undefined(CALL, format!("index {index} of {MAX_SAMPLERS} sampler entries")));
     }
     match sampler {
-        Some(h) => st.samplers.insert(index, h),
-        None => st.samplers.remove(&index),
-    };
+        Some(h) => {
+            let s = payload::<SamplerObject<A>>(objects, h)
+                .ok_or_else(|| failure::invalid(format!("{CALL}: handle {:#x} is not a sampler state", h.get())))?;
+            st.samplers.insert(index, s);
+        }
+        None => {
+            st.samplers.remove(&index);
+        }
+    }
     Ok(())
 }
 

@@ -12,8 +12,8 @@
 //! - [`helpers`]: the executor's own GPU programs those use.
 //!
 //! **Payloads.** A `DepthStencilState` handle carries a [`depth_stencil::DepthStencilState`]; a `RenderPipelineState`
-//! handle a [`pipeline::RenderPipeline`] (created by the pipeline service); a `SamplerState` handle the render path
-//! binds carries an [`encoder::SamplerObject`].
+//! handle a [`pipeline::RenderPipeline`] (created by the pipeline service); a `SamplerState` handle carries the
+//! [`crate::state::SamplerObject`] the state service creates.
 //!
 //! Every failure is a [`RenderError`] naming what failed; nothing here substitutes a result.
 

@@ -6,15 +6,19 @@
 //!
 //! | Handle kind | Payload |
 //! | --- | --- |
-//! | sampler state (`CreateSamplerState`) | [`SamplerState<A>`] |
+//! | sampler state (`CreateSamplerState`) | [`SamplerObject<A>`] |
+//!
+//! The render and compute encoders bind a sampler state through [`SamplerObject::sampler`] with the
+//! `GPUSamplerBindingType` of the binding their pipeline describes.
 //!
 //! **Samplers.** Metal decides whether a sampler compares by how a shader uses it; WebGPU fixes it in the sampler. The
-//! payload therefore keeps the WebGPU sampler for ordinary sampling, made at creation so that WebGPU checks it then,
-//! and the dictionary with the compare function an encoder needs for a comparison variant. A Metal state with no exact
-//! WebGPU form (plan section 6.4: clamp-to-zero, border colors, mirror-clamp-to-edge, unnormalized coordinates, LOD
-//! averaging or bias, anisotropy over non-linear filters, a minimum LOD clamp above the maximum, an unmipmapped sampler
-//! whose minification and magnification filters differ) is still created, as Metal creates it; the payload records why
-//! it has no WebGPU sampler, and a use of it is refused loudly by the encoder that binds it.
+//! payload therefore holds two WebGPU samplers made at creation, so that WebGPU checks them then: the state without a
+//! compare function, for `filtering` and `non-filtering` bindings, and its comparison variant with the state's compare
+//! function, for `comparison` bindings. A Metal state with no exact WebGPU form (plan section 6.4: clamp-to-zero,
+//! border colors, mirror-clamp-to-edge, unnormalized coordinates, LOD averaging or bias, anisotropy over non-linear
+//! filters, a minimum LOD clamp above the maximum, an unmipmapped sampler whose minification and magnification
+//! filters differ) is still created, as Metal creates it; the payload records why it has no WebGPU sampler, and the
+//! encoder that binds it refuses the use with that reason.
 //!
 //! Values are the iPhoneOS SDK's (`MTLSampler.h`, `MTLDepthStencil.h`): address modes `ClampToEdge` 0,
 //! `MirrorClampToEdge` 1, `Repeat` 2, `MirrorRepeat` 3, `ClampToZero` 4, `ClampToBorderColor` 5; min/mag filters
@@ -28,28 +32,43 @@ use webmetal_wire::{CreateSamplerStateReply, Failure, Handle, Reply, Request, Sa
 use crate::embed::{Embedder, TaskId};
 use crate::exec::schema::failure_reply;
 use crate::exec::{ControlService, Entry, Served, ServiceCx};
-use crate::gpu::idl::{self, AddressMode, CompareFunction, FilterMode, MipmapFilterMode};
+use crate::gpu::idl::{self, AddressMode, CompareFunction, FilterMode, MipmapFilterMode, SamplerBindingType};
 use crate::gpu::num::Float32;
 use crate::gpu::{Api, Device};
 
 const SAMPLER_CALL: &str = "-[MTLDevice newSamplerStateWithDescriptor:]";
 
-/// A sampler state.
-pub struct SamplerState<A: Api> {
+/// The payload of a sampler state handle.
+pub struct SamplerObject<A: Api> {
     /// The Metal descriptor as the guest sent it.
     pub descriptor: SamplerDescriptor,
-    /// The WebGPU form of the state for sampling without comparison, or why the state has none.
-    pub gpu: Result<Gpu<A>, String>,
+    /// The WebGPU samplers of the state, or why it has none.
+    gpu: Result<Samplers<A>, String>,
 }
 
-/// The WebGPU form of a sampler state.
-pub struct Gpu<A: Api> {
-    /// The sampler without a compare function.
-    pub sampler: A::Sampler,
-    /// Its dictionary; a comparison variant is this with [`Gpu::compare`] set.
-    pub dictionary: idl::SamplerDescriptor,
-    /// The state's compare function, for a comparison variant.
-    pub compare: CompareFunction,
+/// The WebGPU samplers of a sampler state.
+struct Samplers<A: Api> {
+    /// Without a compare function.
+    sampling: A::Sampler,
+    /// With the state's compare function.
+    comparison: A::Sampler,
+    /// Whether every filter is nearest, which a `non-filtering` binding requires.
+    nearest: bool,
+}
+
+impl<A: Api> SamplerObject<A> {
+    /// The WebGPU sampler for a binding of type `ty`, or why the state cannot be bound there.
+    pub fn sampler(&self, ty: SamplerBindingType) -> Result<&A::Sampler, String> {
+        let s = self.gpu.as_ref().map_err(Clone::clone)?;
+        match ty {
+            SamplerBindingType::Comparison => Ok(&s.comparison),
+            SamplerBindingType::NonFiltering if !s.nearest => {
+                Err("the function samples a texture WebGPU does not filter with a sampler state that filters linearly"
+                    .into())
+            }
+            _ => Ok(&s.sampling),
+        }
+    }
 }
 
 /// The service.
@@ -157,10 +176,16 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for StateServices {
             Request::CreateSamplerState(r) => {
                 let label = format!("sampler {:#x}", r.sampler.0.get());
                 let gpu = dictionary(&r.descriptor, &label).map(|(dictionary, compare)| {
-                    let sampler = cx.gpu().call("GPUDevice.createSampler", &label, |d| d.create_sampler(&dictionary));
-                    Gpu { sampler, dictionary, compare }
+                    let nearest = dictionary.min_filter == FilterMode::Nearest
+                        && dictionary.mag_filter == FilterMode::Nearest
+                        && dictionary.mipmap_filter == MipmapFilterMode::Nearest;
+                    let sampling = cx.gpu().call("GPUDevice.createSampler", &label, |d| d.create_sampler(&dictionary));
+                    let mut comparing = dictionary;
+                    comparing.compare = Some(compare);
+                    let comparison = cx.gpu().call("GPUDevice.createSampler", &label, |d| d.create_sampler(&comparing));
+                    Samplers { sampling, comparison, nearest }
                 });
-                cx.attach(Rc::new(SamplerState::<A> { descriptor: r.descriptor.clone(), gpu }));
+                cx.attach(Rc::new(SamplerObject::<A> { descriptor: r.descriptor.clone(), gpu }));
                 Served::Ready(Reply::CreateSamplerState(Ok(CreateSamplerStateReply {})))
             }
             other => {

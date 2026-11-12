@@ -15,7 +15,7 @@ use webmetal_wire::Failure;
 use crate::exec::Gpu;
 use crate::gpu::Api;
 use crate::gpu::idl::{
-    BufferBindingType, StorageTextureAccess, TextureFormat, TextureSampleType, TextureViewDimension,
+    BufferBindingType, SamplerBindingType, StorageTextureAccess, TextureFormat, TextureSampleType, TextureViewDimension,
 };
 
 /// The payload of a `ComputePipelineState` handle.
@@ -106,7 +106,7 @@ pub enum Resource {
     /// `GPUStorageTextureBindingLayout`.
     StorageTexture { access: StorageTextureAccess, format: TextureFormat, view_dimension: TextureViewDimension },
     /// `GPUSamplerBindingLayout`.
-    Sampler,
+    Sampler { ty: SamplerBindingType },
 }
 
 /// Where the encoder gets a binding's resource. A source the encoder does not know is refused, never left unbound.

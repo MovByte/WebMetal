@@ -69,7 +69,8 @@ fn buffer_type(t: airwgsl::BufferBindingType) -> idl::BufferBindingType {
     }
 }
 
-fn sampler_type(t: airwgsl::SamplerBindingType) -> idl::SamplerBindingType {
+/// The WebGPU sampler binding type of a compiler sampler binding type.
+pub fn sampler_type(t: airwgsl::SamplerBindingType) -> idl::SamplerBindingType {
     match t {
         airwgsl::SamplerBindingType::Filtering => idl::SamplerBindingType::Filtering,
         airwgsl::SamplerBindingType::NonFiltering => idl::SamplerBindingType::NonFiltering,

@@ -45,6 +45,7 @@ use crate::gpu::{
 use crate::mem::buffer::Buffer;
 use crate::mem::texture::{Prepare, Texture};
 use crate::mem::{MemError, Memory};
+use crate::state::SamplerObject;
 
 use super::attachments::{FinalStores, Targets, Tex};
 use super::depth_stencil::{DepthStencilState, Face};
@@ -60,12 +61,6 @@ use super::pipeline::{
     UniformValue, VariantKey,
 };
 use super::visibility::Visibility;
-
-/// The payload a sampler state handle carries for the render path. The service that creates `MTLSamplerState` objects
-/// binds it (sampler creation is not part of the render path).
-pub struct SamplerObject<A: Api> {
-    pub gpu: A::Sampler,
-}
 
 /// The render encoder service.
 pub struct RenderEncoder<A: Api> {
@@ -1295,12 +1290,8 @@ impl<A: Api> Run<'_, A> {
                 self.state.slots(stage).samplers.remove(&index);
             }
             Some(h) => {
-                let s = payload::<SamplerObject<A>>(self.objects, h).ok_or_else(|| {
-                    RenderError::unimplemented(format!(
-                        "sampler {:#x} has no WebGPU sampler (sampler states are not created by the render path)",
-                        h.get()
-                    ))
-                })?;
+                let s = payload::<SamplerObject<A>>(self.objects, h)
+                    .ok_or_else(|| RenderError::invalid(format!("handle {:#x} is not a sampler state", h.get())))?;
                 self.state.slots(stage).samplers.insert(index, s);
             }
         }
@@ -1718,7 +1709,7 @@ impl<A: Api> Run<'_, A> {
                         }
                         views.push((b.binding, view));
                     }
-                    (Source::MetalSampler { stage, index }, Resource::Sampler { .. }) => {
+                    (Source::MetalSampler { stage, index }, Resource::Sampler { ty }) => {
                         let s = self.state.slots_ref(*stage).samplers.get(index).cloned().ok_or_else(|| {
                             RenderError::undefined(
                                 DRAW,
@@ -1728,7 +1719,10 @@ impl<A: Api> Run<'_, A> {
                                 ),
                             )
                         })?;
-                        samplers.push((b.binding, s.gpu.clone()));
+                        let gpu = s
+                            .sampler(*ty)
+                            .map_err(|why| RenderError::host(format!("{} sampler {index}: {why}", stage.name())))?;
+                        samplers.push((b.binding, gpu.clone()));
                     }
                     (Source::Uniforms(block), Resource::Buffer { .. }) => {
                         let base = uniforms.expect("a pipeline with a uniform block has a uniform slot");

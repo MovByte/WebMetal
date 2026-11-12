@@ -508,7 +508,7 @@ impl ComputeVariants<A> for StandIn {
                         l.view_dimension = *view_dimension;
                         e.storage_texture = Some(l);
                     }
-                    Resource::Sampler => unreachable!("the stand-in kernels take no samplers"),
+                    Resource::Sampler { .. } => unreachable!("the stand-in kernels take no samplers"),
                 }
                 e
             })
