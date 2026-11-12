@@ -10,8 +10,10 @@
 //! The executor and its WebGPU device belong to one thread, started by [`webmetal_shim_executor_start`]. Requests from
 //! any thread queue to it and wait for their replies. Between requests the thread keeps the executor's GPU work moving.
 //!
-//! What the shim's embedder does not provide fails as the interface defines: shared events (`NotAnEvent`) and the
-//! presentation sink (`UnknownDisplay`); the executor reports the failure through its reply.
+//! Shared events are this process's IOSurface shared events, which the shim reaches through the callbacks it registers
+//! with [`webmetal_shim_executor_set_shared_events`]; a CPU-side signal it observes reaches the executor through
+//! [`webmetal_shim_executor_shared_event_signaled`]. What the shim's embedder does not provide fails as the interface
+//! defines: the presentation sink (`UnknownDisplay`); the executor reports the failure through its reply.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -133,6 +135,27 @@ struct Doorbell {
 unsafe impl Send for Doorbell {}
 
 static DOORBELL: Mutex<Option<Doorbell>> = Mutex::new(None);
+
+/// The shim's shared events: resolve a send right of this task to an event id, read and set an event's value, release
+/// an id. Each returns false for an event it does not know.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SharedEventCallbacks {
+    pub context: *mut c_void,
+    pub resolve: extern "C" fn(context: *mut c_void, port: u32, event: *mut u64) -> bool,
+    pub value: extern "C" fn(context: *mut c_void, event: u64, value: *mut u64) -> bool,
+    pub signal: extern "C" fn(context: *mut c_void, event: u64, value: u64) -> bool,
+    pub release: extern "C" fn(context: *mut c_void, event: u64),
+}
+
+// The context is the shim's; the executor only passes it back.
+unsafe impl Send for SharedEventCallbacks {}
+
+static SHARED_EVENTS: Mutex<Option<SharedEventCallbacks>> = Mutex::new(None);
+
+fn shared_events() -> Option<SharedEventCallbacks> {
+    *SHARED_EVENTS.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// This process as the executor's guest task.
 struct InProcess {
@@ -293,18 +316,33 @@ impl Embedder for InProcess {
     }
 
     fn shared_event_resolve(&self, task: TaskId, port: u32) -> Result<SharedEventId, SharedEventError> {
-        Err(SharedEventError::NotAnEvent { task, port })
+        let mut id = 0u64;
+        match shared_events() {
+            Some(c) if task == self.task && (c.resolve)(c.context, port, &mut id) => Ok(SharedEventId(id)),
+            _ => Err(SharedEventError::NotAnEvent { task, port }),
+        }
     }
 
     fn shared_event_value(&self, event: SharedEventId) -> Result<u64, SharedEventError> {
-        Err(SharedEventError::Gone(event))
+        let mut value = 0u64;
+        match shared_events() {
+            Some(c) if (c.value)(c.context, event.0, &mut value) => Ok(value),
+            _ => Err(SharedEventError::Gone(event)),
+        }
     }
 
-    fn shared_event_signal(&self, event: SharedEventId, _value: u64) -> Result<(), SharedEventError> {
-        Err(SharedEventError::Gone(event))
+    fn shared_event_signal(&self, event: SharedEventId, value: u64) -> Result<(), SharedEventError> {
+        match shared_events() {
+            Some(c) if (c.signal)(c.context, event.0, value) => Ok(()),
+            _ => Err(SharedEventError::Gone(event)),
+        }
     }
 
-    fn shared_event_release(&self, _event: SharedEventId) {}
+    fn shared_event_release(&self, event: SharedEventId) {
+        if let Some(c) = shared_events() {
+            (c.release)(c.context, event.0);
+        }
+    }
 
     fn post(&self, task: TaskId, queue: Option<Handle>, event: Event) {
         if task != self.task {
@@ -329,9 +367,10 @@ impl Embedder for InProcess {
 
 // The executor's thread ------------------------------------------------------------------------------------------------
 
-struct Job {
-    request: Vec<u8>,
-    reply: SyncSender<Result<Vec<u8>, String>>,
+enum Job {
+    Control { request: Vec<u8>, reply: SyncSender<Result<Vec<u8>, String>> },
+    /// A CPU-side signal changed a shared event's value: waits on it are checked again.
+    Signaled(u64),
 }
 
 static QUEUE: OnceLock<Mutex<Sender<Job>>> = OnceLock::new();
@@ -421,8 +460,12 @@ fn run(gpu: NativeGpu, exec: Exec, embedder: Rc<InProcess>, jobs: Receiver<Job>)
                 Err(_) => return,
             }
         };
-        let reply = serve(&gpu, &exec, &embedder, &job.request);
-        let _ = job.reply.send(reply);
+        match job {
+            Job::Control { request, reply } => {
+                let _ = reply.send(serve(&gpu, &exec, &embedder, &request));
+            }
+            Job::Signaled(event) => exec.shared_event_signaled(SharedEventId(event)),
+        }
     }
 }
 
@@ -499,7 +542,7 @@ pub unsafe extern "C" fn webmetal_shim_executor_control(
     };
     let bytes = unsafe { std::slice::from_raw_parts(request, length) }.to_vec();
     let (tx, rx) = mpsc::sync_channel(1);
-    if queue.lock().unwrap_or_else(|e| e.into_inner()).send(Job { request: bytes, reply: tx }).is_err() {
+    if queue.lock().unwrap_or_else(|e| e.into_inner()).send(Job::Control { request: bytes, reply: tx }).is_err() {
         write_text("the executor thread has ended", error, capacity);
         return false;
     }
@@ -543,4 +586,23 @@ pub extern "C" fn webmetal_shim_executor_set_doorbell(
     context: *mut c_void,
 ) {
     *DOORBELL.lock().unwrap_or_else(|e| e.into_inner()) = ring.map(|ring| Doorbell { ring, context });
+}
+
+/// Registers the shim's shared events (see [`SharedEventCallbacks`]); before it, every shared event is refused.
+///
+/// # Safety
+///
+/// `callbacks` points to a readable value; its functions may be called from the executor's thread until the process
+/// ends.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn webmetal_shim_executor_set_shared_events(callbacks: *const SharedEventCallbacks) {
+    *SHARED_EVENTS.lock().unwrap_or_else(|e| e.into_inner()) = Some(unsafe { *callbacks });
+}
+
+/// A CPU-side signal changed the value of shared event `event` (an id the resolve callback gave).
+#[unsafe(no_mangle)]
+pub extern "C" fn webmetal_shim_executor_shared_event_signaled(event: u64) {
+    if let Some(queue) = QUEUE.get() {
+        let _ = queue.lock().unwrap_or_else(|e| e.into_inner()).send(Job::Signaled(event));
+    }
 }

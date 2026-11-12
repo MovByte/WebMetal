@@ -11,6 +11,9 @@
 //    MTLAddDevice. WebMetal has no source for it yet, and the iOS bundle answers it with a LOUD stub. The shim stands
 //    in for the kernel: it adds -maxBufferLength with a sentinel value the caller chooses, so the checks can show that
 //    the limits carry exactly that input.
+//  - Shared events. The target's kernel resolves a shared event's port for the executor; here the shim does, with this
+//    process's IOSurface shared events (Metal.framework's _MTLSharedEvent), and tells the executor about CPU-side
+//    signals it observes.
 //  - The layouts. This library is built against the layouts of the Mac's Metal.framework, recorded when it was built
 //    (WebMetalLayoutHost.mm); the iOS bundle requires 21H461's.
 
@@ -22,8 +25,12 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+#include <mach/mach.h>
+
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <mutex>
 
 extern "C" void MTLAddDevice(id<MTLDevice> device);
 
@@ -33,6 +40,102 @@ extern "C" bool webmetal_shim_executor_control(const uint8_t *request, size_t le
                                                size_t *replyLength, char *error, size_t capacity);
 extern "C" void webmetal_shim_executor_free(uint8_t *reply, size_t length);
 extern "C" void webmetal_shim_executor_set_doorbell(void (*ring)(void *context, uint64_t queue), void *context);
+struct WebMetalShimSharedEvents {
+    void *context;
+    bool (*resolve)(void *context, uint32_t port, uint64_t *event);
+    bool (*value)(void *context, uint64_t event, uint64_t *value);
+    bool (*signal)(void *context, uint64_t event, uint64_t value);
+    void (*release)(void *context, uint64_t event);
+};
+extern "C" void webmetal_shim_executor_set_shared_events(const WebMetalShimSharedEvents *callbacks);
+extern "C" void webmetal_shim_executor_shared_event_signaled(uint64_t event);
+
+// _MTLSharedEvent's initializer from a send right (Metal.framework on 21H461 and on this Mac).
+@protocol WebMetalShimMachPortEvent
+- (id)initWithMachPort:(uint32_t)port;
+@end
+
+// The executor's shared events: each port the executor resolves names one of this task's IOSurface shared events, held
+// as a _MTLSharedEvent of its own. A listener re-armed one value above each value it observes reports CPU-side signals.
+namespace {
+
+std::mutex gEventsLock;
+uint64_t gNextEvent = 1;
+std::map<uint64_t, id<MTLSharedEvent>> gEvents;
+MTLSharedEventListener *gListener;
+
+bool sharedEventLive(uint64_t key)
+{
+    std::lock_guard<std::mutex> guard(gEventsLock);
+    return gEvents.count(key) != 0;
+}
+
+id<MTLSharedEvent> sharedEvent(uint64_t key)
+{
+    std::lock_guard<std::mutex> guard(gEventsLock);
+    auto found = gEvents.find(key);
+    return found == gEvents.end() ? nil : found->second;
+}
+
+void watchSharedEvent(uint64_t key, id<MTLSharedEvent> event, uint64_t value)
+{
+    [event notifyListener:gListener
+                  atValue:value
+                    block:^(id<MTLSharedEvent> e, uint64_t reached) {
+                        webmetal_shim_executor_shared_event_signaled(key);
+                        if (sharedEventLive(key))
+                            watchSharedEvent(key, e, reached + 1);
+                    }];
+}
+
+bool resolveSharedEvent(void *, uint32_t port, uint64_t *out)
+{
+    // -initWithMachPort: takes over a send right: the event gets one of its own.
+    if (mach_port_mod_refs(mach_task_self(), port, MACH_PORT_RIGHT_SEND, 1) != KERN_SUCCESS)
+        return false;
+    id<MTLSharedEvent> event = (id<MTLSharedEvent>)[(id<WebMetalShimMachPortEvent>)[objc_getClass("_MTLSharedEvent") alloc]
+        initWithMachPort:port];
+    if (!event)
+        return false;
+    uint64_t key;
+    {
+        std::lock_guard<std::mutex> guard(gEventsLock);
+        key = gNextEvent++;
+        gEvents[key] = event;
+    }
+    watchSharedEvent(key, event, event.signaledValue + 1);
+    *out = key;
+    return true;
+}
+
+bool sharedEventValue(void *, uint64_t key, uint64_t *value)
+{
+    id<MTLSharedEvent> event = sharedEvent(key);
+    if (!event)
+        return false;
+    *value = event.signaledValue;
+    return true;
+}
+
+bool signalSharedEvent(void *, uint64_t key, uint64_t value)
+{
+    id<MTLSharedEvent> event = sharedEvent(key);
+    if (!event)
+        return false;
+    event.signaledValue = value;
+    return true;
+}
+
+void releaseSharedEvent(void *, uint64_t key)
+{
+    std::lock_guard<std::mutex> guard(gEventsLock);
+    gEvents.erase(key);
+}
+
+const WebMetalShimSharedEvents kSharedEvents = {nullptr, &resolveSharedEvent, &sharedEventValue, &signalSharedEvent,
+                                                &releaseSharedEvent};
+
+}  // namespace
 
 // The connection's transport in this process: one control request to the executor.
 static bool executorTransport(void *, const uint8_t *request, size_t length, std::vector<uint8_t> *reply,
@@ -89,6 +192,8 @@ extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShim
         }
         webmetal::SetTransportOverride(executorTransport, nullptr);
         webmetal_shim_executor_set_doorbell(executorDoorbell, nullptr);
+        gListener = [[MTLSharedEventListener alloc] init];
+        webmetal_shim_executor_set_shared_events(&kSharedEvents);
         // Metal.framework's device array, which MTLAddDevice requires, exists once the system's devices are listed.
         (void)MTLCopyAllDevices();
         io_registry_entry_t root = IORegistryGetRootEntry(kIOMainPortDefault);
