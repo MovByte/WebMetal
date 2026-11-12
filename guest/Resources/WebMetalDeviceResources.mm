@@ -7,6 +7,7 @@
 
 namespace webmetal {
 id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSamplerDescriptor *descriptor);
+id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, MTLDepthStencilDescriptor *descriptor);
 }
 
 // The class adopts the protocols that declare these methods; this category, not the class, implements them.
@@ -92,6 +93,12 @@ id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSampler
 - (id<MTLSamplerState>)newSamplerStateWithDescriptor:(MTLSamplerDescriptor *)descriptor
 {
     return webmetal::NewSamplerState(self, _cmd, descriptor);
+}
+
+// -[AGXA10FamilyDevice newDepthStencilStateWithDescriptor:] (AGXMetalA10 0x21c8d53e0).
+- (id<MTLDepthStencilState>)newDepthStencilStateWithDescriptor:(MTLDepthStencilDescriptor *)descriptor
+{
+    return webmetal::NewDepthStencilState(self, _cmd, descriptor);
 }
 
 // -[AGXA10FamilyDevice newResourceGroupFromResources:count:] (AGXMetalA10 0x21c8db1f8) answers nil: with the

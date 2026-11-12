@@ -35,6 +35,7 @@ use webmetal_host::gpu::native::{Native, NativeGpu};
 use webmetal_host::gpu::scope::{Granularity, Policy};
 use webmetal_host::gpu::{Adapter as _, Device as _, Gpu as _, negotiate};
 use webmetal_host::mem::service::MemoryServices;
+use webmetal_host::render::depth_stencil::DepthStencilService;
 use webmetal_host::state::StateServices;
 use webmetal_wire::{Event, Handle, Request, SurfaceId};
 
@@ -418,7 +419,11 @@ fn set_up() -> Result<(NativeGpu, Exec, Rc<InProcess>), String> {
         .map_err(|s| format!("memory set-up stalled: {s:?}"))?
         .map_err(|e| format!("memory set-up: {e}"))?;
     let services = Services {
-        control: vec![memory.control() as Box<dyn ControlService<Native, InProcess>>, Box::new(StateServices::new())],
+        control: vec![
+            memory.control() as Box<dyn ControlService<Native, InProcess>>,
+            Box::new(StateServices::new()),
+            Box::new(DepthStencilService),
+        ],
         render: None,
         compute: None,
         blit: None,

@@ -4,6 +4,7 @@
 #import "WebMetalConnection.h"
 #import "WebMetalReport.h"
 #import "WebMetalSurface.h"
+#import "../Resources/WebMetalDepthStencilCache.h"
 
 #import <objc/message.h>
 
@@ -81,6 +82,8 @@ uint64_t gatherCreationFlags()
     __weak id _deviceWrapper;
     // The AGX device's creation flags (AGX::Device +0x750, -deviceCreationFlags).
     uint64_t _creationFlags;
+    // The AGX device's depth-stencil state cache (AGX::Device +0x800).
+    webmetal::DepthStencilCache _depthStencilStates;
 }
 @end
 
@@ -115,6 +118,11 @@ int64_t DeviceUnsizedCount(WebMetalDevice *device)
 uint64_t DeviceCreationFlags(WebMetalDevice *device)
 {
     return device->_creationFlags;
+}
+
+DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
+{
+    return device->_depthStencilStates;
 }
 
 }  // namespace webmetal

@@ -1031,6 +1031,14 @@ inline constexpr DriverSelector kAGXA10FamilySamplerDriver[] = {
     {SelectorKind::Instance, "uniqueIdentifier", "Q16@0:8", "agx", ""},
 };
 
+// Driver-layer selectors of AGXA10FamilyDepthStencilState -> _MTLDepthStencilState.
+inline constexpr DriverSelector kAGXA10FamilyDepthStencilStateDriver[] = {
+    {SelectorKind::Instance, "readsDepth", "B16@0:8", "agx", ""},
+    {SelectorKind::Instance, "readsStencil", "B16@0:8", "agx", ""},
+    {SelectorKind::Instance, "writesDepth", "B16@0:8", "agx", ""},
+    {SelectorKind::Instance, "writesStencil", "B16@0:8", "agx", ""},
+};
+
 inline constexpr Role kRoles[] = {
     {"WebMetalDevice", "AGXA10XDevice", "_MTLDevice", kAGXA10XDeviceDriver, 264},
     {"WebMetalBuffer", "AGXA10FamilyBuffer", "_MTLResource", kAGXA10FamilyBufferDriver, 75},
@@ -1043,6 +1051,7 @@ inline constexpr Role kRoles[] = {
     {"WebMetalParallelRenderCommandEncoder", "AGXA10FamilyThreadedRenderPass", "_MTLParallelRenderCommandEncoder", kAGXA10FamilyThreadedRenderPassDriver, 14},
     {"WebMetalHeap", "AGXA10FamilyHeap", "_MTLHeap", kAGXA10FamilyHeapDriver, 26},
     {"WebMetalSamplerState", "AGXA10FamilySampler", "_MTLSamplerState", kAGXA10FamilySamplerDriver, 3},
+    {"WebMetalDepthStencilState", "AGXA10FamilyDepthStencilState", "_MTLDepthStencilState", kAGXA10FamilyDepthStencilStateDriver, 4},
 };
 
 inline constexpr BaseIvar k_MTLAccelerationStructureCommandEncoderIvars[] = {
@@ -1715,7 +1724,12 @@ inline constexpr BaseIvar k_MTLDepthStencilStateIvars[] = {
     {"_label", 16, "@\"NSString\""},
 };
 inline constexpr BaseSelector k_MTLDepthStencilStateSelectors[] = {
-    {SelectorKind::Instance, nullptr, nullptr},  // none; the count below is 0
+    {SelectorKind::Instance, "device", "@16@0:8"},
+    {SelectorKind::Instance, "label", "@16@0:8"},
+    {SelectorKind::Instance, "readsDepth", "B16@0:8"},
+    {SelectorKind::Instance, "readsStencil", "B16@0:8"},
+    {SelectorKind::Instance, "writesDepth", "B16@0:8"},
+    {SelectorKind::Instance, "writesStencil", "B16@0:8"},
 };
 
 inline constexpr BaseIvar k_MTLDeviceIvars[] = {
@@ -2754,7 +2768,7 @@ inline constexpr BaseLayout kBases[] = {
     {"_MTLCommandQueue", "_MTLObjectWithLabel", 345, k_MTLCommandQueueIvars, 31, k_MTLCommandQueueSelectors, 53},
     {"_MTLComputePipelineState", "NSObject", 64, k_MTLComputePipelineStateIvars, 7, k_MTLComputePipelineStateSelectors, 0},
     {"_MTLDebugCommandEncoder", "_MTLCommandEncoder", 88, k_MTLDebugCommandEncoderIvars, 0, k_MTLDebugCommandEncoderSelectors, 0},
-    {"_MTLDepthStencilState", "NSObject", 24, k_MTLDepthStencilStateIvars, 2, k_MTLDepthStencilStateSelectors, 0},
+    {"_MTLDepthStencilState", "NSObject", 24, k_MTLDepthStencilStateIvars, 2, k_MTLDepthStencilStateSelectors, 6},
     {"_MTLDevice", "NSObject", 536, k_MTLDeviceIvars, 40, k_MTLDeviceSelectors, 594},
     {"_MTLDynamicLibrary", "_MTLObjectWithLabel", 49, k_MTLDynamicLibraryIvars, 4, k_MTLDynamicLibrarySelectors, 0},
     {"_MTLFence", "_MTLObjectWithLabel", 20, k_MTLFenceIvars, 0, k_MTLFenceSelectors, 0},

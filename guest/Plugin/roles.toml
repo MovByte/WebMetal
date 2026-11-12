@@ -47,3 +47,7 @@ target = "AGXA10FamilyHeap"
 [[class]]
 name = "WebMetalSamplerState"
 target = "AGXA10FamilySampler"
+
+[[class]]
+name = "WebMetalDepthStencilState"
+target = "AGXA10FamilyDepthStencilState"
