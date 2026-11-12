@@ -4,11 +4,11 @@
 //! `depth32float`, only out of the texture (WebGPU section 26.1.2); copies with an aspect need 4-byte buffer offsets and
 //! 256-byte rows (section 13.3). So:
 //!
-//! - stencil: through a buffer whose rows are re-pitched on the GPU ([`encode_rows`]);
+//! - stencil: through a buffer whose rows are re-pitched on the GPU (`encode_rows`);
 //! - depth out of the texture: a copy of the aspect, re-pitched into the destination;
-//! - depth into the texture: a render pass that writes the values ([`encode_depth_write`]). It stores +0 and the normal
+//! - depth into the texture: a render pass that writes the values (`encode_depth_write`). It stores +0 and the normal
 //!   values of [0, 1] unchanged and nothing else, so the values are checked first, which needs them on the CPU: the
-//!   source must be a CPU-visible buffer whose GPU copy equals what the CPU last saw ([`Memory::gpu_bytes_known`]).
+//!   source must be a CPU-visible buffer whose GPU copy equals what the CPU last saw (`Memory::gpu_bytes_known`).
 //!   Anything else is refused.
 //!
 //! A combined format takes `MTLBlitOptionDepthFromDepthStencil` or `MTLBlitOptionStencilFromDepthStencil`, "but not
@@ -131,7 +131,7 @@ pub fn buffer_to_aspect<A: Api>(
 
 /// A blit from the `aspect` of a depth or stencil texture into a buffer, laid out as `l` at `offset` of `dst`.
 ///
-/// The depth aspect holds only what a depth output clamped to [0, 1] or [`encode_depth_write`] stored, finite values
+/// The depth aspect holds only what a depth output clamped to [0, 1] or `encode_depth_write` stored, finite values
 /// WebGPU's copies keep (WebGPU section 11.2), so the copy is the stored values.
 pub fn aspect_to_buffer<A: Api>(
     mem: &Memory<A>,

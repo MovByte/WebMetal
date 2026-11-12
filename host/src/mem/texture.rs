@@ -589,7 +589,7 @@ impl<A: Api> Memory<A> {
         }
         if !upload && depth_float_only(f) {
             // A depth32float texture holds only what a depth output (clamped to [0, 1]) or the checked depth write
-            // ([`crate::blit::kernels::encode_depth_write`]: +0 and normal values of [0, 1]) put there: finite values
+            // (`crate::blit::kernels::encode_depth_write`: +0 and normal values of [0, 1]) put there: finite values
             // whose copies keep them (WebGPU section 11.2: "valid, finite, non-subnormal numeric values in the source
             // have the same numeric value in the destination").
             return Ok(());
@@ -672,7 +672,7 @@ impl<A: Api> Memory<A> {
         self.upload_region(g, call, t, &l, (a.level as u32, a.slice as u32), &l.pack(&metal))
     }
 
-    /// Write a region of a depth32float texture from bytes the CPU holds, through a render pass ([`encode_depth_write`]):
+    /// Write a region of a depth32float texture from bytes the CPU holds, through a render pass (`encode_depth_write`):
     /// WebGPU copies cannot write its depth aspect. Values the pass would not store unchanged are refused.
     fn upload_depth(
         &self,
@@ -920,7 +920,7 @@ impl<A: Api> Memory<A> {
     /// at `offset` of `src` as Metal does. The bytes land in the twin when the texture keeps one (the stored texture is
     /// then stale until [`Memory::prepare_texture`]), else in the stored texture. Rows whose Metal stride is not a
     /// multiple of 256 are re-pitched through a staging buffer: with buffer copies when every row starts on a 4-byte
-    /// boundary, else with the GPU's byte moves ([`encode_rows`]). A depth aspect that WebGPU copies cannot write
+    /// boundary, else with the GPU's byte moves (`encode_rows`). A depth aspect that WebGPU copies cannot write
     /// (`depth32float`) and the aspects of combined depth-stencil formats are the blit service's
     /// ([`crate::blit::depth`]).
     pub fn encode_buffer_to_texture(
@@ -1045,7 +1045,7 @@ impl<A: Api> Memory<A> {
 
     /// Encode a blit of a region from a texture into a buffer (`copyFromTexture:...toBuffer:`), laid out at `offset`
     /// of `dst` as `l` describes; the buffer's readback window grows to cover it. Rows that are not whole 4-byte words
-    /// are written with the GPU's byte moves ([`encode_rows`]), which leave the bytes beside them as they are; a
+    /// are written with the GPU's byte moves (`encode_rows`), which leave the bytes beside them as they are; a
     /// BGR10A2 texture read from its stored `rgb10a2unorm` texels has its red and blue fields exchanged back first.
     pub fn encode_texture_to_buffer(
         &self,

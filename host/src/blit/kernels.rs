@@ -1,15 +1,15 @@
 //! The GPU passes blits need where WebGPU has no command of its own, all exact:
 //!
-//! - [`encode_rows`]: moves rows of bytes between buffers (or fills them with one byte value) at any byte offset and
+//! - `encode_rows`: moves rows of bytes between buffers (or fills them with one byte value) at any byte offset and
 //!   pitch. WebGPU's `copyBufferToBuffer` moves whole 4-byte words and `clearBuffer` writes zeros only (WebGPU section
 //!   13.2, `tables/limits.toml` question `6.6-clear-buffer`); Metal's iOS blits take any offset, size and byte value
 //!   (`copy(from:sourceOffset:to:destinationOffset:size:)`, `fill(buffer:range:value:)`). Each invocation owns one
 //!   destination word and writes back only the bytes inside the rows, so the bytes beside them keep their values.
-//! - [`encode_swap10`]: exchanges the red and blue fields of 32-bit texels in place, the conversion between Metal's
+//! - `encode_swap10`: exchanges the red and blue fields of 32-bit texels in place, the conversion between Metal's
 //!   BGR10A2 bytes and the `rgb10a2unorm` texels that hold them ([`crate::format::packed::swap_red_blue_10`]).
-//! - [`encode_depth_write`]: writes depth values into a depth aspect through a render pass, the only way WebGPU writes
+//! - `encode_depth_write`: writes depth values into a depth aspect through a render pass, the only way WebGPU writes
 //!   `depth32float` (its depth aspect is not a copy destination, WebGPU section 26.1.2).
-//! - [`encode_mip_level`]: renders one mipmap level from the level above it with a linear filter.
+//! - `encode_mip_level`: renders one mipmap level from the level above it with a linear filter.
 //!
 //! The pipelines are made on first use and kept in [`Kernels`], which the memory module holds for its device.
 
@@ -619,7 +619,7 @@ pub(crate) fn depth_value_stored_exactly(bits: u32) -> bool {
     bits == 0 || (v.is_normal() && v > 0.0 && v <= 1.0)
 }
 
-/// The binary32 bits of the depth values in `bytes`, each checked with [`depth_value_stored_exactly`]: a value the
+/// The binary32 bits of the depth values in `bytes`, each checked with `depth_value_stored_exactly`: a value the
 /// render-pass write would not store unchanged is refused.
 pub(crate) fn depth_bits(call: &'static str, bytes: &[u8]) -> Result<Vec<u32>, MemError> {
     let (words, rest) = bytes.as_chunks::<4>();
@@ -644,7 +644,7 @@ pub(crate) fn depth_bits(call: &'static str, bytes: &[u8]) -> Result<Vec<u32>, M
 
 /// Encode a render pass that writes `w.bits` into the depth aspect of a region of one subresource; a stencil aspect
 /// keeps its values. The texture must allow `RENDER_ATTACHMENT`, and every value must satisfy
-/// [`depth_value_stored_exactly`] (the caller checks, and refuses otherwise).
+/// `depth_value_stored_exactly` (the caller checks, and refuses otherwise).
 pub(crate) fn encode_depth_write<A: Api>(
     mem: &Memory<A>,
     g: &impl Calls<A>,

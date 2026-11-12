@@ -3,7 +3,7 @@
 //!
 //! | Metal | Here |
 //! | --- | --- |
-//! | `copyFromBuffer:...toBuffer:` | `copyBufferToBuffer` when the offsets and size are whole words; else the GPU's byte moves ([`kernels::encode_rows`]); within one buffer through a staging copy. Overlapping ranges of one buffer are undefined in Metal ("Copying data to overlapping regions within the same buffer may result in unexpected behavior") and refused. |
+//! | `copyFromBuffer:...toBuffer:` | `copyBufferToBuffer` when the offsets and size are whole words; else the GPU's byte moves (`kernels::encode_rows`); within one buffer through a staging copy. Overlapping ranges of one buffer are undefined in Metal ("Copying data to overlapping regions within the same buffer may result in unexpected behavior") and refused. |
 //! | `fillBuffer:range:value:` | `clearBuffer` for zero over whole words; else the GPU's byte fill (`clearBuffer` writes zeros only, `tables/limits.toml` question `6.6-clear-buffer`). |
 //! | `copyFromBuffer:...toTexture:`, `copyFromTexture:...toBuffer:`, with and without `options:` | The memory module's transfers ([`Memory::encode_buffer_to_texture`], [`Memory::encode_texture_to_buffer`]), which keep the twins and the readback windows right; depth and stencil aspects through [`depth`]. Regions and layouts follow [`region`]. |
 //! | `copyFromTexture:...toTexture:` (region, slices and levels, whole texture) | [`texture::copy_region`]. |
