@@ -10,6 +10,7 @@
 //! - [`layout`]: texture geometry and the byte layouts of CPU and blit transfers.
 //! - [`texture`]: Metal textures, their exact byte copies, `replaceRegion`, `getBytes` and the blit transfers.
 //! - [`proof`]: the per-host test of texel copies of formats whose bits WebGPU does not promise to keep.
+//! - [`view`]: texture views over a texture's storage.
 //! - [`linear`]: textures over a buffer's bytes; [`surface`]: textures over IOSurface planes and the plane table.
 //! - [`calls`]: how the module reaches WebGPU (through the executor's error scopes, or directly).
 //! - [`service`]: the module as the executor's control and coherence services, and the payloads it binds to handles.
@@ -31,6 +32,7 @@ pub mod shadow;
 pub mod staging;
 pub mod surface;
 pub mod texture;
+pub mod view;
 
 #[cfg(test)]
 mod testutil;

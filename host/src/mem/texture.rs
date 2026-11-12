@@ -4,8 +4,10 @@
 //! **Stored texture.** Every texture is a WebGPU texture in the format the format module resolves for the host
 //! ([`crate::format::handling::resolve_texture`]): 1D and 1D-array textures are 2D textures one row high, cubes and
 //! cube arrays are 2D arrays of six layers per cube, 3D textures are 3D (plan section 6.3). It carries every usage
-//! the Metal descriptor permits and the host's format allows (plan section 6.10), and for `pixelFormatView` usage the
-//! sRGB sibling as a view format.
+//! the Metal descriptor permits and the host's format allows (plan section 6.10), and the sRGB sibling of its format as
+//! a view format whatever its usage: Metal makes a view that only converts between sRGB and linear of a texture without
+//! `pixelFormatView` usage (`texture.view-srgb-without-usage` passes the debug layer; the `pixelFormatView`
+//! documentation: "Don't set this option if your texture view only converts between linear space and sRGB").
 //!
 //! **Twin.** WebGPU texel copies preserve bits only for the uint, sint and non-packed unorm formats; for float, snorm,
 //! packed and compressed formats they guarantee only values (WebGPU section 13.3.1, `tables/formats.toml` question
@@ -122,6 +124,8 @@ pub struct Texture<A: Api> {
     pub heap_object: Option<Rc<RefCell<Heap>>>,
     pub label: String,
     stored: A::Texture,
+    /// The formats the stored texture can be viewed in besides its own (`viewFormats`).
+    view_formats: Vec<WebGpuFormat>,
     twins: Vec<A::Texture>,
     state: RefCell<State>,
 }
@@ -134,6 +138,11 @@ impl<A: Api> Texture<A> {
 
     pub fn has_twin(&self) -> bool {
         !self.twins.is_empty()
+    }
+
+    /// Can the stored texture be viewed in `f`: its own format or one of its `viewFormats`?
+    pub fn views_in(&self, f: WebGpuFormat) -> bool {
+        f == self.resolution.storage() || self.view_formats.contains(&f)
     }
 
     fn per_level(&self) -> u32 {
@@ -399,12 +408,13 @@ impl<A: Api> Memory<A> {
         desc.sample_count = geometry.sample_count;
         desc.dimension = if kind.is_3d() { TextureDimension::D3 } else { TextureDimension::D2 };
         // A view in the sibling format needs the sibling on this host; a view the host cannot give is refused when it
-        // is created (format::reinterpret).
-        if wants(usage::PIXEL_FORMAT_VIEW)
-            && let Some(sibling) = srgb_sibling(stored_format)
+        // is created (`super::view`).
+        let mut view_formats = Vec::new();
+        if let Some(sibling) = srgb_sibling(stored_format)
             && self.features.supports(sibling)
         {
             desc.view_formats.push(idl_format(sibling));
+            view_formats.push(sibling);
         }
         if !self.features.has(Feature::CoreFeaturesAndLimits) {
             // A device without core-features-and-limits binds a texture only in the view dimension fixed at creation
@@ -461,6 +471,7 @@ impl<A: Api> Memory<A> {
             heap_object: None,
             label,
             stored,
+            view_formats,
             twins,
             state: RefCell::new(state),
         }))

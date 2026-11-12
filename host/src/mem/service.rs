@@ -9,7 +9,11 @@
 //! | buffer (`CreateBuffer`, `CreateBufferWithBytes`, `CreateBufferNoCopy`, `HeapCreateBuffer`) | [`Buffer<A>`] |
 //! | texture (`CreateTexture`, `CreateTextureWithIOSurface`) | [`Texture<A>`] |
 //! | texture over a buffer (`CreateBufferTexture`, `CreateLinearTexture`) | [`LinearTexture<A>`] |
+//! | texture view (`CreateTextureView` and the five other view requests) | [`TextureView<A>`] |
 //! | heap (`CreateHeap`) | `RefCell<`[`Heap`]`>` |
+//!
+//! A view's payload holds its root texture ([`super::view`]); a service that acts on a view's storage acts on the root
+//! at the view's levels and slices, and notes writes there.
 //!
 //! **What encoder services owe this module** (they record the passes; this module cannot see inside them):
 //!
@@ -43,9 +47,12 @@ use crate::gpu::{Api, GpuFuture};
 use webmetal_wire::{
     BufferDidModifyRangeReply, CreateBufferNoCopyReply, CreateBufferReply, CreateBufferTextureReply,
     CreateBufferWithBytesReply, CreateHeapReply, CreateLinearTextureReply, CreateTextureReply,
-    CreateTextureWithIOSurfaceReply, Failure, GetBytesReply, GetBytesSliceReply, Handle, HeapCreateBufferReply,
-    HeapCreateTextureReply, MakeAliasableReply, Region, ReplaceRegionReply, ReplaceRegionSliceReply, Reply, Request,
-    SetPurgeableState, SetPurgeableStateReply, opcode,
+    CreateTextureViewLevelsSlicesReply, CreateTextureViewLevelsSlicesResourceIndexReply,
+    CreateTextureViewLevelsSlicesSwizzleReply, CreateTextureViewLevelsSlicesSwizzleResourceIndexReply,
+    CreateTextureViewReply, CreateTextureViewResourceIndexReply, CreateTextureWithIOSurfaceReply, Failure,
+    GetBytesReply, GetBytesSliceReply, Handle, HeapCreateBufferReply, HeapCreateTextureReply, MakeAliasableReply,
+    Region, ReplaceRegionReply, ReplaceRegionSliceReply, Reply, Request, SetPurgeableState, SetPurgeableStateReply,
+    opcode,
 };
 
 use super::buffer::{Buffer, Readbacks};
@@ -57,6 +64,7 @@ use super::memory::Memory;
 use super::purgeable::Purgeable;
 use super::surface::SurfaceReadback;
 use super::texture::{Texture, TextureBytes, TextureRead};
+use super::view::{Parent, TextureView, ViewArgs};
 
 /// A resource of a heap.
 enum Member<A: Api> {
@@ -227,6 +235,81 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                      A10X driver gives such a texture's bytes is not in the device profile",
                 ));
             }
+            Request::CreateTextureView(r) => {
+                let a = ViewArgs {
+                    call: "-[MTLTexture newTextureViewWithPixelFormat:]",
+                    pixel_format: r.pixel_format,
+                    texture_type: None,
+                    levels: None,
+                    slices: None,
+                    swizzle: None,
+                };
+                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                ok!(CreateTextureView, CreateTextureViewReply)
+            }
+            Request::CreateTextureViewLevelsSlices(r) => {
+                let a = ViewArgs {
+                    call: "-[MTLTexture newTextureViewWithPixelFormat:textureType:levels:slices:]",
+                    pixel_format: r.pixel_format,
+                    texture_type: Some(r.texture_type),
+                    levels: Some(&r.level_range),
+                    slices: Some(&r.slice_range),
+                    swizzle: None,
+                };
+                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                ok!(CreateTextureViewLevelsSlices, CreateTextureViewLevelsSlicesReply)
+            }
+            Request::CreateTextureViewLevelsSlicesSwizzle(r) => {
+                let a = ViewArgs {
+                    call: "-[MTLTexture newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:]",
+                    pixel_format: r.pixel_format,
+                    texture_type: Some(r.texture_type),
+                    levels: Some(&r.level_range),
+                    slices: Some(&r.slice_range),
+                    swizzle: Some(&r.swizzle),
+                };
+                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                ok!(CreateTextureViewLevelsSlicesSwizzle, CreateTextureViewLevelsSlicesSwizzleReply)
+            }
+            Request::CreateTextureViewResourceIndex(r) => {
+                let a = ViewArgs {
+                    call: "-[MTLTextureSPI newTextureViewWithPixelFormat:resourceIndex:]",
+                    pixel_format: r.pixel_format,
+                    texture_type: None,
+                    levels: None,
+                    slices: None,
+                    swizzle: None,
+                };
+                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                ok!(CreateTextureViewResourceIndex, CreateTextureViewResourceIndexReply)
+            }
+            Request::CreateTextureViewLevelsSlicesResourceIndex(r) => {
+                let a = ViewArgs {
+                    call: "-[MTLTextureSPI newTextureViewWithPixelFormat:textureType:levels:slices:resourceIndex:]",
+                    pixel_format: r.pixel_format,
+                    texture_type: Some(r.texture_type),
+                    levels: Some(&r.levels),
+                    slices: Some(&r.slices),
+                    swizzle: None,
+                };
+                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                ok!(CreateTextureViewLevelsSlicesResourceIndex, CreateTextureViewLevelsSlicesResourceIndexReply)
+            }
+            Request::CreateTextureViewLevelsSlicesSwizzleResourceIndex(r) => {
+                let a = ViewArgs {
+                    call: "-[MTLTextureSPI newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:resourceIndex:]",
+                    pixel_format: r.pixel_format,
+                    texture_type: Some(r.texture_type),
+                    levels: Some(&r.levels),
+                    slices: Some(&r.slices),
+                    swizzle: Some(&r.swizzle),
+                };
+                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                ok!(
+                    CreateTextureViewLevelsSlicesSwizzleResourceIndex,
+                    CreateTextureViewLevelsSlicesSwizzleResourceIndexReply
+                )
+            }
             Request::CreateBufferTexture(r) => {
                 let b = payload::<Buffer<A>>(objects, r.buffer).ok_or_else(|| missing(r.buffer))?;
                 attach = Rc::new(mem.create_buffer_texture(g, task, &b, r)?);
@@ -381,7 +464,39 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
             }
             return Ok(t.previous);
         }
+        if payload::<TextureView<A>>(objects, r.object).is_some() {
+            return Err(MemError::invalid(format!(
+                "{CALL} of a texture view: IOGPU makes a view not purgeable (purgeableAllowed NO), so the guest answers \
+                 the call itself"
+            )));
+        }
         Err(MemError::unimplemented(format!("{CALL} of a texture over a buffer")))
+    }
+
+    /// A view of the texture or view `texture`.
+    fn view(
+        &self,
+        objects: &Table,
+        task: TaskId,
+        texture: Handle,
+        view: Handle,
+        a: &ViewArgs<'_>,
+    ) -> Result<Rc<dyn Any>, MemError> {
+        let mem = &*self.memory;
+        if let Some(t) = payload::<Texture<A>>(objects, texture) {
+            return Ok(mem.create_texture_view((task, view), Parent::Texture(&t), a)?);
+        }
+        if let Some(v) = payload::<TextureView<A>>(objects, texture) {
+            return Ok(mem.create_texture_view((task, view), Parent::View(&v), a)?);
+        }
+        if payload::<LinearTexture<A>>(objects, texture).is_some() {
+            return Err(MemError::unimplemented(format!(
+                "{} of a texture over a buffer: the A10X layout of its parent is not ported to the guest, which does \
+                 not make the view",
+                a.call
+            )));
+        }
+        Err(MemError::invalid(format!("{}: handle {:#x} has no texture storage", a.call, texture.get())))
     }
 }
 
@@ -407,6 +522,12 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for Control<A, E> {
             opcode::CREATE_TEXTURE_NO_COPY,
             opcode::CREATE_BUFFER_TEXTURE,
             opcode::CREATE_LINEAR_TEXTURE,
+            opcode::CREATE_TEXTURE_VIEW,
+            opcode::CREATE_TEXTURE_VIEW_LEVELS_SLICES,
+            opcode::CREATE_TEXTURE_VIEW_LEVELS_SLICES_SWIZZLE,
+            opcode::CREATE_TEXTURE_VIEW_RESOURCE_INDEX,
+            opcode::CREATE_TEXTURE_VIEW_LEVELS_SLICES_RESOURCE_INDEX,
+            opcode::CREATE_TEXTURE_VIEW_LEVELS_SLICES_SWIZZLE_RESOURCE_INDEX,
             opcode::REPLACE_REGION,
             opcode::REPLACE_REGION_SLICE,
             opcode::GET_BYTES,
