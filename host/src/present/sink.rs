@@ -1,19 +1,20 @@
 //! The presentation sink: frames the embedder's display model swaps, shown on the display's target.
 //!
-//! A frame names a plane of an IOSurface, the part of it shown and where it lands, an orientation transform and the
-//! earliest time it may appear. [`Presenter::present`] checks it when it is requested and then, in order per display:
+//! A frame names a plane of an IOSurface or a task's texture, the part of it shown and where it lands, an orientation
+//! transform and the earliest time it may appear. [`Presenter::present`] checks it when it is requested and then, in
+//! order per display:
 //!
-//! 1. waits until every command buffer committed before the request has completed ([`Executor::committed_work_done`]),
-//!    so that the GPU's writes to the surface are in the surface's memory (the coherence protocol writes them back
-//!    before completion, plan section 6.2). These are the command buffers of every task, a superset of the ones that
-//!    can write the surface, because the executor does not expose which command buffers name which surface: a frame
-//!    is never shown before its contents are final, but it also waits for unrelated work, and a queue held forever by
-//!    an event no one signals holds the display too;
+//! 1. waits until the command buffers committed before the request that can write the frame's source have completed
+//!    ([`Executor::committed_work_done_where`], with the records that write textures from [`crate::exec::writes`]),
+//!    so that their writes are in the surface's memory (the coherence protocol writes them back before completion,
+//!    plan section 6.2) or in the texture. Other command buffers, of this task or any other, are not waited for: a
+//!    queue held by an event no one signals holds a frame only when it can write what the frame shows;
 //! 2. waits until its time: the frame's own time (`presentAtTime:`), and the previous frame's presentation plus the
 //!    request's minimum duration (`presentAfterMinimumDuration:`); a frame is never shown earlier;
-//! 3. reads the shown rows from the surface's memory, arranges them as canvas texels ([`super::format`]), configures
-//!    the target for the display and the format when the configuration changed ([`super::canvas`]), writes the frame
-//!    into the target's current texture with `GPUQueue.writeTexture()` and presents the target;
+//! 3. reads the shown rows from the surface's memory (a texture over an IOSurface plane is that memory) or reads them
+//!    back from the texture, arranges them as canvas texels ([`super::format`]), configures the target for the display
+//!    and the format when the configuration changed ([`super::canvas`]), writes the frame into the target's current
+//!    texture with `GPUQueue.writeTexture()` and presents the target;
 //! 4. tells the embedder ([`Embedder::present`]) and reports when the frame reached the target.
 //!
 //! The canvas texture then holds the surface's pixel codes exactly. "At" a time cannot be honored exactly: a canvas is
@@ -28,16 +29,24 @@ use std::task::{Context, Poll, Waker};
 
 use webmetal_wire::{Failure, status};
 
-use crate::embed::{Embedder, MonotonicNanos, PresentError, PresentSource, PresentedFrame, Rect, SurfaceDesc};
-use crate::exec::failure;
-use crate::exec::{Executor, Report};
-use crate::format::handling::Refusal;
-use crate::gpu::idl::ErrorFilter;
+use webmetal_wire::{Handle, SurfaceId};
+
+use crate::embed::{Embedder, MonotonicNanos, PresentError, PresentSource, PresentedFrame, Rect, TaskId};
+use crate::exec::writes::{TextureWrite, texture_writes};
+use crate::exec::{CommitInfo, Executor, Kind, Report, Table, failure};
+use crate::format::handling::{Refusal, Resolution};
+use crate::gpu::idl::{ErrorFilter, TextureFormat};
 use crate::gpu::{Api, Device as _, DeviceLostInfo, GpuFuture};
+use crate::mem::layout::TextureType;
+use crate::mem::options::StorageMode;
+use crate::mem::texture::{Texture, idl_format, usage};
 
 use super::canvas::{self, CanvasPlan, DisplayMode, PlanError};
-use super::format::{FramebufferFormat, code_name, framebuffer_format};
-use super::target::Target;
+use super::format::{FramebufferFormat, code_name, framebuffer_format, texture_format};
+use super::target::{Target, read_texture};
+
+/// `MTLTextureUsageShaderAtomic` (`MTLTexture.h`, iOS 17): atomic operations in a shader, which write.
+const SHADER_ATOMIC: u64 = 0x0020;
 
 /// A frame that asks for an orientation transform.
 pub const TRANSFORM: Refusal = Refusal {
@@ -61,14 +70,6 @@ pub const PARTIAL_FRAME: Refusal = Refusal {
     reason: "The frame's target rectangle is not the whole display; what the display shows outside it is not \
              established.",
     source: "tables/limits.toml question system-behavior-items (K3)",
-};
-
-/// A frame that names a task's texture.
-pub const TEXTURE_SOURCE: Refusal = Refusal {
-    id: "present-texture-source",
-    reason: "The frame names a task's texture. The sink reads frames from IOSurface memory, which the display path \
-             names (plan section 6.8); it has no access to the executor's object tables.",
-    source: "host/src/embed.rs (PresentSource::Texture)",
 };
 
 /// The host's canvas refused the configuration.
@@ -191,18 +192,75 @@ impl<A: Api, E: Embedder> Clone for Presenter<A, E> {
     }
 }
 
+/// Where a frame's pixels are.
+enum Source<A: Api> {
+    /// Rows of an IOSurface plane's memory: the plane's offset in the surface and its bytes per row.
+    Plane { id: SurfaceId, offset: u64, bytes_per_row: u64 },
+    /// Level 0, slice 0 of a texture the GPU holds, stored in `format`.
+    Texture { texture: Rc<Texture<A>>, format: TextureFormat },
+}
+
+/// The objects whose writes a frame shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shown {
+    /// Every texture over this plane of this surface, in any task.
+    Plane(SurfaceId, u32),
+    /// This texture of this task.
+    Texture(TaskId, Handle),
+}
+
 /// A frame checked at its request: what to read and how to show it.
-#[derive(Clone, Debug)]
-struct Checked {
+struct Checked<A: Api> {
     display: u32,
     generation: u64,
-    surface: SurfaceDesc,
-    /// Offset of the plane in the surface's memory, and its bytes per row.
-    plane_offset: u64,
-    bytes_per_row: u64,
+    source: Source<A>,
+    shown: Shown,
     format: FramebufferFormat,
-    source: Rect,
+    rect: Rect,
     plan: CanvasPlan,
+}
+
+/// Whether a write of `how` to `t` can change its contents: attachments and blits write; a shader writes only a
+/// texture whose usage allows it (`ShaderWrite`, `ShaderAtomic`, or `Unknown`, which allows every use; `MTLTexture.h`).
+fn can_write<A: Api>(t: &Texture<A>, how: TextureWrite) -> bool {
+    match how {
+        TextureWrite::Attachment | TextureWrite::Blit => true,
+        TextureWrite::ShaderBinding | TextureWrite::UseResource => {
+            t.usage == usage::UNKNOWN || t.usage & (usage::SHADER_WRITE | SHADER_ATOMIC) != 0
+        }
+    }
+}
+
+/// Whether the committed command buffer `info` can write what a frame shows. A handle its records name in a writing
+/// position that no longer resolves (the guest released it after the commit) may have been the source, so it counts.
+fn writes_shown<A: Api>(info: &CommitInfo, table: &Table, shown: Shown) -> bool {
+    if let Shown::Texture(task, _) = shown
+        && info.task != task
+    {
+        return false;
+    }
+    let mut hit = false;
+    for (_, record) in info.records.iter() {
+        texture_writes(record, &mut |h, how| {
+            if hit {
+                return;
+            }
+            let Some(entry) = table.get(h) else {
+                hit = true;
+                return;
+            };
+            let Some(t) = entry.payload.clone().and_then(|p| p.downcast::<Texture<A>>().ok()) else { return };
+            let target = match shown {
+                Shown::Plane(id, plane) => t.surface.as_ref().is_some_and(|p| p.id == id && p.plane == plane),
+                Shown::Texture(_, handle) => h == handle,
+            };
+            hit = target && can_write(&t, how);
+        });
+        if hit {
+            return true;
+        }
+    }
+    false
 }
 
 impl<A: Api, E: Embedder + 'static> Presenter<A, E> {
@@ -314,8 +372,10 @@ impl<A: Api, E: Embedder + 'static> Presenter<A, E> {
             d.requested += 1;
             d.requested - 1
         };
-        // The command buffers committed before this point are the ones whose writes the frame shows.
-        let work = self.shared.exec.committed_work_done(None);
+        // The command buffers committed before this point that can write the source are the ones whose writes the
+        // frame shows.
+        let shown = checked.shown;
+        let work = self.shared.exec.committed_work_done_where(|info, table| writes_shown::<A>(info, table, shown));
         let shared = self.shared.clone();
         // The turn exists from the request on, so that dropping the future, even unpolled, passes it on.
         let generation = checked.generation;
@@ -334,8 +394,8 @@ impl<A: Api, E: Embedder + 'static> Presenter<A, E> {
         })
     }
 
-    /// Check a frame at its request, against the display and the surface as they are now.
-    fn check(&self, frame: &PresentedFrame) -> Result<Checked, PresentFailure> {
+    /// Check a frame at its request, against the display and its source as they are now.
+    fn check(&self, frame: &PresentedFrame) -> Result<Checked<A>, PresentFailure> {
         let displays = self.shared.displays.borrow();
         let d = displays
             .get(&frame.display)
@@ -344,15 +404,6 @@ impl<A: Api, E: Embedder + 'static> Presenter<A, E> {
         if frame.transform != mode.identity_transform {
             return Err(PresentFailure::refused(TRANSFORM, format!("transform {:#x}", frame.transform)));
         }
-        let (id, plane) = match frame.source {
-            PresentSource::Surface { id, plane } => (id, plane),
-            PresentSource::Texture { task, texture } => {
-                return Err(PresentFailure::refused(
-                    TEXTURE_SOURCE,
-                    format!("texture {:#x} of task {}", texture.get(), task.0),
-                ));
-            }
-        };
         let s = frame.source_rect;
         let t = frame.target_rect;
         if s.x < 0 || s.y < 0 || s.width == 0 || s.height == 0 {
@@ -367,6 +418,24 @@ impl<A: Api, E: Embedder + 'static> Presenter<A, E> {
                 format!("target {t:?} on a {}x{} display", mode.width, mode.height),
             ));
         }
+        let (source, shown, format) = match frame.source {
+            PresentSource::Surface { id, plane } => self.check_surface(id, plane, s)?,
+            PresentSource::Texture { task, texture } => self.check_texture(task, texture, s)?,
+        };
+        let plan = canvas::plan(mode, &format).map_err(|e| match e {
+            PlanError::Empty => PresentFailure::invalid(format!("display {} has no pixels", frame.display)),
+            PlanError::Refused(r) => PresentFailure::refused(r, format!("display {}: {:?}", frame.display, mode)),
+        })?;
+        Ok(Checked { display: frame.display, generation: d.generation, source, shown, format, rect: s, plan })
+    }
+
+    /// A frame of plane `plane` of surface `id`.
+    fn check_surface(
+        &self,
+        id: SurfaceId,
+        plane: u32,
+        s: Rect,
+    ) -> Result<(Source<A>, Shown, FramebufferFormat), PresentFailure> {
         let surface = self.shared.embedder.surface_lookup(id).map_err(|e| PresentFailure::invalid(e.to_string()))?;
         let format = framebuffer_format(surface.pixel_format).map_err(|r| {
             PresentFailure::refused(r, format!("surface {} has pixel format {}", id.0, code_name(surface.pixel_format)))
@@ -415,20 +484,57 @@ impl<A: Api, E: Embedder + 'static> Presenter<A, E> {
                 id.0, geometry.width, geometry.height, geometry.bytes_per_row, geometry.size
             )));
         }
-        let plan = canvas::plan(mode, &format).map_err(|e| match e {
-            PlanError::Empty => PresentFailure::invalid(format!("display {} has no pixels", frame.display)),
-            PlanError::Refused(r) => PresentFailure::refused(r, format!("display {}: {:?}", frame.display, mode)),
-        })?;
-        Ok(Checked {
-            display: frame.display,
-            generation: d.generation,
-            surface,
-            plane_offset: geometry.offset,
-            bytes_per_row: geometry.bytes_per_row,
-            format,
-            source: s,
-            plan,
-        })
+        let source = Source::Plane { id, offset: geometry.offset, bytes_per_row: geometry.bytes_per_row };
+        Ok((source, Shown::Plane(id, plane), format))
+    }
+
+    /// A frame of level 0 of texture `handle` of `task`. A texture over an IOSurface plane is that plane's memory; any
+    /// other is read back from the GPU.
+    fn check_texture(
+        &self,
+        task: TaskId,
+        handle: Handle,
+        s: Rect,
+    ) -> Result<(Source<A>, Shown, FramebufferFormat), PresentFailure> {
+        let what = format!("texture {:#x} of task {}", handle.get(), task.0);
+        let entry = self
+            .shared
+            .exec
+            .object(task, handle)
+            .ok_or_else(|| PresentFailure::invalid(format!("{what} is not a live object")))?;
+        let t = (entry.kind == Kind::Texture)
+            .then(|| entry.payload.clone().and_then(|p| p.downcast::<Texture<A>>().ok()))
+            .flatten()
+            .ok_or_else(|| PresentFailure::invalid(format!("{what} is not a texture")))?;
+        let format = texture_format(t.format)
+            .map_err(|r| PresentFailure::refused(r, format!("{what} has MTLPixelFormat {}", t.format)))?;
+        let g = &t.geometry;
+        if g.kind != TextureType::D2 || g.sample_count != 1 {
+            return Err(PresentFailure::invalid(format!("{what} is not a 2D texture of one sample")));
+        }
+        if t.storage == StorageMode::Memoryless {
+            return Err(PresentFailure::invalid(format!("{what} is memoryless: it keeps no contents")));
+        }
+        let (x, y) = (s.x as u64, s.y as u64);
+        if x + s.width > u64::from(g.width) || y + s.height > u64::from(g.height) {
+            return Err(PresentFailure::invalid(format!("source {s:?} outside {what} ({}x{})", g.width, g.height)));
+        }
+        if let Some(p) = &t.surface {
+            let source = Source::Plane { id: p.id, offset: p.geometry.offset, bytes_per_row: p.geometry.bytes_per_row };
+            return Ok((source, Shown::Plane(p.id, p.plane), format));
+        }
+        // The stored texture must hold the texel codes bit for bit: a non-packed unorm format, whose texel copies keep
+        // every bit (WebGPU #texel-copies).
+        let stored = match t.resolution {
+            Resolution::Native(f) if f.texel_copy_exact(None) => idl_format(f),
+            r => {
+                return Err(PresentFailure::defect(format!(
+                    "{what} in {} is stored as {:?}, whose texel copies do not keep its bits",
+                    format.name, r
+                )));
+            }
+        };
+        Ok((Source::Texture { texture: t.clone(), format: stored }, Shown::Texture(task, handle), format))
     }
 }
 
@@ -546,40 +652,92 @@ impl<A: Api, E: Embedder + 'static> Shared<A, E> {
         self.lost.borrow().clone()
     }
 
-    /// Read the frame's rows from the surface as canvas texels.
-    fn read(&self, c: &Checked) -> Result<Vec<u8>, PresentFailure> {
-        let row = (c.source.width * c.format.bytes_per_pixel) as usize;
-        let mut out = vec![0u8; row * c.source.height as usize];
-        let (x, y) = (c.source.x as u64, c.source.y as u64);
+    /// Read the frame's rows from the surface's memory.
+    fn read_plane(
+        &self,
+        c: &Checked<A>,
+        id: SurfaceId,
+        offset: u64,
+        bytes_per_row: u64,
+    ) -> Result<Vec<u8>, PresentFailure> {
+        let row = (c.rect.width * c.format.bytes_per_pixel) as usize;
+        let mut out = vec![0u8; row * c.rect.height as usize];
+        let (x, y) = (c.rect.x as u64, c.rect.y as u64);
         for (i, dst) in out.chunks_exact_mut(row).enumerate() {
-            let at = c.plane_offset + (y + i as u64) * c.bytes_per_row + x * c.format.bytes_per_pixel;
+            let at = offset + (y + i as u64) * bytes_per_row + x * c.format.bytes_per_pixel;
             self.embedder
-                .read_surface(c.surface.id, at, dst)
+                .read_surface(id, at, dst)
                 .map_err(|e| PresentFailure::invalid(format!("reading the frame: {e}")))?;
-            c.format.to_texels(dst);
         }
         Ok(out)
     }
 
+    /// The frame's rows as canvas texels.
+    fn frame_texels(&self, c: &Checked<A>) -> GpuFuture<Result<Vec<u8>, PresentFailure>> {
+        let read = match &c.source {
+            Source::Plane { id, offset, bytes_per_row } => {
+                let r = self.read_plane(c, *id, *offset, *bytes_per_row);
+                Box::pin(async move { r }) as GpuFuture<_>
+            }
+            Source::Texture { texture, format } => {
+                // Level 0 of a texture whose stored copy is not current holds its contents only in the twin, which
+                // these formats never need (`crate::mem::texture`); refuse rather than show stale texels.
+                if !texture.stored_current(0, 0) {
+                    let f = PresentFailure::defect(format!(
+                        "the stored copy of texture \"{}\" is not current",
+                        texture.label
+                    ));
+                    return Box::pin(async move { Err(f) });
+                }
+                let (x, y) = (c.rect.x as u32, c.rect.y as u32);
+                let read = read_texture::<A>(
+                    &self.device,
+                    texture.gpu(),
+                    *format,
+                    (x, y),
+                    c.rect.width as u32,
+                    c.rect.height as u32,
+                );
+                Box::pin(async move {
+                    read.await.map_err(|e| PresentFailure::defect(format!("reading the frame back: {e}")))
+                })
+            }
+        };
+        let format = c.format;
+        Box::pin(async move {
+            let mut data = read.await?;
+            format.to_texels(&mut data);
+            Ok(data)
+        })
+    }
+
     /// Write the frame into its display's target and present it. Resolves to when it reached the target.
-    fn show(self: &Rc<Self>, c: &Checked, frame: &PresentedFrame) -> GpuFuture<Result<MonotonicNanos, PresentFailure>> {
+    fn show(
+        self: &Rc<Self>,
+        c: &Checked<A>,
+        frame: &PresentedFrame,
+    ) -> GpuFuture<Result<MonotonicNanos, PresentFailure>> {
         if let Some(info) = self.lost() {
             return Box::pin(async move { Err(PresentFailure::lost(&info)) });
         }
-        let data = match self.read(c) {
-            Ok(d) => d,
-            Err(f) => return Box::pin(async move { Err(f) }),
-        };
-        let filters = [ErrorFilter::Validation, ErrorFilter::OutOfMemory, ErrorFilter::Internal];
-        for f in filters {
-            self.device.push_error_scope(f);
-        }
-        let written = self.write(c, &data);
-        let pops: Vec<_> = filters.iter().map(|_| self.device.pop_error_scope()).collect();
+        let texels = self.frame_texels(c);
         let shared = self.clone();
         let frame = *frame;
         let (display, generation) = (c.display, c.generation);
+        let plan = c.plan.clone();
+        let (width, height, row) =
+            (c.rect.width as u32, c.rect.height as u32, (c.rect.width * c.format.bytes_per_pixel) as u32);
         Box::pin(async move {
+            let data = texels.await?;
+            if let Some(info) = shared.lost() {
+                return Err(PresentFailure::lost(&info));
+            }
+            let filters = [ErrorFilter::Validation, ErrorFilter::OutOfMemory, ErrorFilter::Internal];
+            for f in filters {
+                shared.device.push_error_scope(f);
+            }
+            let written = shared.write(display, generation, &plan, &data, row, width, height);
+            let pops: Vec<_> = filters.iter().map(|_| shared.device.pop_error_scope()).collect();
             let mut errors = Vec::new();
             for p in pops {
                 match p.await {
@@ -624,22 +782,32 @@ impl<A: Api, E: Embedder + 'static> Shared<A, E> {
         })
     }
 
-    /// Configure the display's target when the plan changed, write the frame into it and present it.
-    fn write(&self, c: &Checked, data: &[u8]) -> Result<(), PresentFailure> {
+    /// Configure the display's target when the plan changed, write the frame (rows of `row` bytes) into it and present
+    /// it.
+    #[allow(clippy::too_many_arguments)]
+    fn write(
+        &self,
+        display: u32,
+        generation: u64,
+        plan: &CanvasPlan,
+        data: &[u8],
+        row: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(), PresentFailure> {
         let mut d = self
-            .display(c.display, c.generation)
-            .ok_or_else(|| PresentFailure::invalid(format!("display {} was detached", c.display)))?;
-        if d.configured.as_ref() != Some(&c.plan) {
+            .display(display, generation)
+            .ok_or_else(|| PresentFailure::invalid(format!("display {display} was detached")))?;
+        if d.configured.as_ref() != Some(plan) {
             d.configured = None;
-            d.target.configure(&c.plan.configuration::<A>(&self.device)).map_err(|e| {
-                PresentFailure::host(HOST_CANVAS, format!("configure() of display {} threw {e}", c.display))
+            d.target.configure(&plan.configuration::<A>(&self.device)).map_err(|e| {
+                PresentFailure::host(HOST_CANVAS, format!("configure() of display {display} threw {e}"))
             })?;
-            d.configured = Some(c.plan.clone());
+            d.configured = Some(plan.clone());
         }
-        let row = (c.source.width * c.format.bytes_per_pixel) as u32;
         d.target
-            .write_frame(&self.queue, data, row, c.source.width as u32, c.source.height as u32)
-            .map_err(|e| PresentFailure::defect(format!("writing the frame of display {} threw {e}", c.display)))?;
-        d.target.present().map_err(|e| PresentFailure::defect(format!("presenting display {} threw {e}", c.display)))
+            .write_frame(&self.queue, data, row, width, height)
+            .map_err(|e| PresentFailure::defect(format!("writing the frame of display {display} threw {e}")))?;
+        d.target.present().map_err(|e| PresentFailure::defect(format!("presenting display {display} threw {e}")))
     }
 }

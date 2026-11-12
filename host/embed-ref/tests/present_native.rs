@@ -20,8 +20,9 @@ use webmetal_host::present::format::{code, fourcc};
 use webmetal_host::present::{DisplayColorSpace, DisplayMode, Offscreen, Target};
 use webmetal_wire::*;
 
-/// The panel mode of J120 named in plan section 6.8 (the value itself is K3's to read from the DeviceTree).
-const PANEL: (u32, u32) = (2224, 1668);
+/// A display of J120's panel size. J120 (iPad7,1) is the 12.9-inch iPad Pro, whose DeviceTree product node reports
+/// `artwork-device-subtype` 2732, the panel's long side; the mode itself is the display model's (K3).
+const PANEL: (u32, u32) = (2732, 2048);
 
 fn drawing_buffer(h: &H, display: u32) -> Vec<u8> {
     h.block_on(h.host.target(display).unwrap().drawing_buffer()).unwrap().expect("configured")
@@ -328,9 +329,6 @@ fn every_frame_that_cannot_be_shown_exactly_is_refused() {
     let mut r = frame(0, 1, 0, 0, 16, 8);
     r.frame.target_rect = rect(1, 0, 16, 8);
     assert_eq!(refused(&h, r), (Some("present-partial-frame"), status::UNIMPLEMENTED));
-    let mut r = frame(0, 1, 0, 0, 16, 8);
-    r.frame.source = PresentSource::Texture { task: TaskId(1), texture: Handle::new(5).unwrap() };
-    assert_eq!(refused(&h, r), (Some("present-texture-source"), status::UNIMPLEMENTED));
 
     // A display color space no PredefinedColorSpace value denotes.
     let other = DisplayMode {
@@ -352,6 +350,9 @@ fn every_frame_that_cannot_be_shown_exactly_is_refused() {
     assert_eq!(refused(&h, frame(0, 77, 0, 0, 16, 8)), (None, status::INVALID), "unknown surface");
     assert_eq!(refused(&h, frame(0, 1, 1, 0, 16, 8)), (None, status::INVALID), "outside the plane");
     assert_eq!(refused(&h, frame(0, 1, -1, 0, 16, 8)), (None, status::INVALID), "negative origin");
+    let mut r = frame(0, 1, 0, 0, 16, 8);
+    r.frame.source = PresentSource::Texture { task: TaskId(1), texture: Handle::new(5).unwrap() };
+    assert_eq!(refused(&h, r), (None, status::INVALID), "a handle that names no object");
     let mut r = frame(0, 1, 0, 0, 16, 8);
     r.frame.source = PresentSource::Surface { id: SurfaceId(1), plane: 1 };
     assert_eq!(refused(&h, r), (None, status::INVALID), "plane of a surface without planes");
@@ -503,4 +504,193 @@ fn frames_of_a_detached_display_fail_and_a_new_attachment_starts_afresh() {
     let f = h.block_on(old).unwrap_err();
     assert_eq!((f.refusal, f.failure.status), (None, status::INVALID), "{f:?}");
     assert_eq!(h.host.embedder.shown().len(), 1);
+}
+
+/// A texture of the task, filled from a buffer by a committed blit.
+fn filled_texture(h: &H, q: Handle, d: TextureDescriptor, bytes: &[u8], bytes_per_row: u64) -> Handle {
+    let t = h.handle();
+    h.ok(&Request::CreateTexture(CreateTexture { texture: t, descriptor: d.clone() }));
+    let addr = h.alloc(bytes.len() as u64);
+    h.host.embedder.cpu_write(TASK, addr, bytes).unwrap();
+    let b = h.handle();
+    h.ok(&Request::CreateBuffer(CreateBuffer {
+        buffer: b,
+        length: bytes.len() as u64,
+        options: 0,
+        contents: GuestAddr(addr),
+    }));
+    let e = h.handle();
+    submit(
+        h,
+        q,
+        &[
+            Command::BeginBlit(BeginBlit { encoder: e }),
+            Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+                source_buffer: Some(b),
+                source_offset: 0,
+                source_bytes_per_row: bytes_per_row,
+                source_bytes_per_image: bytes_per_row * d.height,
+                source_size: Size { width: d.width, height: d.height, depth: 1 },
+                destination_texture: Some(t),
+                destination_slice: 0,
+                destination_level: 0,
+                destination_origin: Origin { x: 0, y: 0, z: 0 },
+            }),
+            end(),
+        ],
+    );
+    t
+}
+
+fn texture_frame(
+    display: u32,
+    texture: Handle,
+    x: i64,
+    y: i64,
+    w: u64,
+    ht: u64,
+) -> webmetal_host::present::SwapRequest {
+    let mut r = frame(display, 0, x, y, w, ht);
+    r.frame.source = PresentSource::Texture { task: TASK, texture };
+    r
+}
+
+#[test]
+fn frames_of_a_task_texture_show_its_texels_exactly() {
+    let h = H::new();
+    h.open();
+    let q = h.queue();
+    // Private BGRA8Unorm and RGBA8Unorm_sRGB textures written by blits that are still in flight when the frames are
+    // requested: each frame waits for the blit that writes its texture.
+    let bgra = pattern(40 * 24 * 4, 21);
+    let t = filled_texture(&h, q, texture_descriptor(BGRA8_UNORM, 40, 24, 2, 0x5), &bgra, 160);
+    h.host.attach_offscreen(0, srgb(40, 24)).unwrap();
+    let p = h.block_on(h.host.presenter.present(texture_frame(0, t, 0, 0, 40, 24))).unwrap();
+    assert_eq!(p.plan.format, TextureFormat::Bgra8unorm);
+    assert!(drawing_buffer(&h, 0) == bgra);
+    h.host.attach_offscreen(1, srgb(16, 8)).unwrap();
+    h.block_on(h.host.presenter.present(texture_frame(1, t, 3, 5, 16, 8))).unwrap();
+    assert!(drawing_buffer(&h, 1) == rows(&bgra, 160, 3, 5, 16, 8));
+
+    let rgba = pattern(40 * 24 * 4, 22);
+    let u = filled_texture(&h, q, texture_descriptor(71, 40, 24, 2, 0x5), &rgba, 160);
+    let p = h.block_on(h.host.presenter.present(texture_frame(0, u, 0, 0, 40, 24))).unwrap();
+    assert_eq!(p.plan.format, TextureFormat::Rgba8unorm);
+    assert!(drawing_buffer(&h, 0) == rgba);
+
+    // A texture over an IOSurface plane is shown from the plane's memory.
+    let (_, d) = drawable(&h, 9);
+    let cpu = pattern(320 * 32, 23);
+    h.host.embedder.surface_cpu_write(SurfaceId(9), 0, &cpu).unwrap();
+    h.host.attach_offscreen(2, srgb(64, 32)).unwrap();
+    h.block_on(h.host.presenter.present(texture_frame(2, d, 0, 0, 64, 32))).unwrap();
+    assert!(drawing_buffer(&h, 2) == rows(&cpu, 320, 0, 0, 64, 32));
+
+    // Textures the sink does not show exactly, and objects that are no frame.
+    for (format, id) in
+        [(94, "present-10-bit-unorm"), (115, "present-half-float"), (10, "present-texture-pixel-format")]
+    {
+        let v = h.handle();
+        h.ok(&Request::CreateTexture(CreateTexture {
+            texture: v,
+            descriptor: texture_descriptor(format, 16, 8, 2, 0x5),
+        }));
+        assert_eq!(refused(&h, texture_frame(1, v, 0, 0, 16, 8)), (Some(id), status::UNIMPLEMENTED), "{format}");
+    }
+    let mut array = texture_descriptor(BGRA8_UNORM, 16, 8, 2, 0x5);
+    array.texture_type = 3;
+    array.array_length = 2;
+    let a = h.handle();
+    h.ok(&Request::CreateTexture(CreateTexture { texture: a, descriptor: array }));
+    assert_eq!(refused(&h, texture_frame(1, a, 0, 0, 16, 8)), (None, status::INVALID), "a 2D array texture");
+    let b = h.handle();
+    let addr = h.alloc(64);
+    h.ok(&Request::CreateBuffer(CreateBuffer { buffer: b, length: 64, options: 0, contents: GuestAddr(addr) }));
+    assert_eq!(refused(&h, texture_frame(1, b, 0, 0, 16, 8)), (None, status::INVALID), "a buffer");
+    assert_eq!(refused(&h, texture_frame(1, t, 30, 20, 16, 8)), (None, status::INVALID), "outside the texture");
+}
+
+#[test]
+fn a_frame_waits_only_for_the_work_that_can_write_its_source() {
+    let h = H::new();
+    h.open();
+    let (_, drawable_texture) = drawable(&h, 1);
+    h.host.attach_offscreen(0, srgb(64, 32)).unwrap();
+    let event = h.handle();
+    h.ok(&Request::CreateEvent(CreateEvent { event }));
+    let wait = || Command::EncodeWaitForEvent(EncodeWaitForEvent { event: Some(event), value: 1 });
+    let blit_into = |t: Handle, bytes: &[u8]| {
+        let addr = h.alloc(bytes.len() as u64);
+        h.host.embedder.cpu_write(TASK, addr, bytes).unwrap();
+        let b = h.handle();
+        h.ok(&Request::CreateBuffer(CreateBuffer {
+            buffer: b,
+            length: bytes.len() as u64,
+            options: 0,
+            contents: GuestAddr(addr),
+        }));
+        let e = h.handle();
+        vec![
+            Command::BeginBlit(BeginBlit { encoder: e }),
+            Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+                source_buffer: Some(b),
+                source_offset: 0,
+                source_bytes_per_row: 256,
+                source_bytes_per_image: 256 * 32,
+                source_size: Size { width: 64, height: 32, depth: 1 },
+                destination_texture: Some(t),
+                destination_slice: 0,
+                destination_level: 0,
+                destination_origin: Origin { x: 0, y: 0, z: 0 },
+            }),
+            end(),
+        ]
+    };
+
+    // A queue held by an event no one has signalled, about to write another texture and to bind a read-only texture
+    // over the drawable's surface (a shader cannot write it: its usage lacks ShaderWrite), holds no frame of the
+    // drawable.
+    let other = h.handle();
+    h.ok(&Request::CreateTexture(CreateTexture {
+        texture: other,
+        descriptor: texture_descriptor(BGRA8_UNORM, 64, 32, 2, 0x5),
+    }));
+    let read_only = h.handle();
+    h.ok(&Request::CreateTextureWithIOSurface(CreateTextureWithIOSurface {
+        texture: read_only,
+        descriptor: texture_descriptor(BGRA8_UNORM, 64, 32, 0, 0x1),
+        iosurface: SurfaceId(1),
+        plane: 0,
+    }));
+    let held = h.queue();
+    let mut records = vec![wait()];
+    records.extend(blit_into(other, &pattern(64 * 32 * 4, 31)));
+    let e = h.handle();
+    records.extend([
+        Command::BeginCompute(BeginCompute { encoder: e }),
+        Command::ComputeSetTexture(ComputeSetTexture { texture: Some(read_only), index: 0 }),
+        end(),
+    ]);
+    submit(&h, held, &records);
+    let first = pattern(320 * 32, 32);
+    h.host.embedder.surface_cpu_write(SurfaceId(1), 0, &first).unwrap();
+    h.block_on(h.host.presenter.present(frame(0, 1, 0, 0, 64, 32))).unwrap();
+    assert!(drawing_buffer(&h, 0) == rows(&first, 320, 0, 0, 64, 32));
+
+    // A command buffer held by the same event that writes the drawable holds the next frame until it runs.
+    let writer = h.queue();
+    let second = pattern(64 * 32 * 4, 33);
+    let mut records = vec![wait()];
+    records.extend(blit_into(drawable_texture, &second));
+    submit(&h, writer, &records);
+    let mut f = h.host.presenter.present(frame(0, 1, 0, 0, 64, 32));
+    for _ in 0..20 {
+        assert!(poll_once(f.as_mut()).is_pending());
+        h.gpu.process_events();
+    }
+    assert_eq!(h.host.embedder.shown().len(), 1);
+    let signaller = h.queue();
+    submit(&h, signaller, &[Command::EncodeSignalEvent(EncodeSignalEvent { event: Some(event), value: 1 })]);
+    h.block_on(f).unwrap();
+    assert!(drawing_buffer(&h, 0) == second);
 }

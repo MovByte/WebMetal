@@ -16,6 +16,11 @@
 //! Both are shown exactly: the canvas texel holds the pixel's four 8-bit codes, unchanged, in the canvas format's
 //! order, and WebGPU's texel copies keep every bit of the non-packed unorm formats (WebGPU #texel-copies). Every other
 //! code is refused, with the reason below; none is approximated.
+//!
+//! A frame can also name a task's texture; its format is then the texture's `MTLPixelFormat` ([`texture_format`]):
+//! `BGRA8Unorm` and `RGBA8Unorm` and their sRGB variants, whose texels are the 8-bit codes in the order of
+//! `bgra8unorm` and `rgba8unorm` (`MTLPixelFormat.h`). An sRGB variant stores the same codes; only a shader's read and
+//! write convert them.
 
 use crate::format::handling::Refusal;
 use crate::gpu::idl::TextureFormat;
@@ -70,9 +75,9 @@ pub enum Texels {
 /// A framebuffer pixel format the sink shows exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FramebufferFormat {
-    /// The four-character code.
+    /// The surface's four-character code, or the texture's `MTLPixelFormat`.
     pub code: u32,
-    /// The `kCVPixelFormatType_*` name.
+    /// The `kCVPixelFormatType_*` or `MTLPixelFormat*` name.
     pub name: &'static str,
     /// Bytes of one pixel (`IOSurfaceGetBytesPerElement` of a surface in this format, whose elements are one pixel).
     pub bytes_per_pixel: u64,
@@ -170,6 +175,75 @@ pub fn framebuffer_format(code: u32) -> Result<FramebufferFormat, Refusal> {
         code::RGBA_64_HALF => HALF_FLOAT,
         code::ABGR_32 | code::RGBA_32 => UNDESCRIBED_LAYOUT,
         _ => NOT_A_FRAMEBUFFER_FORMAT,
+    })
+}
+
+/// `MTLPixelFormat` values (`MTLPixelFormat.h`, iPhoneOS SDK).
+pub mod mtl {
+    pub const RGBA8_UNORM: u32 = 70;
+    pub const RGBA8_UNORM_SRGB: u32 = 71;
+    pub const BGRA8_UNORM: u32 = 80;
+    pub const BGRA8_UNORM_SRGB: u32 = 81;
+    pub const RGB10A2_UNORM: u32 = 90;
+    pub const BGR10A2_UNORM: u32 = 94;
+    pub const RGBA16_FLOAT: u32 = 115;
+    pub const BGRA10_XR: u32 = 552;
+    pub const BGRA10_XR_SRGB: u32 = 553;
+    pub const BGR10_XR: u32 = 554;
+    pub const BGR10_XR_SRGB: u32 = 555;
+}
+
+/// The texture formats the sink shows.
+pub const SHOWN_TEXTURES: [FramebufferFormat; 4] = [
+    FramebufferFormat {
+        code: mtl::BGRA8_UNORM,
+        name: "MTLPixelFormatBGRA8Unorm",
+        bytes_per_pixel: 4,
+        canvas: TextureFormat::Bgra8unorm,
+        texels: Texels::Same,
+    },
+    FramebufferFormat {
+        code: mtl::BGRA8_UNORM_SRGB,
+        name: "MTLPixelFormatBGRA8Unorm_sRGB",
+        bytes_per_pixel: 4,
+        canvas: TextureFormat::Bgra8unorm,
+        texels: Texels::Same,
+    },
+    FramebufferFormat {
+        code: mtl::RGBA8_UNORM,
+        name: "MTLPixelFormatRGBA8Unorm",
+        bytes_per_pixel: 4,
+        canvas: TextureFormat::Rgba8unorm,
+        texels: Texels::Same,
+    },
+    FramebufferFormat {
+        code: mtl::RGBA8_UNORM_SRGB,
+        name: "MTLPixelFormatRGBA8Unorm_sRGB",
+        bytes_per_pixel: 4,
+        canvas: TextureFormat::Rgba8unorm,
+        texels: Texels::Same,
+    },
+];
+
+/// A texture in any other pixel format.
+pub const NOT_A_FRAMEBUFFER_TEXTURE: Refusal = Refusal {
+    id: "present-texture-pixel-format",
+    reason: "The texture's pixel format is not one the presentation sink shows exactly: only BGRA8Unorm and RGBA8Unorm \
+             textures and their sRGB variants are shown.",
+    source: "host/src/present/format.rs",
+};
+
+/// The format of a frame shown from a texture whose `MTLPixelFormat` is `pixel_format`, or why the sink does not show
+/// it.
+pub fn texture_format(pixel_format: u32) -> Result<FramebufferFormat, Refusal> {
+    if let Some(f) = SHOWN_TEXTURES.iter().find(|f| f.code == pixel_format) {
+        return Ok(*f);
+    }
+    Err(match pixel_format {
+        mtl::RGB10A2_UNORM | mtl::BGR10A2_UNORM => TEN_BIT_UNORM,
+        mtl::BGRA10_XR | mtl::BGRA10_XR_SRGB | mtl::BGR10_XR | mtl::BGR10_XR_SRGB => EXTENDED_RANGE,
+        mtl::RGBA16_FLOAT => HALF_FLOAT,
+        _ => NOT_A_FRAMEBUFFER_TEXTURE,
     })
 }
 
@@ -278,6 +352,32 @@ mod tests {
         assert!(binary16_exact(65504, 1));
         assert!(!binary16_exact(65536, 1));
         assert!(!binary16_exact(1, 3));
+    }
+
+    #[test]
+    fn texture_formats() {
+        for (v, canvas) in [
+            (80, TextureFormat::Bgra8unorm),
+            (81, TextureFormat::Bgra8unorm),
+            (70, TextureFormat::Rgba8unorm),
+            (71, TextureFormat::Rgba8unorm),
+        ] {
+            let f = texture_format(v).unwrap();
+            assert_eq!((f.canvas, f.texels, f.bytes_per_pixel), (canvas, Texels::Same, 4));
+        }
+        for (v, id) in [
+            (90, "present-10-bit-unorm"),
+            (94, "present-10-bit-unorm"),
+            (552, "present-extended-range"),
+            (553, "present-extended-range"),
+            (554, "present-extended-range"),
+            (555, "present-extended-range"),
+            (115, "present-half-float"),
+            (10, "present-texture-pixel-format"),
+            (252, "present-texture-pixel-format"),
+        ] {
+            assert_eq!(texture_format(v).map_err(|r| r.id), Err(id), "{v}");
+        }
     }
 
     #[test]

@@ -9,8 +9,9 @@ use std::rc::Rc;
 
 use crate::gpu::idl::{
     BufferDescriptor, BufferUsage, CanvasAlphaMode, CanvasConfiguration, CanvasToneMappingMode,
-    CommandBufferDescriptor, CommandEncoderDescriptor, ErrorFilter, Extent3D, Extent3DDict, MapMode,
-    TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureDescriptor, TextureFormat, TextureUsage,
+    CommandBufferDescriptor, CommandEncoderDescriptor, ErrorFilter, Extent3D, Extent3DDict, MapMode, Origin3D,
+    Origin3DDict, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureDescriptor, TextureFormat,
+    TextureUsage,
 };
 use crate::gpu::tables::format_required_feature;
 use crate::gpu::{
@@ -120,10 +121,13 @@ pub struct Snapshot {
     pub bytes: Vec<u8>,
 }
 
-/// Bytes of one texel of a supported context format.
+/// Bytes of one texel of a supported context format or of an sRGB view format of one.
 pub fn texel_bytes(format: TextureFormat) -> u32 {
     match format {
-        TextureFormat::Bgra8unorm | TextureFormat::Rgba8unorm => 4,
+        TextureFormat::Bgra8unorm
+        | TextureFormat::Bgra8unormSrgb
+        | TextureFormat::Rgba8unorm
+        | TextureFormat::Rgba8unormSrgb => 4,
         TextureFormat::Rgba16float => 8,
         _ => unreachable!("not a supported context format"),
     }
@@ -183,7 +187,7 @@ impl<A: Api> Offscreen<A> {
         let (w, h) = (s.width, s.height);
         let n = (w as usize) * (h as usize) * texel_bytes(c.format) as usize;
         let Some(t) = s.drawing_buffer.clone() else { return Box::pin(async move { Ok(Some(vec![0; n])) }) };
-        let read = read_texture::<A>(&c.device, &t, c.format, w, h);
+        let read = read_texture::<A>(&c.device, &t, c.format, (0, 0), w, h);
         Box::pin(async move { read.await.map(Some) })
     }
 
@@ -370,11 +374,13 @@ impl<A: Api> Target<A> for Offscreen<A> {
     }
 }
 
-/// Read a `width` × `height` texture of a supported context format back as tight rows, under error scopes of its own.
+/// Read the `width` × `height` texels at `origin` of level 0 of a texture in a format of [`texel_bytes`] back as tight
+/// rows, under error scopes of its own.
 pub fn read_texture<A: Api>(
     device: &A::Device,
     texture: &A::Texture,
     format: TextureFormat,
+    origin: (u32, u32),
     width: u32,
     height: u32,
 ) -> GpuFuture<Result<Vec<u8>, String>> {
@@ -394,8 +400,10 @@ pub fn read_texture<A: Api>(
         let mut dst = TexelCopyBufferInfo::new(&buffer);
         dst.bytes_per_row = Some(pitch);
         dst.rows_per_image = Some(height);
+        let mut src = TexelCopyTextureInfo::new(texture);
+        src.origin = Origin3D::Origin3DDict(Origin3DDict { x: origin.0, y: origin.1, z: 0 });
         encoder.copy_texture_to_buffer(
-            &TexelCopyTextureInfo::new(texture),
+            &src,
             &dst,
             &Extent3D::Extent3DDict(Extent3DDict { width, height, depth_or_array_layers: 1 }),
         )?;
