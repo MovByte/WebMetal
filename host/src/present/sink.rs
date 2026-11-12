@@ -40,6 +40,7 @@ use crate::gpu::{Api, Device as _, DeviceLostInfo, GpuFuture};
 use crate::mem::layout::TextureType;
 use crate::mem::options::StorageMode;
 use crate::mem::texture::{Texture, idl_format, usage};
+use crate::mem::view::TextureView;
 
 use super::canvas::{self, CanvasPlan, DisplayMode, PlanError};
 use super::format::{FramebufferFormat, code_name, framebuffer_format, texture_format};
@@ -105,6 +106,10 @@ impl PresentFailure {
 
     fn invalid(message: impl Into<String>) -> PresentFailure {
         PresentFailure { refusal: None, failure: failure::invalid(message) }
+    }
+
+    fn unimplemented(message: impl Into<String>) -> PresentFailure {
+        PresentFailure { refusal: None, failure: failure::unimplemented(message) }
     }
 
     fn defect(message: impl Into<String>) -> PresentFailure {
@@ -233,12 +238,19 @@ fn can_write<A: Api>(t: &Texture<A>, how: TextureWrite) -> bool {
 
 /// Whether the committed command buffer `info` can write what a frame shows. A handle its records name in a writing
 /// position that no longer resolves (the guest released it after the commit) may have been the source, so it counts.
+/// A texture view writes its root texture's storage, so a view of the shown texture counts as the texture.
 fn writes_shown<A: Api>(info: &CommitInfo, table: &Table, shown: Shown) -> bool {
     if let Shown::Texture(task, _) = shown
         && info.task != task
     {
         return false;
     }
+    let shown_texture = match shown {
+        Shown::Texture(_, handle) => {
+            table.get(handle).and_then(|e| e.payload.clone()).and_then(|p| p.downcast::<Texture<A>>().ok())
+        }
+        Shown::Plane(..) => None,
+    };
     let mut hit = false;
     for (_, record) in info.records.iter() {
         texture_writes(record, &mut |h, how| {
@@ -249,10 +261,17 @@ fn writes_shown<A: Api>(info: &CommitInfo, table: &Table, shown: Shown) -> bool 
                 hit = true;
                 return;
             };
-            let Some(t) = entry.payload.clone().and_then(|p| p.downcast::<Texture<A>>().ok()) else { return };
+            let Some(p) = entry.payload.clone() else { return };
+            let t = match p.downcast::<Texture<A>>() {
+                Ok(t) => t,
+                Err(p) => match p.downcast::<TextureView<A>>() {
+                    Ok(v) => v.root.clone(),
+                    Err(_) => return,
+                },
+            };
             let target = match shown {
                 Shown::Plane(id, plane) => t.surface.as_ref().is_some_and(|p| p.id == id && p.plane == plane),
-                Shown::Texture(_, handle) => h == handle,
+                Shown::Texture(_, handle) => h == handle || shown_texture.as_ref().is_some_and(|s| Rc::ptr_eq(s, &t)),
             };
             hit = target && can_write(&t, how);
         });
@@ -502,6 +521,11 @@ impl<A: Api, E: Embedder + 'static> Presenter<A, E> {
             .exec
             .object(task, handle)
             .ok_or_else(|| PresentFailure::invalid(format!("{what} is not a live object")))?;
+        if entry.kind == Kind::Texture && entry.payload.as_ref().is_some_and(|p| p.is::<TextureView<A>>()) {
+            return Err(PresentFailure::unimplemented(format!(
+                "{what} is a texture view; frames are shown from textures and IOSurface planes"
+            )));
+        }
         let t = (entry.kind == Kind::Texture)
             .then(|| entry.payload.clone().and_then(|p| p.downcast::<Texture<A>>().ok()))
             .flatten()
