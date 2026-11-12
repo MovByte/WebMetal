@@ -223,4 +223,63 @@ mod tests {
         assert!(!Depth32floatStencil8.texel_copy_exact(Some(Aspect::Depth)));
         assert!(!Depth24plus.texel_copy_exact(None));
     }
+
+    /// The generated table against its sources, read without a TOML parser: the generator's output must not drift
+    /// from tables/formats.toml or the device profile.
+    #[test]
+    fn generated_table_matches_its_sources() {
+        use super::super::table::{A10X_FORMATS, METAL_FORMATS};
+        use super::super::testdata::repo_path;
+        fn quoted(line: &str, key: &str) -> Option<String> {
+            line.strip_prefix(&format!("{key} = \"")).map(|r| r.trim_end_matches('"').to_string())
+        }
+        let toml = std::fs::read_to_string(repo_path("tables/formats.toml")).unwrap();
+        let mut metal = Vec::new();
+        let mut webgpu = Vec::new();
+        for block in toml.split("\n[[").skip(1) {
+            let mut lines = block.lines();
+            let kind = lines.next().unwrap();
+            let fields: Vec<&str> = lines.take_while(|l| !l.starts_with("cite")).collect();
+            let get = |key: &str| fields.iter().find_map(|l| quoted(l, key));
+            match kind {
+                "metal_pixel_format]]" => {
+                    let value: u32 = fields.iter().find_map(|l| l.strip_prefix("value = ")).unwrap().parse().unwrap();
+                    metal.push((value, get("name").unwrap(), get("class").unwrap(), get("webgpu"), get("plan_row")));
+                }
+                "webgpu_texture_format]]" => webgpu.push(get("name").unwrap()),
+                _ => {}
+            }
+        }
+        metal.sort_by_key(|m| m.0);
+        assert_eq!(metal.len(), METAL_FORMATS.len());
+        for (m, r) in metal.iter().zip(METAL_FORMATS.iter()) {
+            assert_eq!((m.0, m.1.as_str()), (r.value, r.name));
+            assert_eq!(m.3.as_deref(), r.webgpu.map(WebGpuFormat::name), "{}", r.name);
+            assert_eq!(m.4.as_deref(), r.plan_row, "{}", r.name);
+            let class = format!("{:?}", r.class);
+            let expect = match m.2.as_str() {
+                "same-format" => "SameFormat",
+                "no-counterpart" => "NoCounterpart",
+                "not-in-ios-17.7" => "NotInIos17_7",
+                "sentinel" => "Sentinel",
+                "stencil-aspect-view" => "StencilAspectView",
+                other => panic!("class {other}"),
+            };
+            assert_eq!(class, expect, "{}", r.name);
+        }
+        assert_eq!(webgpu, WebGpuFormat::ALL.iter().map(|f| f.name().to_string()).collect::<Vec<_>>());
+
+        let profile = std::fs::read_to_string(repo_path("profile/ipados-17.7.11-21H461-a10x.toml")).unwrap();
+        let mut records = Vec::new();
+        let mut current = None;
+        for line in profile.lines() {
+            if let Some(rest) = line.strip_prefix("[pixel_formats.") {
+                current = Some(rest.split(']').next().unwrap().parse::<u32>().unwrap());
+            } else if let (Some(v), Some(w)) = (current, line.strip_prefix("word_08 = 0x")) {
+                records.push((v, u32::from_str_radix(w.split_whitespace().next().unwrap(), 16).unwrap()));
+                current = None;
+            }
+        }
+        assert_eq!(records, A10X_FORMATS.iter().map(|r| (r.value, r.word_08)).collect::<Vec<_>>());
+    }
 }
