@@ -1144,6 +1144,20 @@ inline constexpr DriverSelector kAGXA10FamilyBinaryArchiveDriver[] = {
     {SelectorKind::Instance, "addTileRenderPipelineFunctionsWithDescriptor:options:error:", "B40@0:8@16Q24^@32", "agx", ""},
 };
 
+// Driver-layer selectors of AGXTextureLayout -> IOGPUMetalTextureLayout.
+inline constexpr DriverSelector kAGXTextureLayoutDriver[] = {
+    {SelectorKind::Instance, "alignment", "Q16@0:8", "agx", ""},
+    {SelectorKind::Instance, "copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:", "v120@0:8r^v16Q24Q32Q40^v48Q56Q64{?={?=QQQ}{?=QQQ}}72", "agx", ""},
+    {SelectorKind::Instance, "copyFromTextureMemory:textureSlice:textureLevel:textureRegion:toLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:", "v120@0:8r^v16Q24Q32{?={?=QQQ}{?=QQQ}}40^v88Q96Q104Q112", "agx", ""},
+    {SelectorKind::Instance, "copyGranularity", "{?=QQQ}16@0:8", "agx", ""},
+    {SelectorKind::Instance, "finalizeTextureMemory:", "v24@0:8^v16", "agx", ""},
+    {SelectorKind::Instance, "initWithDevice:descriptor:", "@32@0:8@16@24", "iogpu", ""},
+    {SelectorKind::Instance, "initWithDevice:descriptor:isHeapOrBufferBacked:", "@36@0:8@16@24B32", "agx", ""},
+    {SelectorKind::Instance, "initializeTextureMemory:", "v24@0:8^v16", "agx", ""},
+    {SelectorKind::Instance, "size", "Q16@0:8", "agx", ""},
+    {SelectorKind::Instance, "watermark", "{?=[2Q]}16@0:8", "agx", ""},
+};
+
 inline constexpr Role kRoles[] = {
     {"WebMetalDevice", "AGXA10XDevice", "_MTLDevice", kAGXA10XDeviceDriver, 264},
     {"WebMetalBuffer", "AGXA10FamilyBuffer", "_MTLResource", kAGXA10FamilyBufferDriver, 75},
@@ -1161,6 +1175,7 @@ inline constexpr Role kRoles[] = {
     {"WebMetalRenderPipelineState", "AGXA10FamilyRenderPipeline", "_MTLRenderPipelineState", kAGXA10FamilyRenderPipelineDriver, 37},
     {"WebMetalArgumentEncoder", "AGXA10FamilyIndirectArgumentEncoder", "_MTLIndirectArgumentEncoder", kAGXA10FamilyIndirectArgumentEncoderDriver, 30},
     {"WebMetalBinaryArchive", "AGXA10FamilyBinaryArchive", "_MTLBinaryArchive", kAGXA10FamilyBinaryArchiveDriver, 6},
+    {"WebMetalTextureLayout", "AGXTextureLayout", "NSObject", kAGXTextureLayoutDriver, 10},
 };
 
 inline constexpr BaseIvar k_MTLAccelerationStructureCommandEncoderIvars[] = {

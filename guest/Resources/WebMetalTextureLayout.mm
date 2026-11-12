@@ -888,8 +888,8 @@ LayoutResult textureLayout(const DescriptorFields &d, bool heapOrBufferBacked, c
     a.compressedBacking = false;
     a.heapOrBufferBacked = heapOrBufferBacked;
     TextureGen2 t = construct(a, system);
-    if (!t.valid) return {false, 0, 0};
-    return {true, t.size + 0x10, textureAlignment(t)};
+    if (!t.valid) return {false, 0, 0, 0, 0, 0};
+    return {true, t.size + 0x10, textureAlignment(t), t.size, t.blockWidth, t.blockHeight};
 }
 
 }  // namespace webmetal::agx

@@ -140,7 +140,7 @@ ResourceState *TextureState(WebMetalTexture *texture)
 
 // What the AGX layout reads besides the descriptor: the page size, and the IOSurface offset alignment that
 // AGX::Texture's constructor keeps in a static local (IOSurfaceAlignProperty(kIOSurfaceOffset, 1)).
-static agx::SystemValues layoutSystem()
+agx::SystemValues LayoutSystemValues()
 {
     static const agx::SystemValues values = [] {
         agx::SystemValues v;
@@ -152,7 +152,7 @@ static agx::SystemValues layoutSystem()
 }
 
 // The MTLTextureDescriptorPrivate fields the driver's layout callers read.
-static agx::DescriptorFields layoutFields(const wire::TextureDescriptor &d)
+agx::DescriptorFields LayoutDescriptorFields(const wire::TextureDescriptor &d)
 {
     agx::DescriptorFields f;
     f.textureType = d.textureType;
@@ -179,8 +179,8 @@ SizeAndAlign HeapTextureSizeAndAlign(WebMetalDevice *device, SEL _cmd, MTLTextur
 {
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return SizeAndAlign{0, 0};
-    const agx::SizeAndAlign sa =
-        agx::heapTextureSizeAndAlign(layoutFields(WireTextureDescriptor(device, _cmd, descriptor)), layoutSystem());
+    const agx::DescriptorFields fields = LayoutDescriptorFields(WireTextureDescriptor(device, _cmd, descriptor));
+    const agx::SizeAndAlign sa = agx::heapTextureSizeAndAlign(fields, LayoutSystemValues());
     return SizeAndAlign{sa.size, sa.align};
 }
 
@@ -255,7 +255,7 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
     const wire::TextureDescriptor d = WireTextureDescriptor(device, _cmd, descriptor);
-    const agx::TextureAllocation layout = agx::initImplDevice(layoutFields(d), layoutSystem());
+    const agx::TextureAllocation layout = agx::initImplDevice(LayoutDescriptorFields(d), LayoutSystemValues());
     if (!layout.initialized)
         return nil;
     WebMetalTexture *texture = newTextureObject(device, _cmd, d);
@@ -392,7 +392,7 @@ WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescript
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
     const wire::TextureDescriptor d = WireTextureDescriptor(heap, _cmd, descriptor);
-    const agx::TextureAllocation layout = agx::initImplHeap(layoutFields(d), layoutSystem());
+    const agx::TextureAllocation layout = agx::initImplHeap(LayoutDescriptorFields(d), LayoutSystemValues());
     if (!layout.initialized)
         return nil;
     if (d.storageMode == MTLStorageModeMemoryless)

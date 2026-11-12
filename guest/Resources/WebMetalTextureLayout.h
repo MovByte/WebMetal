@@ -245,6 +245,9 @@ struct LayoutResult {
     bool initialized;  // -[AGXTextureLayout initWithDevice:descriptor:isHeapOrBufferBacked:] returned an object
     uint64_t size;     // -[AGXTextureLayout size]
     uint64_t alignment;  // -[AGXTextureLayout alignment]
+    uint64_t total;      // this+0x158, where -finalizeTextureMemory: puts the watermark
+    uint32_t blockWidth;   // this+0xd0, -[AGXTextureLayout copyGranularity]
+    uint32_t blockHeight;  // this+0xd4
 };
 
 LayoutResult textureLayout(const DescriptorFields &d, bool heapOrBufferBacked,

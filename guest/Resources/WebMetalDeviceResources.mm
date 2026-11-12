@@ -102,6 +102,12 @@ id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, 
     return MTLSizeAndAlign{sa.size, sa.align};
 }
 
+// -[AGXA10FamilyDevice newTextureLayoutWithDescriptor:isHeapOrBufferBacked:] (AGXMetalA10 0x21c8d8fd4).
+- (id)newTextureLayoutWithDescriptor:(MTLTextureDescriptor *)descriptor isHeapOrBufferBacked:(BOOL)heapOrBufferBacked
+{
+    return webmetal::NewTextureLayout(self, _cmd, descriptor, heapOrBufferBacked);
+}
+
 // -[AGXA10FamilyDevice newDepthStencilStateWithDescriptor:] (AGXMetalA10 0x21c8d53e0).
 - (id<MTLDepthStencilState>)newDepthStencilStateWithDescriptor:(MTLDepthStencilDescriptor *)descriptor
 {

@@ -67,3 +67,7 @@ target = "AGXA10FamilyIndirectArgumentEncoder"
 [[class]]
 name = "WebMetalBinaryArchive"
 target = "AGXA10FamilyBinaryArchive"
+
+[[class]]
+name = "WebMetalTextureLayout"
+target = "AGXTextureLayout"

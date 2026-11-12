@@ -3,6 +3,7 @@
 #pragma once
 
 #import "WebMetalResources.h"
+#import "WebMetalTextureLayout.h"
 
 @interface WebMetalTexture : _MTLResource <MTLTexture, MTLTextureSPI, MTLTextureImplementation, MTLResourceSPI>
 @end
@@ -37,6 +38,14 @@ struct SizeAndAlign {
     uint64_t align;
 };
 SizeAndAlign HeapTextureSizeAndAlign(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor);
+
+// The inputs of the AGX layout port: the descriptor fields its callers read, and the running system's values.
+agx::DescriptorFields LayoutDescriptorFields(const wire::TextureDescriptor &d);
+agx::SystemValues LayoutSystemValues();
+
+// -[AGXA10FamilyDevice newTextureLayoutWithDescriptor:isHeapOrBufferBacked:] (AGXMetalA10 0x21c8d8fd4)
+// (WebMetalTextureLayoutObject.mm).
+id NewTextureLayout(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor, bool heapOrBufferBacked);
 
 // The wire form of a texture descriptor: every field the schema carries, read with the descriptor's own getters.
 wire::TextureDescriptor WireTextureDescriptor(id self, SEL _cmd, MTLTextureDescriptor *descriptor);
