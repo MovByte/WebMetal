@@ -41,6 +41,9 @@
 @interface _MTLAccelerationStructureCommandEncoder : _MTLCommandEncoder
 @end
 
+@interface _MTLFence : _MTLObjectWithLabel
+@end
+
 @interface _MTLResource : _MTLObjectWithLabel
 @end
 

@@ -15,3 +15,27 @@ target = "AGXA10FamilyBuffer"
 [[class]]
 name = "WebMetalTexture"
 target = "AGXA10FamilyTexture"
+
+[[class]]
+name = "WebMetalCommandQueue"
+target = "AGXA10FamilyCommandQueue"
+
+[[class]]
+name = "WebMetalCommandBuffer"
+target = "AGXA10FamilyCommandBuffer"
+
+[[class]]
+name = "WebMetalRenderCommandEncoder"
+target = "AGXA10FamilyRenderContext"
+
+[[class]]
+name = "WebMetalComputeCommandEncoder"
+target = "AGXA10FamilyComputeContext"
+
+[[class]]
+name = "WebMetalBlitCommandEncoder"
+target = "AGXA10FamilyBlitContext"
+
+[[class]]
+name = "WebMetalParallelRenderCommandEncoder"
+target = "AGXA10FamilyThreadedRenderPass"

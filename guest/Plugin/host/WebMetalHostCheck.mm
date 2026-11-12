@@ -321,15 +321,17 @@ void checkLoud(id device, const Shim &shim)
 {
     const size_t before = shim.reportCount();
     @try {
-        (void)[device newCommandQueue];
-        failure("-newCommandQueue returned instead of failing");
+        (void)[device newAccelerationStructureWithSize:64];
+        failure("-newAccelerationStructureWithSize: returned instead of failing");
     } @catch (NSException *exception) {
         if (![exception.name isEqualToString:@"WebMetalNotImplemented"] ||
-            ![exception.reason containsString:@"-[WebMetalDevice newCommandQueue]: not implemented"])
-            failure(std::string("-newCommandQueue raised ") + exception.name.UTF8String + ": " + exception.reason.UTF8String);
+            ![exception.reason containsString:@"-[WebMetalDevice newAccelerationStructureWithSize:]: not implemented"])
+            failure(std::string("-newAccelerationStructureWithSize: raised ") + exception.name.UTF8String + ": " +
+                    exception.reason.UTF8String);
     }
-    if (shim.reportCount() != before + 1 || lastReport(shim).find("-[WebMetalDevice newCommandQueue]") == std::string::npos)
-        failure("-newCommandQueue made no report: " + lastReport(shim));
+    if (shim.reportCount() != before + 1 ||
+        lastReport(shim).find("-[WebMetalDevice newAccelerationStructureWithSize:]") == std::string::npos)
+        failure("-newAccelerationStructureWithSize: made no report: " + lastReport(shim));
     @try {
         (void)[device supportsVertexAmplificationCount:17];
         failure("-supportsVertexAmplificationCount:17 answered outside the profiled arguments");
@@ -400,7 +402,7 @@ int main(int argc, char **argv)
             id<MTLDevice> device = shim.registerDevice(0x5e5e1000);
             if (!device)
                 return 3;
-            (void)[device newCommandQueue];
+            (void)[device newAccelerationStructureWithSize:64];
             printf("FAIL strict mode returned from a LOUD stub\n");
             return 1;
         }
