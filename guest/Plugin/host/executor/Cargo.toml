@@ -1,0 +1,19 @@
+[package]
+name = "webmetal-shim-executor"
+version = "0.1.0"
+description = "The WebMetal host executor inside the guest plugin's macOS test shim"
+edition = "2024"
+license = "BSD-2-Clause-Patent"
+publish = false
+
+# The shim links this library into libWebMetalHostShim.dylib (UniXNU scripts/build-web-metal-plugin.py).
+[lib]
+path = "lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+webmetal-host = { path = "../../../../host", features = ["native"] }
+webmetal-wire = { path = "../../../../wire" }
+
+# A test vehicle of the shim, not a member of the WebMetal workspace.
+[workspace]

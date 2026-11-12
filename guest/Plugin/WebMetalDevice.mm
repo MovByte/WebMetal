@@ -1,12 +1,16 @@
 // The Metal device of the WebMetal accelerator service (WebMetalDevice.h).
 
 #import "WebMetalDevice.h"
+#import "WebMetalConnection.h"
 #import "WebMetalReport.h"
 #import "WebMetalSurface.h"
+
+#import <objc/message.h>
 
 #include <dispatch/dispatch.h>
 
 #include <cstdio>
+#include <memory>
 #include <string>
 
 // The class adopts MTLDevice and MTLDeviceSPI as AGXA10XDevice does and implements only what the 21H461 driver layers
@@ -41,10 +45,27 @@ bool prepareClasses()
 
 }  // namespace
 
-@implementation WebMetalDevice {
+@interface WebMetalDevice () {
+@public
     io_service_t _acceleratorPort;
     uint64_t _registryID;
+    // The connection to the accelerator service (WebMetalConnection.h).
+    std::unique_ptr<webmetal::Connection> _connection;
+    // IOGPUMetalDevice._deviceWrapper: the object Metal.framework wraps the device in (its debug layer), held weakly.
+    __weak id _deviceWrapper;
 }
+@end
+
+namespace webmetal {
+
+Connection *DeviceConnection(WebMetalDevice *device)
+{
+    return device->_connection.get();
+}
+
+}  // namespace webmetal
+
+@implementation WebMetalDevice
 
 // -[IOGPUMetalDevice initWithAcceleratorPort:options:] on 21H461 initializes _MTLDevice, opens the kernel's GPU
 // device, then keeps the service's registry entry ID and a reference to the service.
@@ -65,9 +86,16 @@ bool prepareClasses()
         WMReport("-[WebMetalDevice initWithAcceleratorPort:]", text);
         return nil;
     }
+    std::string problem;
+    std::unique_ptr<webmetal::Connection> connection = webmetal::Connection::Open(service, &problem);
+    if (!connection) {
+        WMReport("-[WebMetalDevice initWithAcceleratorPort:]", ("refused: " + problem).c_str());
+        return nil;
+    }
     IOObjectRetain(service);
     _acceleratorPort = service;
     _registryID = registryID;
+    _connection = std::move(connection);
     return self;
 }
 
@@ -85,6 +113,22 @@ bool prepareClasses()
 - (uint64_t)registryID
 {
     return _registryID;
+}
+
+// -[IOGPUMetalDevice _setDeviceWrapper:] (IOGPU 0x1fcb35bb0): stores the wrapper weakly.
+- (void)_setDeviceWrapper:(id)wrapper
+{
+    _deviceWrapper = wrapper;
+}
+
+// -[IOGPUMetalDevice _deviceWrapper] (IOGPU 0x1fcb35bc4): the wrapper's own outermost wrapper, or the device itself when
+// nothing wraps it.
+- (id)_deviceWrapper
+{
+    id wrapper = _deviceWrapper;
+    if (wrapper)
+        return ((id(*)(id, SEL))objc_msgSend)(wrapper, _cmd);
+    return self;
 }
 
 // -[AGXA10FamilyDevice minimumTextureBufferAlignmentForPixelFormat:] (0x21c8db1f4 on 21H461) is a tail call to

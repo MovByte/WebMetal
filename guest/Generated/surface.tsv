@@ -2508,12 +2508,12 @@ AGXA10XDevice	instance	GPUBVHBuilder	MTLDeviceSPI	framework	framework	WebMetalDe
 AGXA10XDevice	instance	_addResource:	-	iogpu	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	_decrementCommandQueueCount	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	_deregisterForSignpostEnablement	-	agx	driver	WebMetalDevice	loud
-AGXA10XDevice	instance	_deviceWrapper	MTLDeviceSPI	iogpu	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	_deviceWrapper	MTLDeviceSPI	iogpu	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	_incrementCommandQueueCount	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	_purgeDevice	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	_registerForSignpostEnablement	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	_removeResource:	-	iogpu	driver	WebMetalDevice	loud
-AGXA10XDevice	instance	_setDeviceWrapper:	MTLDeviceSPI	iogpu	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	_setDeviceWrapper:	MTLDeviceSPI	iogpu	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	_storeComputePipelineState:	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	_storeRenderPipelineState:	-	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	accelerationStructureSizesWithDescriptor:	MTLDevice	agx	driver	WebMetalDevice	loud
