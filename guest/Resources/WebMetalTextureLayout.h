@@ -4,6 +4,7 @@
 // AGX::Texture helpers it and its callers use, and the callers' derivations:
 //   -[AGXA10FamilyDevice heapTextureSizeAndAlignWithDescriptor:]                          0x21c8d6694
 //   -[AGXA10FamilyTexture initImplWithDevice:Descriptor:...isHeapBacked:]                  0x21c980388
+//   -[AGXA10FamilyTexture initImplWithTexture:pixelFormat:textureType:levels:slices:...]   0x21c98172c, 0x21c981074
 //   -[AGXA10FamilyTexture initNewTextureData:]                                            0x21c981d88
 //   -[AGXTextureLayout initWithDevice:descriptor:isHeapOrBufferBacked:], size, alignment  0x21c9c019c, 0x21c9c0380,
 //                                                                                          0x21c9c0398
@@ -220,11 +221,12 @@ struct SizeAndAlign {
 SizeAndAlign heapTextureSizeAndAlign(const DescriptorFields &d, const SystemValues &system = SystemValues());
 
 struct TextureAllocation {
-    bool initialized;      // initImpl returned the texture (the layout is valid)
-    uint64_t cpuSizeBytes; // AGXTexture _cpuSizeBytes
-    uint64_t alignment;    // AGXTexture _alignment
-    uint64_t bytesPerRow;  // AGXTexture _bytesPerRow
-    uint64_t textureData58;  // initNewTextureData: argument +0x58, from a zeroed argument
+    bool initialized = false;   // initImpl returned the texture (the layout is valid)
+    uint64_t cpuSizeBytes = 0;  // AGXTexture _cpuSizeBytes
+    uint64_t alignment = 0;     // AGXTexture _alignment
+    uint64_t bytesPerRow = 0;   // AGXTexture _bytesPerRow
+    uint64_t textureData58 = 0;  // initNewTextureData: argument +0x58, from a zeroed argument
+    TextureGen2 layout;          // the constructed object (AGXA10FamilyTexture._impl), which views are built from
 };
 
 // -[AGXA10FamilyTexture initImplWithDevice:Descriptor:iosurface:nil plane:0 slice:0 buffer:nil bytesPerRow:0
@@ -235,6 +237,15 @@ TextureAllocation initImplHeap(const DescriptorFields &d, const SystemValues &sy
 // The device texture with sparsePageSize:sparsePageSize.
 TextureAllocation initImplDeviceSparse(const DescriptorFields &d, uint32_t sparsePageSize,
                                        const SystemValues &system = SystemValues());
+
+// -[AGXA10FamilyTexture initImplWithTexture:pixelFormat:textureType:levels:slices:swizzle:resourceIndex:] (0x21c98172c):
+// a view's layout, built from its parent's constructed object. Not initialized when the parent is memoryless (+0x30)
+// or the view's layout is not valid. The form without a swizzle
+// (initImplWithTexture:pixelFormat:textureType:levels:slices:resourceIndex:, 0x21c981074) passes the parent's swizzle
+// (+0xbc). Neither reads the slice location or the resource index.
+TextureAllocation initImplView(const TextureGen2 &parent, uint64_t pixelFormat, uint64_t textureType,
+                               uint64_t levelLocation, uint64_t levelLength, uint64_t sliceLength, uint32_t swizzle,
+                               const SystemValues &system = SystemValues());
 
 // -[AGXA10FamilyTexture initNewTextureData:]: the u64 at argument +0x58, given its previous value.
 uint64_t initNewTextureData58(const TextureGen2 &t, uint64_t previous);

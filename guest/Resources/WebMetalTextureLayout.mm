@@ -823,6 +823,20 @@ TextureGen2Args argsFromDescriptor(const DescriptorFields &d) {
     return a;
 }
 
+// What initImpl stores once the layout is valid: _alignment (set_alignment:), _cpuSizeBytes (this+0x158) and
+// _bytesPerRow (getStride<View1>(0)); the object itself becomes the texture's _impl.
+TextureAllocation allocation(const TextureGen2 &t) {
+    TextureAllocation r;
+    r.layout = t;
+    if (!t.valid) return r;
+    r.initialized = true;
+    r.cpuSizeBytes = t.size;
+    r.alignment = textureAlignment(t);
+    r.bytesPerRow = getStride1(t, 0);
+    r.textureData58 = initNewTextureData58(t, 0);
+    return r;
+}
+
 TextureAllocation initImpl(const DescriptorFields &d, bool allowNPOT, bool heapBacked, uint32_t sparsePageSize,
                            const SystemValues &system) {
     TextureGen2Args a = argsFromDescriptor(d);
@@ -830,9 +844,7 @@ TextureAllocation initImpl(const DescriptorFields &d, bool allowNPOT, bool heapB
     a.allowTwiddledPlanes = allowNPOT;
     a.compressedBacking = false;   // no IOSurface and no buffer
     a.heapOrBufferBacked = heapBacked;
-    TextureGen2 t = construct(a, system);
-    if (!t.valid) return {false, 0, 0, 0, 0};
-    return {true, t.size, textureAlignment(t), getStride1(t, 0), initNewTextureData58(t, 0)};
+    return allocation(construct(a, system));
 }
 
 }  // namespace
@@ -857,6 +869,48 @@ TextureAllocation initImplHeap(const DescriptorFields &d, const SystemValues &sy
 
 TextureAllocation initImplDeviceSparse(const DescriptorFields &d, uint32_t sparsePageSize, const SystemValues &system) {
     return initImpl(d, true, false, sparsePageSize, system);
+}
+
+// The ctor takes the parent's fields as initImpl loads them (0x21c9817b8..0x21c981854): the view's type and pixel
+// format; the parent's usage, storage mode, compression bytes, colorspace, rotation, base size, mip levels, samples
+// (+0x68, already rounded), bytes per row, CPU cache mode, IOSurface fields, twiddled-planes flag (as stack +0x58) and
+// the +0x17a/+0x17b flags; the sparse page size unless the parent has sparse parameters; the base level and level
+// count of the parent's base level plus the view's levels (32-bit); and the array length of the slice count divided by
+// the faces of the view's type (32-bit). The view's slice location is used only by the IOGPU layer.
+TextureAllocation initImplView(const TextureGen2 &parent, uint64_t pixelFormat, uint64_t textureType,
+                               uint64_t levelLocation, uint64_t levelLength, uint64_t sliceLength, uint32_t swizzle,
+                               const SystemValues &system) {
+    if (parent.storageMode == 3) return TextureAllocation();
+    const uint32_t faces = textureType - 5 < 2 ? 6 : 1;
+    TextureGen2Args a;
+    a.type = textureType;
+    a.pixelFormat = pixelFormat;
+    a.usage = parent.usage;
+    a.storageMode = parent.storageMode;
+    a.compression = (uint32_t(parent.compressionMode) | uint32_t(parent.compressionFootprint) << 8 |
+                     uint32_t(parent.compressionByte2) << 16) & 0xffffff;
+    a.colorConversion = parent.colorSpace;
+    a.rotation = parent.rotation;
+    a.swizzle = swizzle;
+    a.width = parent.width;
+    a.height = parent.height;
+    a.depth = parent.depth;
+    a.mipLevels = parent.mipLevels;
+    a.samples = parent.samples;
+    a.arrayLength = udiv32(uint32_t(sliceLength), faces);
+    a.bytesPerRow = parent.bytesPerRow;
+    a.sparsePageSize = parent.sparseParams ? 0 : parent.sparsePageSize;
+    a.cpuCacheMode = parent.cpuCacheMode;
+    a.iosurface = parent.iosurface;
+    a.plane = parent.plane;
+    a.slice = parent.slice;
+    a.iosurface2 = parent.iosurface2;
+    a.baseLevel = parent.baseLevel + uint32_t(levelLocation);
+    a.levelCount = uint32_t(levelLength);
+    a.allowTwiddledPlanes = parent.twiddledPlanes;
+    a.compressedBacking = parent.compressedBacking;
+    a.heapOrBufferBacked = parent.heapOrBufferBacked;
+    return allocation(construct(a, system));
 }
 
 uint64_t initNewTextureData58(const TextureGen2 &t, uint64_t previous) {
