@@ -1,0 +1,9 @@
+[package]
+name = "webmetal-wire"
+version = "0.1.0"
+description = "WebMetal wire protocol: records exchanged by the guest Metal plugin and the host executor"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
