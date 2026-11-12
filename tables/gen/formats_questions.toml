@@ -1,0 +1,236 @@
+# Questions from sections 5 and 6 of the translator plan about texture and vertex formats,
+# texel copies and sampling. Citations are verified by tables/check.py.
+
+[[question]]
+id = "6.3-webgpu-format-list"
+plan = "6.3"
+question = "The current GPUTextureFormat list and per-format capabilities."
+status = "resolved"
+answer = "Generated into the [[webgpu_texture_format]] rows of this file from the GPUTextureFormat IDL enum and the capability tables of section 26.1 of the pinned WebGPU text."
+cite = [
+  { src = "webgpu", ref = "#texture-format-caps", quote = "26.1. Texture Format Capabilities" },
+]
+
+[[question]]
+id = "6.3-texture-component-swizzle"
+plan = "6.3"
+question = "Does WebGPU have a texture component swizzle feature?"
+status = "resolved"
+answer = "Yes: the optional feature \"texture-component-swizzle\" lets a texture view used as a TEXTURE_BINDING rearrange or replace components (r, g, b, a, 0, 1). Without it a view's swizzle must be \"rgba\", so the shader-side swizzle of plan section 6.3 is the fallback."
+cite = [
+  { src = "webgpu", ref = "#dom-gpufeaturename-texture-component-swizzle", quote = "When enabled: Allows GPUTextureViews to rearrange or replace the color components from texture’s red/green/blue/alpha channels when used as a TEXTURE_BINDING." },
+  { src = "webgpu", ref = "#texture-view-creation", quote = "If descriptor.swizzle is not \"rgba\", \"texture-component-swizzle\" must be enabled for this.[[device]]." },
+]
+
+[[question]]
+id = "6.3-texture-format-tiers"
+plan = "6.3"
+question = "Which optional features extend format capabilities, and which formats need them?"
+status = "resolved"
+answer = "texture-formats-tier1 (which enables rg11b10ufloat-renderable) adds RENDER_ATTACHMENT, blending, multisampling and write-only/read-only storage to further formats, including the 16-bit unorm/snorm formats; texture-formats-tier2 (requiring tier1) adds read-write storage to more formats. Others: float32-filterable, float32-blendable, bgra8unorm-storage, depth32float-stencil8 and the three compression features. The per-format conditions are the capability cells of the [[webgpu_texture_format]] rows."
+cite = [
+  { src = "webgpu", ref = "#texture-formats-tier1", quote = "When enabled: Enables \"rg11b10ufloat-renderable\"." },
+  { src = "webgpu", ref = "#feature-dependencies", quote = "\"texture-formats-tier2\" | \"texture-formats-tier1\"" },
+]
+
+[[question]]
+id = "6.3-unorm16-snorm16"
+plan = "6.3"
+question = "Are R16/RG16/RGBA16 Unorm and Snorm usable in WebGPU, and with which capabilities?"
+status = "resolved"
+answer = "Only with the optional feature texture-formats-tier1, and even then their sample type is unfilterable-float: they can be rendered to, blended, multisampled and used as storage, but not sampled with a filtering sampler. A Metal texture of these formats sampled with linear filtering therefore has no native WebGPU form on any host; it needs the manual-filter path (four loads and explicit weights, plan section 5.7) or is LOUD, and on hosts without the feature the format itself is LOUD."
+cite = [
+  { src = "webgpu", ref = "#plain-color-formats", quote = "r16unorm | \"texture-formats-tier1\" | \"unfilterable-float\" | ✓ | ✓ | ✓ | | ✓ | ✓ | | 2" },
+  { src = "webgpu", ref = "#plain-color-formats", quote = "r16snorm | \"texture-formats-tier1\" | \"unfilterable-float\" | ✓ | ✓ | ✓ | | ✓ | ✓ | | 2" },
+]
+
+[[question]]
+id = "6.3-texel-copy-bit-exactness"
+plan = "6.3"
+question = "Are WebGPU texel copies (buffer<->texture, texture<->texture) bit-preserving, as the view-reinterpretation and buffer-backed-texture paths of plan sections 6.2 and 6.3 assume?"
+status = "resolved"
+answer = "No. A texel copy guarantees only that valid, finite, non-subnormal numeric values keep their value: zero signs, subnormals, NaN and infinity bits may change, and snorm and packed formats may change bit representation. Bit-exact round trips are guaranteed only for formats whose every bit pattern is a distinct finite value: the uint, sint and non-packed unorm formats. For float, snorm and packed formats the plan's 'bit-preserving copy through a buffer' is not exact by specification; reinterpretation and coherence for them need a design that never routes the bits through a float-typed texel copy (plan change reported)."
+cite = [
+  { src = "webgpu", ref = "#texel-copies", quote = "Texel copies only guarantee that valid, finite, non-subnormal numeric values in the source have the same numeric value in the destination." },
+  { src = "webgpu", ref = "#texel-copies", quote = "Any floating-point subnormal value may be either preserved or replaced by -0.0 or +0.0. Any floating-point NaN or Infinity value may be replaced by an indeterminate value." },
+  { src = "webgpu", ref = "#texel-copies", quote = "Packed formats and snorm formats may change bit-representation as long as the represented values follow the rules above, for example: snorm formats may represent -1.0 as either -127 or -128." },
+]
+
+[[question]]
+id = "6.3-srgb-filter-order"
+plan = "6.3"
+question = "Is sRGB decoding applied before filtering in both APIs?"
+status = "resolved"
+answer = "MSL requires the sRGB-to-linear conversion before the sampler's filter. The WebGPU text says only that conversions are applied when the shader reads; it does not state the order relative to filtering. Native sampling of -srgb formats is therefore exact for nearest filtering and for loads; with linear filtering it depends on a host property the specification does not fix, which needs a per-host equivalence test (V4) before it is relied on."
+cite = [
+  { src = "msl", ref = "8.7.7", quote = "The conversion from sRGB to linear RGB is performed before the filter specified in the sampler specified when sampling the texture is applied." },
+  { src = "webgpu", ref = "#texture-formats", quote = "If the format has the -srgb suffix, then sRGB conversions from gamma to linear and vice versa are applied during the reading and writing of color values in the shader." },
+]
+
+[[question]]
+id = "6.3-unorm-write-rounding"
+plan = "6.3"
+question = "Metal's rounding rule when writing float values to 5-, 6- and other unorm formats."
+status = "resolved"
+answer = "Clamp f*(2^n - 1) to [0, 2^n - 1] and convert with round-to-nearest-even (intRTNE), for n = 1, 2, 4, 5, 6, 8, 10 and 16; NaN converts to 0. The packed 16-bit formats B5G6R5, A1BGR5, ABGR4 and BGR5A1 use the 5-, 6-, 4- and 1-bit rows."
+cite = [
+  { src = "msl", ref = "8.7.1.2", quote = "NaN values are converted to zero." },
+  { src = "msl", ref = "8.7.1.2", quote = "x = min(max(f * 31.0, 0.0), 31.0) unsigned integer i4:0 = intRTNE(x)" },
+  { src = "msl", ref = "8.7.1.2", quote = "x = min(max(f * 63.0, 0.0), 63.0) i5:0 = intRTNE(x)" },
+]
+
+[[question]]
+id = "6.3-unorm-snorm-read"
+plan = "6.3"
+question = "Metal's conversion of normalized integer texels to float when reading and sampling."
+status = "resolved"
+answer = "unorm: float(c) / (2^n - 1); snorm: max(-1.0, float(c) / (2^(n-1) - 1)), with the most negative code and its neighbor both giving -1.0; precision at most 1.5 ulp except the exact corner cases (0, the maximum, and -1)."
+cite = [
+  { src = "msl", ref = "8.7.1.1", quote = "The precision of the conversion rules is guaranteed to be <= 1.5 ulp, except for the cases described in the “Corner Cases” column." },
+  { src = "msl", ref = "8.7.1.1", quote = "max(-1.0, float(c)/127.0) -128 and -127 must convert to -1.0" },
+]
+
+[[question]]
+id = "6.3-xr-encoding"
+plan = "6.3"
+question = "The extended-range (XR) encoding Metal defines for BGR10_XR and BGRA10_XR."
+status = "resolved"
+answer = "Each 10-bit code v maps to (v - 384) / 510.0, covering [-0.752941, 1.25098]. BGR10_XR packs blue, green, red from the least significant bit with bits 30-31 zero; BGRA10_XR stores each component in the top 10 bits of a 16-bit chunk (bits 6-15) with zero padding, and clamps alpha to [0, 1]. The values (v - 384)/510 are not all representable in binary16, as plan section 6.3 states."
+cite = [
+  { src = "apple-bgr10-xr", quote = "The formula used in this linear encoding is shader_float = (xr10_value - 384) / 510.0f." },
+  { src = "apple-bgr10-xr", quote = "Pixel components are in blue, green, and red order, from least significant bit to most significant bit. Bits 30 and 31 are padding, and their value is 0." },
+  { src = "apple-bgra10-xr", quote = "The 10 most-significant bits (bits 6–15) store the component’s data." },
+  { src = "apple-bgra10-xr", quote = "The alpha component is always clamped to a [0.0, 1.0] range in sampling, rendering, and writing operations, despite supporting values outside this range." },
+]
+
+[[question]]
+id = "6.3-422-chroma"
+plan = "6.3"
+question = "Component order and chroma siting of GBGR422 and BGRG422."
+status = "open"
+reason = "The header defines the byte order (GBGR422: Y0, Cb, Y1, Cr; BGRG422: Cb, Y0, Cr, Y1), that no YUV-to-RGB conversion happens and that the shader receives (Cr, Y, Cb, 1), widths must be even, and only 2D non-mipmapped textures with clamp-to-edge are allowed. It does not state how the shared chroma is reconstructed for the second pixel of a pair or under linear filtering; that is hardware behavior needing a measurement on the A10X. Device support for these formats is D1's."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLPixelFormat.h", quote = "The component order, from lowest addressed byte to highest, is Y0, Cb, Y1, Cr. There is no implicit colorspace conversion from YUV to RGB, the shader will receive (Cr, Y, Cb, 1)." },
+  { sdk = "Metal.framework/Headers/MTLPixelFormat.h", quote = "422 textures must have a width that is a multiple of 2, and can only be used for 2D non-mipmap textures. When sampling, ClampToEdge is the only usable wrap mode." },
+]
+
+[[question]]
+id = "6.3-eac-r11-decode"
+plan = "6.3"
+question = "The exact decoded value of R11/RG11 EAC texels, and whether r16unorm can hold it."
+status = "open"
+reason = "Resolved for the specification: Khronos defines the decoded value as an 11-bit integer x in [0, 2047] representing x/2047, and lets an implementation extend x to 16 or more bits by bit replication ((x << 5) + (x >> 6) for 16 bits). x/2047 is not representable in r16unorm (65535/2047 is not an integer), while the 16-bit replication is. Which of the two values the A10X returns to a shader is hardware behavior and needs a measurement on the device; until then the software path stores decoded texels in r32float only if that reproduces the device's value, which is unknown, so non-native R11/RG11 sampling is LOUD."
+cite = [
+  { src = "kdfs", ref = "#Section-r11eac", quote = "The result will be an 11-bit fixed point number where 0 represents 0.0 and 2047 represents 1.0. This is the exact representation for the decoded value." },
+  { src = "kdfs", ref = "#Section-r11eac", quote = "In this case, the 11-bit value should be extended using bit replication." },
+]
+
+[[question]]
+id = "6.3-ios-unavailable-depth-formats"
+plan = "6.3"
+question = "Are Depth24Unorm_Stencil8 and X24_Stencil8 available on iOS?"
+status = "resolved"
+answer = "No: both are API_UNAVAILABLE(ios) in the SDK header; they are rejected as on device (rows with class not-in-ios-17.7 in this file)."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLPixelFormat.h", quote = "MTLPixelFormatDepth24Unorm_Stencil8 API_DEPRECATED(\"Use MTLPixelFormatDepth32Float_Stencil8 instead\", macos(10.11, 27.0), macCatalyst(13.0, 27.0)) API_UNAVAILABLE(ios) = 255," },
+  { sdk = "Metal.framework/Headers/MTLPixelFormat.h", quote = "MTLPixelFormatX24_Stencil8 API_DEPRECATED(\"Use MTLPixelFormatX32_Stencil8 instead\", macos(10.12, 27.0), macCatalyst(13.0, 27.0)) API_UNAVAILABLE(ios) = 262," },
+]
+
+[[question]]
+id = "6.3-mipmap-filter"
+plan = "6.3"
+question = "What filter does Metal define for generateMipmapsForTexture:?"
+status = "resolved"
+answer = "None: the filtering may vary by GPU family, so any reasonable filter is within Metal's latitude (plan section 9 row 10)."
+cite = [
+  { src = "apple-generatemipmaps", quote = "The image filtering that GPU drivers use to generate the mipmaps may vary by the feature families (MTLGPUFamily) it supports." },
+]
+
+[[question]]
+id = "5.5-depth-texture-as-color"
+plan = "5.5"
+question = "What does Metal define for a depth texture bound to a texture2d<float> argument, and for a color texture bound to depth2d?"
+status = "resolved"
+answer = "MSL defines only the type rule: for T = float the texture data must be a normalized, half or single-precision format, which Depth16Unorm and Depth32Float are, so a depth texture can be read through texture2d<float>; depth types require T = float and sample_compare needs a depth type. MSL does not define the values of the components other than the depth value. WebGPU gives (D, X, X, X) with X implementation-defined unless texture-component-swizzle is enabled, in which case (D, 0, 0, 1). The depth component therefore matches; reads of the other components are outside both specifications. Binding a non-depth format to a depth type is not defined by MSL (V1 records real Metal's behavior with and without the debug layer)."
+cite = [
+  { src = "msl", ref = "2.9", quote = "If T is float, the data associated with the texture must either be a normalized (signed or unsigned integer), half or single-precision format." },
+  { src = "msl", ref = "2.9", quote = "For depth texture types, T must be float." },
+  { src = "webgpu", ref = "#reading-depth-stencil", quote = "If the \"texture-component-swizzle\" feature is enabled, reading or sampling the depth or stencil aspect of a texture behaves as if the texture contains the values (V, 0, 0, 1) where V is the actual depth or stencil value. Otherwise, the values are (V, X, X, X) where each X is an implementation-defined unspecified value." },
+]
+
+[[question]]
+id = "5.7-read-write-storage-textures"
+plan = "5.7"
+question = "Which formats can WGSL read and write in one storage texture (access::read_write)?"
+status = "resolved"
+answer = "read_write storage access needs the WGSL language extension readonly_and_readwrite_storage_textures and a format whose \"read-write\" STORAGE_BINDING cell allows it: r32uint, r32sint and r32float in core, more with texture-formats-tier2 (see the [[webgpu_texture_format]] rows)."
+cite = [
+  { src = "wgsl", ref = "#language-extensions-sec", quote = "readonly_and_readwrite_storage_textures | Allows the use of read and read_write access modes with storage textures." },
+  { src = "webgpu", ref = "#plain-color-formats", quote = "r32uint | | \"uint\" | ✓ | | | | ✓ | ✓ | ✓ | 4" },
+]
+
+[[question]]
+id = "5.9-multisample-texture-copy"
+plan = "5.9"
+question = "When can copyTextureToTexture copy multisampled textures?"
+status = "resolved"
+answer = "Source and destination sample counts must be equal, the copy must cover the whole subresource (for sampleCount > 1 the copy size must equal the physical subresource size), and without core-features-and-limits both sample counts must be 1. Buffer copies never involve multisampled textures."
+cite = [
+  { src = "webgpu", ref = "#commands-texel-copies", quote = "srcTexture.sampleCount is equal to dstTexture.sampleCount." },
+  { src = "webgpu", ref = "#gputexelcopytextureinfo", quote = "The GPUTexelCopyTextureInfo physical subresource size of texelCopyTextureInfo is equal to copySize if either of the following conditions is true: texelCopyTextureInfo.texture.format is a depth-stencil format. texelCopyTextureInfo.texture.sampleCount > 1." },
+  { src = "webgpu", ref = "#commands-texel-copies", quote = "source.texture.sampleCount and destination.texture.sampleCount must be 1." },
+]
+
+[[question]]
+id = "6.6-copy-format-compatibility"
+plan = "6.6"
+question = "Which format pairs may a texture-to-texture copy use in each API?"
+status = "open"
+reason = "WebGPU: equal formats or formats differing only in -srgb. Metal: the whole-surface copy forms require identical pixel formats and sample counts (header); for the region form neither the header nor the documentation states a rule. What real Metal accepts for the region form is measured by V1 with and without the debug layer."
+cite = [
+  { src = "webgpu", ref = "#image-copies-subroutines", quote = "Two GPUTextureFormats format1 and format2 are copy-compatible if: format1 equals format2, or format1 and format2 differ only in whether they are srgb formats (have the -srgb suffix)." },
+  { sdk = "Metal.framework/Headers/MTLBlitCommandEncoder.h", quote = "The source and destination pixel format must be identical. The source and destination sample count must be identical." },
+]
+
+[[question]]
+id = "6.6-depth-copies"
+plan = "6.6"
+question = "Which depth and stencil copies does WebGPU allow?"
+status = "resolved"
+answer = "depth32float and the depth aspect of depth32float-stencil8 are valid copy sources but are copy destinations only from textures of the same format (not from buffers); depth24plus formats allow no depth-aspect texel copies; depth16unorm and every stencil aspect allow copies both ways. Metal depth uploads into Depth32Float from a buffer therefore need a render pass writing frag_depth."
+cite = [
+  { src = "webgpu", ref = "#copying-depth-stencil", quote = "As a result, copies into such textures are only valid from other textures of the same format." },
+  { src = "webgpu", ref = "#depth-formats", quote = "depth32float | 4 | depth | \"depth\", \"unfilterable-float\" | ✓ | ✗ | 4 | depth32float" },
+]
+
+[[question]]
+id = "6.4-address-modes"
+plan = "6.4"
+question = "Which sampler address modes exist in each API?"
+status = "resolved"
+answer = "MSL samplers have repeat, mirrored_repeat, clamp_to_edge, clamp_to_zero and clamp_to_border (plus mirror_clamp_to_edge in the API); WebGPU has clamp-to-edge, repeat and mirror-repeat only. clamp_to_zero, clamp_to_border and mirror-clamp-to-edge need the shader emulation of plan section 5.7."
+cite = [
+  { src = "msl", ref = "2.10", quote = "address repeat Sets the addressing mode for all mirrored_repeat texture coordinates. clamp_to_edge (default) clamp_to_zero clamp_to_border" },
+  { src = "webgpu", ref = "#GPUSamplerDescriptor", quote = "enum GPUAddressMode { \"clamp-to-edge\", \"repeat\", \"mirror-repeat\", };" },
+]
+
+[[question]]
+id = "5.7-filter-weight-precision"
+plan = "5.7"
+question = "The fixed-point precision of bilinear filter weights that Metal specifies."
+status = "open"
+reason = "The MSL specification states no filter-weight precision (its numerical chapter covers arithmetic and pixel conversions only), and the Metal documentation pinned here states none. The weights are hardware behavior: exact emulation of address modes under bilinear filtering needs the A10X's sub-texel precision measured on the device (a measurement on this Mac would describe M-series hardware)."
+cite = [
+  { src = "msl", ref = "8.7", quote = "The texture coordinates specified to the sample, sample_compare, gather, gather_compare, read, and write functions cannot be INF or NaN." },
+]
+
+[[question]]
+id = "5.10-vertex-normalized-conversion"
+plan = "5.10"
+question = "The normalized-integer conversion Metal specifies for vertex attributes."
+status = "open"
+reason = "MSL specifies normalized-integer conversion only for texture reads and writes (section 8.7.1); neither the MSL specification nor the MTLVertexFormat documentation pinned here defines it for vertex attributes. Vertex pulling must reproduce the A10X's vertex-fetch conversion, which needs a measurement on the device; the texture rule of 8.7.1.1 is the documented Metal convention but is not stated to apply to vertex fetch."
+cite = [
+  { src = "msl", ref = "8.7.1.1", quote = "For textures that have 8- or 16-bit normalized signed integer pixel values, the texture sample and read functions convert the pixel values from an 8- or 16-bit signed integer to a normalized single- or half-precision floating-point value in the range [-1.0 … 1.0]." },
+  { src = "apple-mtlvertexformat", quote = "MTLVertexFormatChar2Normalized: A two-component vector with 8-bit, normalized, signed integer values." },
+]

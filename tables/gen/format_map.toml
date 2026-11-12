@@ -1,0 +1,173 @@
+# Pairing of Metal pixel and vertex formats with WebGPU formats. gen_formats.py joins this
+# with the format lists it reads from the SDK header, Apple's documentation and the
+# WebGPU IDL and capability tables. A format the iOS 17.7 API does not contain needs no
+# entry: its availability comes from the header. Every other Metal format must appear in
+# exactly one group.
+
+[[pixel_group]]
+id = "same-format"
+basis = "The WebGPU format names the same components in the same order with the same bits per component and data type (and sRGB encoding) as Apple's description of the Metal format; for block-compressed formats, the same compression scheme, block size and encoding."
+cite = [
+  { src = "webgpu", ref = "#texture-formats", quote = "The name of the format specifies the order of components, bits per component, and data type for the component." },
+  { src = "webgpu", ref = "#texture-formats", quote = "If the format has the -srgb suffix, then sRGB conversions from gamma to linear and vice versa are applied during the reading and writing of color values in the shader." },
+]
+pairs = [
+  ["MTLPixelFormatR8Unorm", "r8unorm"], ["MTLPixelFormatR8Snorm", "r8snorm"],
+  ["MTLPixelFormatR8Uint", "r8uint"], ["MTLPixelFormatR8Sint", "r8sint"],
+  ["MTLPixelFormatR16Unorm", "r16unorm"], ["MTLPixelFormatR16Snorm", "r16snorm"],
+  ["MTLPixelFormatR16Uint", "r16uint"], ["MTLPixelFormatR16Sint", "r16sint"],
+  ["MTLPixelFormatR16Float", "r16float"],
+  ["MTLPixelFormatRG8Unorm", "rg8unorm"], ["MTLPixelFormatRG8Snorm", "rg8snorm"],
+  ["MTLPixelFormatRG8Uint", "rg8uint"], ["MTLPixelFormatRG8Sint", "rg8sint"],
+  ["MTLPixelFormatR32Uint", "r32uint"], ["MTLPixelFormatR32Sint", "r32sint"],
+  ["MTLPixelFormatR32Float", "r32float"],
+  ["MTLPixelFormatRG16Unorm", "rg16unorm"], ["MTLPixelFormatRG16Snorm", "rg16snorm"],
+  ["MTLPixelFormatRG16Uint", "rg16uint"], ["MTLPixelFormatRG16Sint", "rg16sint"],
+  ["MTLPixelFormatRG16Float", "rg16float"],
+  ["MTLPixelFormatRGBA8Unorm", "rgba8unorm"], ["MTLPixelFormatRGBA8Unorm_sRGB", "rgba8unorm-srgb"],
+  ["MTLPixelFormatRGBA8Snorm", "rgba8snorm"], ["MTLPixelFormatRGBA8Uint", "rgba8uint"],
+  ["MTLPixelFormatRGBA8Sint", "rgba8sint"],
+  ["MTLPixelFormatBGRA8Unorm", "bgra8unorm"], ["MTLPixelFormatBGRA8Unorm_sRGB", "bgra8unorm-srgb"],
+  ["MTLPixelFormatRGB10A2Unorm", "rgb10a2unorm"], ["MTLPixelFormatRGB10A2Uint", "rgb10a2uint"],
+  ["MTLPixelFormatRG11B10Float", "rg11b10ufloat"], ["MTLPixelFormatRGB9E5Float", "rgb9e5ufloat"],
+  ["MTLPixelFormatRG32Uint", "rg32uint"], ["MTLPixelFormatRG32Sint", "rg32sint"],
+  ["MTLPixelFormatRG32Float", "rg32float"],
+  ["MTLPixelFormatRGBA16Unorm", "rgba16unorm"], ["MTLPixelFormatRGBA16Snorm", "rgba16snorm"],
+  ["MTLPixelFormatRGBA16Uint", "rgba16uint"], ["MTLPixelFormatRGBA16Sint", "rgba16sint"],
+  ["MTLPixelFormatRGBA16Float", "rgba16float"],
+  ["MTLPixelFormatRGBA32Uint", "rgba32uint"], ["MTLPixelFormatRGBA32Sint", "rgba32sint"],
+  ["MTLPixelFormatRGBA32Float", "rgba32float"],
+  ["MTLPixelFormatBC1_RGBA", "bc1-rgba-unorm"], ["MTLPixelFormatBC1_RGBA_sRGB", "bc1-rgba-unorm-srgb"],
+  ["MTLPixelFormatBC2_RGBA", "bc2-rgba-unorm"], ["MTLPixelFormatBC2_RGBA_sRGB", "bc2-rgba-unorm-srgb"],
+  ["MTLPixelFormatBC3_RGBA", "bc3-rgba-unorm"], ["MTLPixelFormatBC3_RGBA_sRGB", "bc3-rgba-unorm-srgb"],
+  ["MTLPixelFormatBC4_RUnorm", "bc4-r-unorm"], ["MTLPixelFormatBC4_RSnorm", "bc4-r-snorm"],
+  ["MTLPixelFormatBC5_RGUnorm", "bc5-rg-unorm"], ["MTLPixelFormatBC5_RGSnorm", "bc5-rg-snorm"],
+  ["MTLPixelFormatBC6H_RGBFloat", "bc6h-rgb-float"], ["MTLPixelFormatBC6H_RGBUfloat", "bc6h-rgb-ufloat"],
+  ["MTLPixelFormatBC7_RGBAUnorm", "bc7-rgba-unorm"], ["MTLPixelFormatBC7_RGBAUnorm_sRGB", "bc7-rgba-unorm-srgb"],
+  ["MTLPixelFormatEAC_R11Unorm", "eac-r11unorm"], ["MTLPixelFormatEAC_R11Snorm", "eac-r11snorm"],
+  ["MTLPixelFormatEAC_RG11Unorm", "eac-rg11unorm"], ["MTLPixelFormatEAC_RG11Snorm", "eac-rg11snorm"],
+  ["MTLPixelFormatEAC_RGBA8", "etc2-rgba8unorm"], ["MTLPixelFormatEAC_RGBA8_sRGB", "etc2-rgba8unorm-srgb"],
+  ["MTLPixelFormatETC2_RGB8", "etc2-rgb8unorm"], ["MTLPixelFormatETC2_RGB8_sRGB", "etc2-rgb8unorm-srgb"],
+  ["MTLPixelFormatETC2_RGB8A1", "etc2-rgb8a1unorm"], ["MTLPixelFormatETC2_RGB8A1_sRGB", "etc2-rgb8a1unorm-srgb"],
+  ["MTLPixelFormatASTC_4x4_LDR", "astc-4x4-unorm"], ["MTLPixelFormatASTC_4x4_sRGB", "astc-4x4-unorm-srgb"],
+  ["MTLPixelFormatASTC_5x4_LDR", "astc-5x4-unorm"], ["MTLPixelFormatASTC_5x4_sRGB", "astc-5x4-unorm-srgb"],
+  ["MTLPixelFormatASTC_5x5_LDR", "astc-5x5-unorm"], ["MTLPixelFormatASTC_5x5_sRGB", "astc-5x5-unorm-srgb"],
+  ["MTLPixelFormatASTC_6x5_LDR", "astc-6x5-unorm"], ["MTLPixelFormatASTC_6x5_sRGB", "astc-6x5-unorm-srgb"],
+  ["MTLPixelFormatASTC_6x6_LDR", "astc-6x6-unorm"], ["MTLPixelFormatASTC_6x6_sRGB", "astc-6x6-unorm-srgb"],
+  ["MTLPixelFormatASTC_8x5_LDR", "astc-8x5-unorm"], ["MTLPixelFormatASTC_8x5_sRGB", "astc-8x5-unorm-srgb"],
+  ["MTLPixelFormatASTC_8x6_LDR", "astc-8x6-unorm"], ["MTLPixelFormatASTC_8x6_sRGB", "astc-8x6-unorm-srgb"],
+  ["MTLPixelFormatASTC_8x8_LDR", "astc-8x8-unorm"], ["MTLPixelFormatASTC_8x8_sRGB", "astc-8x8-unorm-srgb"],
+  ["MTLPixelFormatASTC_10x5_LDR", "astc-10x5-unorm"], ["MTLPixelFormatASTC_10x5_sRGB", "astc-10x5-unorm-srgb"],
+  ["MTLPixelFormatASTC_10x6_LDR", "astc-10x6-unorm"], ["MTLPixelFormatASTC_10x6_sRGB", "astc-10x6-unorm-srgb"],
+  ["MTLPixelFormatASTC_10x8_LDR", "astc-10x8-unorm"], ["MTLPixelFormatASTC_10x8_sRGB", "astc-10x8-unorm-srgb"],
+  ["MTLPixelFormatASTC_10x10_LDR", "astc-10x10-unorm"], ["MTLPixelFormatASTC_10x10_sRGB", "astc-10x10-unorm-srgb"],
+  ["MTLPixelFormatASTC_12x10_LDR", "astc-12x10-unorm"], ["MTLPixelFormatASTC_12x10_sRGB", "astc-12x10-unorm-srgb"],
+  ["MTLPixelFormatASTC_12x12_LDR", "astc-12x12-unorm"], ["MTLPixelFormatASTC_12x12_sRGB", "astc-12x12-unorm-srgb"],
+  ["MTLPixelFormatDepth16Unorm", "depth16unorm"], ["MTLPixelFormatDepth32Float", "depth32float"],
+  ["MTLPixelFormatStencil8", "stencil8"], ["MTLPixelFormatDepth32Float_Stencil8", "depth32float-stencil8"],
+]
+
+[[pixel_group]]
+id = "stencil-aspect-view"
+basis = "Apple describes X32_Stencil8 as the format that reads the stencil value of a combined 32-bit depth and 8-bit stencil texture; WebGPU exposes the stencil aspect of depth32float-stencil8 as its own aspect with aspect-specific format stencil8."
+cite = [
+  { src = "webgpu", ref = "#depth-formats", quote = "depth32float-stencil8 | 5 − 8 | depth | \"depth\", \"unfilterable-float\" | ✓ | ✗ | 4 | depth32float | stencil | \"uint\" | ✓ | 1 | stencil8" },
+]
+pairs = [["MTLPixelFormatX32_Stencil8", "depth32float-stencil8"]]
+
+[[pixel_group]]
+id = "no-counterpart"
+basis = "No GPUTextureFormat has this format's components, bit widths and encoding. The handling (emulation or LOUD) is the plan section 6.3 row named in plan_row; device support on the A10X comes from D1."
+cite = [
+  { src = "webgpu", ref = "#texture-formats", quote = "The name of the format specifies the order of components, bits per component, and data type for the component." },
+]
+formats = [
+  ["MTLPixelFormatA8Unorm", "A8Unorm"],
+  ["MTLPixelFormatR8Unorm_sRGB", "R8Unorm_sRGB, RG8Unorm_sRGB"],
+  ["MTLPixelFormatRG8Unorm_sRGB", "R8Unorm_sRGB, RG8Unorm_sRGB"],
+  ["MTLPixelFormatB5G6R5Unorm", "B5G6R5, A1BGR5, ABGR4, BGR5A1"],
+  ["MTLPixelFormatA1BGR5Unorm", "B5G6R5, A1BGR5, ABGR4, BGR5A1"],
+  ["MTLPixelFormatABGR4Unorm", "B5G6R5, A1BGR5, ABGR4, BGR5A1"],
+  ["MTLPixelFormatBGR5A1Unorm", "B5G6R5, A1BGR5, ABGR4, BGR5A1"],
+  ["MTLPixelFormatBGR10A2Unorm", "BGR10A2Unorm, BGR10_XR(+sRGB), BGRA10_XR(+sRGB)"],
+  ["MTLPixelFormatBGR10_XR", "BGR10A2Unorm, BGR10_XR(+sRGB), BGRA10_XR(+sRGB)"],
+  ["MTLPixelFormatBGR10_XR_sRGB", "BGR10A2Unorm, BGR10_XR(+sRGB), BGRA10_XR(+sRGB)"],
+  ["MTLPixelFormatBGRA10_XR", "BGR10A2Unorm, BGR10_XR(+sRGB), BGRA10_XR(+sRGB)"],
+  ["MTLPixelFormatBGRA10_XR_sRGB", "BGR10A2Unorm, BGR10_XR(+sRGB), BGRA10_XR(+sRGB)"],
+  ["MTLPixelFormatPVRTC_RGB_2BPP", "PVRTC"], ["MTLPixelFormatPVRTC_RGB_2BPP_sRGB", "PVRTC"],
+  ["MTLPixelFormatPVRTC_RGB_4BPP", "PVRTC"], ["MTLPixelFormatPVRTC_RGB_4BPP_sRGB", "PVRTC"],
+  ["MTLPixelFormatPVRTC_RGBA_2BPP", "PVRTC"], ["MTLPixelFormatPVRTC_RGBA_2BPP_sRGB", "PVRTC"],
+  ["MTLPixelFormatPVRTC_RGBA_4BPP", "PVRTC"], ["MTLPixelFormatPVRTC_RGBA_4BPP_sRGB", "PVRTC"],
+  ["MTLPixelFormatASTC_4x4_HDR", "ASTC LDR and sRGB"], ["MTLPixelFormatASTC_5x4_HDR", "ASTC LDR and sRGB"],
+  ["MTLPixelFormatASTC_5x5_HDR", "ASTC LDR and sRGB"], ["MTLPixelFormatASTC_6x5_HDR", "ASTC LDR and sRGB"],
+  ["MTLPixelFormatASTC_6x6_HDR", "ASTC LDR and sRGB"], ["MTLPixelFormatASTC_8x5_HDR", "ASTC LDR and sRGB"],
+  ["MTLPixelFormatASTC_8x6_HDR", "ASTC LDR and sRGB"], ["MTLPixelFormatASTC_8x8_HDR", "ASTC LDR and sRGB"],
+  ["MTLPixelFormatASTC_10x5_HDR", "ASTC LDR and sRGB"], ["MTLPixelFormatASTC_10x6_HDR", "ASTC LDR and sRGB"],
+  ["MTLPixelFormatASTC_10x8_HDR", "ASTC LDR and sRGB"], ["MTLPixelFormatASTC_10x10_HDR", "ASTC LDR and sRGB"],
+  ["MTLPixelFormatASTC_12x10_HDR", "ASTC LDR and sRGB"], ["MTLPixelFormatASTC_12x12_HDR", "ASTC LDR and sRGB"],
+  ["MTLPixelFormatGBGR422", "RGB8*/RGB16*/RGB32*, GBGR422, BGRG422"],
+  ["MTLPixelFormatBGRG422", "RGB8*/RGB16*/RGB32*, GBGR422, BGRG422"],
+]
+
+[[pixel_group]]
+id = "sentinel"
+basis = "MTLPixelFormatInvalid is the enum's invalid value, not a format."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLPixelFormat.h", quote = "MTLPixelFormatInvalid = 0," },
+]
+formats = [["MTLPixelFormatInvalid", "none"]]
+
+[[vertex_group]]
+id = "candidate"
+basis = "The WebGPU vertex format names the same component count, bits per component and data type as Apple's description of the Metal format. Neither text fixes every bit-level detail (WebGPU defers the conversion to channel-format rules, and neither states the bit positions of the 10-10-10-2 layouts), so plan section 5.10 keeps vertex pulling as the default and admits each native pairing only with its own equivalence test."
+cite = [
+  { src = "webgpu", ref = "#vertex-formats", quote = "The name of the format specifies the order of components, bits per component, and vertex data type for the component." },
+  { src = "webgpu", ref = "#vertex-processing", quote = "Convert the data into a shader-visible format, according to channel formats rules." },
+]
+pairs = [
+  ["MTLVertexFormatUChar", "uint8"], ["MTLVertexFormatUChar2", "uint8x2"], ["MTLVertexFormatUChar4", "uint8x4"],
+  ["MTLVertexFormatChar", "sint8"], ["MTLVertexFormatChar2", "sint8x2"], ["MTLVertexFormatChar4", "sint8x4"],
+  ["MTLVertexFormatUCharNormalized", "unorm8"], ["MTLVertexFormatUChar2Normalized", "unorm8x2"],
+  ["MTLVertexFormatUChar4Normalized", "unorm8x4"],
+  ["MTLVertexFormatCharNormalized", "snorm8"], ["MTLVertexFormatChar2Normalized", "snorm8x2"],
+  ["MTLVertexFormatChar4Normalized", "snorm8x4"],
+  ["MTLVertexFormatUShort", "uint16"], ["MTLVertexFormatUShort2", "uint16x2"], ["MTLVertexFormatUShort4", "uint16x4"],
+  ["MTLVertexFormatShort", "sint16"], ["MTLVertexFormatShort2", "sint16x2"], ["MTLVertexFormatShort4", "sint16x4"],
+  ["MTLVertexFormatUShortNormalized", "unorm16"], ["MTLVertexFormatUShort2Normalized", "unorm16x2"],
+  ["MTLVertexFormatUShort4Normalized", "unorm16x4"],
+  ["MTLVertexFormatShortNormalized", "snorm16"], ["MTLVertexFormatShort2Normalized", "snorm16x2"],
+  ["MTLVertexFormatShort4Normalized", "snorm16x4"],
+  ["MTLVertexFormatHalf", "float16"], ["MTLVertexFormatHalf2", "float16x2"], ["MTLVertexFormatHalf4", "float16x4"],
+  ["MTLVertexFormatFloat", "float32"], ["MTLVertexFormatFloat2", "float32x2"],
+  ["MTLVertexFormatFloat3", "float32x3"], ["MTLVertexFormatFloat4", "float32x4"],
+  ["MTLVertexFormatInt", "sint32"], ["MTLVertexFormatInt2", "sint32x2"], ["MTLVertexFormatInt3", "sint32x3"],
+  ["MTLVertexFormatInt4", "sint32x4"],
+  ["MTLVertexFormatUInt", "uint32"], ["MTLVertexFormatUInt2", "uint32x2"], ["MTLVertexFormatUInt3", "uint32x3"],
+  ["MTLVertexFormatUInt4", "uint32x4"],
+  ["MTLVertexFormatUInt1010102Normalized", "unorm10-10-10-2"],
+  ["MTLVertexFormatInt1010102Normalized", "snorm10-10-10-2"],
+  ["MTLVertexFormatUChar4Normalized_BGRA", "unorm8x4-bgra"],
+]
+
+[[vertex_group]]
+id = "no-counterpart"
+basis = "No GPUVertexFormat has this component count and encoding (WebGPU has no 3-component 8- or 16-bit formats and no packed float formats); these attributes are read by vertex pulling (plan section 5.10)."
+cite = [
+  { src = "webgpu", ref = "#vertex-formats", quote = "The multi-component formats specify the number of components after \"x\"." },
+]
+formats = [
+  ["MTLVertexFormatUChar3", "5.10"], ["MTLVertexFormatChar3", "5.10"],
+  ["MTLVertexFormatUChar3Normalized", "5.10"], ["MTLVertexFormatChar3Normalized", "5.10"],
+  ["MTLVertexFormatUShort3", "5.10"], ["MTLVertexFormatShort3", "5.10"],
+  ["MTLVertexFormatUShort3Normalized", "5.10"], ["MTLVertexFormatShort3Normalized", "5.10"],
+  ["MTLVertexFormatHalf3", "5.10"],
+  ["MTLVertexFormatFloatRG11B10", "5.10"], ["MTLVertexFormatFloatRGB9E5", "5.10"],
+]
+
+[[vertex_group]]
+id = "sentinel"
+basis = "MTLVertexFormatInvalid is the enum's invalid value, not a format."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLVertexDescriptor.h", quote = "MTLVertexFormatInvalid = 0," },
+]
+formats = [["MTLVertexFormatInvalid", "none"]]

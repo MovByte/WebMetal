@@ -418,6 +418,11 @@ class AppleDoc:
         for sec in d.get("primaryContentSections", []):
             if sec.get("kind") == "content":
                 parts.append(_apple_blocks(sec.get("content")))
+        # A type's page lists each member with its Objective-C name and abstract.
+        for ref in d.get("references", {}).values():
+            nav = ref.get("navigatorTitle") or []
+            if ref.get("kind") == "symbol" and nav and "text" in nav[0]:
+                parts.append("%s: %s" % (nav[0]["text"], _apple_inline(ref.get("abstract"))))
         self.text = "\n".join(parts)
         self._norm = norm(self.text)
 

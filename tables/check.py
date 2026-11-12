@@ -24,10 +24,13 @@ import specdoc  # noqa: E402
 
 GENERATED = [
     ("limits.toml", "gen_limits.py"),
+    ("formats.toml", "gen_formats.py"),
 ]
 
 ROW_ARRAYS = {
     "limits.toml": ["limit", "feature", "wgsl_language_extension", "question"],
+    "formats.toml": ["webgpu_texture_format", "webgpu_vertex_format", "metal_pixel_format",
+                     "metal_vertex_format", "question"],
 }
 
 

@@ -137,6 +137,33 @@ url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlpixelfo
 sha256 = "f8b75e6d667bcdeb6f97b9b0a8243597140db5c72968252d6b7a7283e7605c27"
 kind = "appledoc"
 
+[source.apple-mtlpixelformat]
+title = "Apple Developer Documentation: MTLPixelFormat"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlpixelformat.json"
+sha256 = "ba907575d60fab88dfff8cbcb7c2da9b711a1d68ed17986e4d4ac9de49cd4746"
+kind = "appledoc"
+
+[source.apple-mtlvertexformat]
+title = "Apple Developer Documentation: MTLVertexFormat"
+publisher = "Apple Inc."
+version = "documentation JSON as published"
+date = "2026-11-12"
+url = "https://developer.apple.com/tutorials/data/documentation/metal/mtlvertexformat.json"
+sha256 = "e91b68d0a100696e64133342206d4d205abd0243187d6b4649812d2bff7f3624"
+kind = "appledoc"
+
+[source.kdfs]
+title = "Khronos Data Format Specification"
+publisher = "The Khronos Group"
+version = "1.4.0"
+date = "2026-09-18"
+url = "https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html"
+sha256 = "7b1a6da9921fad991d8dcc9c03f113fa6f27a5a2972639424b3c4747856a3c7e"
+kind = "html"
+
 # Header paths are relative to <SDK>/System/Library/Frameworks.
 [source.sdk]
 title = "iPhoneOS 27.2 SDK Metal.framework headers (Xcode 27.2, build 27B52)"
