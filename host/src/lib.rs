@@ -4,7 +4,8 @@
 //! [`embed`] is the interface the embedding environment (the kernel side) provides to the executor; [`exec`] is the core
 //! executor; [`gpu`] is the executor's binding to WebGPU; [`mem`] keeps buffers, textures and IOSurfaces coherent
 //! between guest memory and WebGPU; [`blit`] and [`compute`] record blit and compute encoders, and [`render`] replays
-//! render encoders; [`pipeline`] serves shader modules, functions, pipelines and binary archives.
+//! render encoders; [`pipeline`] serves shader modules, functions, pipelines and binary archives; [`state`] holds the
+//! sampler states encoders bind.
 
 pub mod blit;
 pub mod compute;
@@ -15,3 +16,4 @@ pub mod gpu;
 pub mod mem;
 pub mod pipeline;
 pub mod render;
+pub mod state;
