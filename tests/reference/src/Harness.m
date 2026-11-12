@@ -513,12 +513,22 @@ size_t WMElemSize(WMElem elem) {
 
 #pragma mark - Running
 
+BOOL WMRefDeviceInBaseline(id<MTLDevice> device) {
+    return [device supportsFamily:MTLGPUFamilyApple3];
+}
+
 NSString *WMRefRunCase(id<MTLDevice> device, NSURL *libraryURL, const char *identifier,
                        WMRefRecordSink sink) {
     const WMRefEntry *entry = WMRefLookup(identifier);
     if (!entry) {
         sink(WMRefJSON(@{@"kind": @"end", @"status": @"harness-error",
                          @"message": [NSString stringWithFormat:@"unknown case %s", identifier]}));
+        return @"harness-error";
+    }
+    if (!WMRefDeviceInBaseline(device)) {
+        sink(WMRefJSON(@{@"kind": @"end", @"status": @"harness-error",
+                         @"message": [NSString stringWithFormat:@"%@ is not in GPU family Apple3 or later",
+                                                                device.name]}));
         return @"harness-error";
     }
     WMCase *c = [[WMCase alloc] initWithDevice:device libraryURL:libraryURL sink:sink];

@@ -493,6 +493,7 @@ static int WMRun(WMOptions *options) {
     NSString *library = WMLibraryPath(options);
     if (![fm fileExistsAtPath:library]) WMDie(@"shader library %@ does not exist", library);
     id<MTLDevice> device = WMOpenDevice(options.device);
+    if (!WMRefDeviceInBaseline(device)) WMDie(@"%@ is not in GPU family Apple3 or later (README.md, \"Devices\")", device.name);
     NSDictionary *identity = WMRefDeviceIdentity(device);
     NSDictionary *host = WMRefHostIdentity();
 

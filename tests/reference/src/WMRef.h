@@ -25,6 +25,12 @@ WMRefCaseInfo WMRefCaseAtIndex(NSUInteger index);
 // Returns NO if no case has this identifier.
 BOOL WMRefFindCase(const char *identifier, WMRefCaseInfo *_Nullable info);
 
+// Cases use the features that the Metal Feature Set Tables list for GPU
+// family Apple3 and earlier without checking for them, and check every
+// feature listed for a later family. A device outside that baseline cannot
+// run them: WMRefRunCase refuses it and `wmref run` stops.
+BOOL WMRefDeviceInBaseline(id<MTLDevice> device);
+
 // Receives one canonical JSON record (without the trailing newline).
 typedef void (^WMRefRecordSink)(NSString *line);
 
