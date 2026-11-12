@@ -7,13 +7,16 @@
 //!
 //! The A10X's sizes come from the device profile: `heapBufferSizeAndAlignWithLength:options:` returns the length as
 //! the size and 256 as the alignment (`[heap]` of `profile/ipados-17.7.11-21H461-a10x.toml`, both extraction methods
-//! agreeing, over 504 lengths and every storage, cache and hazard-tracking mode). `heapTextureSizeAndAlignWithDescriptor:`
-//! depends on the texture layout the AGX driver builds from the kernel's device object and is not in the profile, and
-//! neither are the heap's size rounding nor the driver's free-space policy. An allocation is therefore granted only
-//! when it is certain: its documented size, at its documented alignment, fits in the size the descriptor asked for
-//! after every allocation granted so far, none of whose space is reused (a heap's `size` is at least the requested
-//! size, as `heap.size-at-least-requested` records on real Metal). Anything else is refused loudly with the reason;
-//! it is never answered with a guessed `nil` or a guessed success.
+//! agreeing, over 504 lengths and every storage, cache and hazard-tracking mode). Neither the heap's size rounding nor
+//! the driver's free-space policy is in the profile, so a buffer allocation is granted only when it is certain: its
+//! documented size, at its documented alignment, fits in the size the descriptor asked for after every buffer granted
+//! so far, none of whose space is reused (a heap's `size` is at least the requested size, as
+//! `heap.size-at-least-requested` records on real Metal). Anything else is refused loudly with the reason; it is never
+//! answered with a guessed `nil` or a guessed success.
+//!
+//! Textures are placed by the guest, which lays them out as the AGX driver does and takes their range from its heap
+//! with IOGPU's own allocator (`guest/Resources/WebMetalTexture.mm`, `NewHeapTexture`); a `HeapCreateTexture` names a
+//! range the guest's heap granted, and the executor checks the rules Metal states for it.
 //!
 //! Values are the SDK's `MTLHeap.h`: `MTLHeapTypeAutomatic` 0, `MTLHeapTypePlacement` 1, `MTLHeapTypeSparse` 2
 //! (macOS, Mac Catalyst and tvOS only).
@@ -129,12 +132,15 @@ impl Heap {
         }
     }
 
-    /// `-[MTLHeap newTextureWithDescriptor:]`.
-    pub fn allocate_texture(&mut self) -> Result<HeapAllocation, MemError> {
-        Err(MemError::unimplemented(
-            "-[MTLHeap newTextureWithDescriptor:]: the A10X's heapTextureSizeAndAlignWithDescriptor: depends on the \
-             AGX texture layout built from the kernel's device object and is not in the device profile",
-        ))
+    /// `-[MTLHeap newTextureWithDescriptor:]` and `newTextureWithDescriptor:offset:`: the rules for a texture whose
+    /// range the guest's heap granted (`MTLHeap` documentation: "the texture's storage mode needs to match the heap's
+    /// storageMode property; the texture's CPU cache mode needs to match the heap's cpuCacheMode property").
+    pub fn admit_texture(&self, options: &ResourceOptions) -> Result<(), MemError> {
+        const CALL: &str = "-[MTLHeap newTextureWithDescriptor:]";
+        if options.storage != self.storage || options.cpu_cache != self.cpu_cache {
+            return Err(MemError::undefined(CALL, "the texture's storage or CPU cache mode differs from the heap's"));
+        }
+        Ok(())
     }
 
     /// `-[MTLResource makeAliasable]` on a resource of this heap. Its space is not handed out again by this account
@@ -195,7 +201,8 @@ mod tests {
         let shared = ResourceOptions::decode(0, "t").unwrap();
         assert!(matches!(h.allocate_buffer(16, &shared), Err(MemError::Undefined { .. })));
         assert!(matches!(h.allocate_buffer(0, &private), Err(MemError::Undefined { .. })));
-        assert!(matches!(h.allocate_texture(), Err(MemError::Unimplemented { .. })));
+        assert!(h.admit_texture(&private).is_ok());
+        assert!(matches!(h.admit_texture(&shared), Err(MemError::Undefined { .. })));
     }
 
     #[test]

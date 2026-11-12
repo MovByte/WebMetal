@@ -476,12 +476,20 @@ fn purgeable_state_and_heaps_through_the_executor() {
     h.ok(Request::MakeAliasable(MakeAliasable { resource: hb }));
     // makeAliasable of a buffer not in a heap is illegal (MTLResource.h): status 2.
     assert_eq!(h.status(Request::MakeAliasable(MakeAliasable { resource: buffer })).status, status::UNIMPLEMENTED);
-    // Heap textures: the A10X's sizes are not in the device profile, refused loudly.
+    // Heap textures: the guest lays them out and takes their range from its heap; the executor makes the texture under
+    // the heap's rules, a member of the heap that can be made aliasable.
     let ht = h.handle();
-    let f = h.status(Request::HeapCreateTexture(HeapCreateTexture {
+    h.ok(Request::HeapCreateTexture(HeapCreateTexture {
         heap,
         texture: ht,
         descriptor: texture_descriptor(70, 16, 16, 2, 1),
+    }));
+    h.ok(Request::MakeAliasable(MakeAliasable { resource: ht }));
+    // A texture whose storage mode differs from the heap's is undefined (MTLHeap documentation): status 2.
+    let f = h.status(Request::HeapCreateTexture(HeapCreateTexture {
+        heap,
+        texture: h.handle(),
+        descriptor: texture_descriptor(70, 16, 16, 0, 1),
     }));
     assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
     h.g.assert_no_errors();

@@ -50,6 +50,7 @@ use crate::blit::kernels::{DepthWrite, Rows, Source, depth_bits, encode_depth_wr
 use super::buffer::{Buffer, label};
 use super::calls::Calls;
 use super::error::MemError;
+use super::heap::Heap;
 use super::layout::{Blocks, Geometry, RegionArgs, RegionLayout, StagingPitch, TextureType};
 use super::memory::Memory;
 use super::options::{ResourceOptions, StorageMode};
@@ -117,6 +118,8 @@ pub struct Texture<A: Api> {
     pub blocks: Option<Blocks>,
     /// The IOSurface plane whose memory the texture is, for `newTextureWithDescriptor:iosurface:plane:`.
     pub surface: Option<Rc<SurfacePlane>>,
+    /// The heap the texture was made from (`HeapCreateTexture`), whose purgeable state is the texture's.
+    pub heap_object: Option<Rc<RefCell<Heap>>>,
     pub label: String,
     stored: A::Texture,
     twins: Vec<A::Texture>,
@@ -239,6 +242,32 @@ impl<A: Api> Memory<A> {
         d: &TextureDescriptor,
     ) -> Result<Rc<Texture<A>>, MemError> {
         self.texture_from_descriptor(g, "-[MTLDevice newTextureWithDescriptor:]", task, handle, d)
+    }
+
+    /// `newTextureWithDescriptor:` of a heap (HeapCreateTexture): the texture is its own WebGPU texture (see
+    /// [`super::heap`]); the heap's rules are checked and its purgeable state becomes the texture's.
+    pub fn create_heap_texture(
+        &self,
+        g: &impl Calls<A>,
+        task: TaskId,
+        handle: Handle,
+        d: &TextureDescriptor,
+        heap: &Rc<RefCell<Heap>>,
+    ) -> Result<Rc<Texture<A>>, MemError> {
+        const CALL: &str = "-[MTLHeap newTextureWithDescriptor:]";
+        heap.borrow().admit_texture(&ResourceOptions::decode(d.resource_options, CALL)?)?;
+        let mut t = self.build_texture(g, CALL, (task, handle), d, None)?;
+        Rc::get_mut(&mut t).expect("a texture just made has no other owner").heap_object = Some(heap.clone());
+        Ok(t)
+    }
+
+    /// The contents of a texture of a heap made empty (`setPurgeableState:` of its heap) are discarded: zero-filled as
+    /// [`Memory::set_texture_purgeable`] does.
+    pub fn discard_texture(&self, g: &impl Calls<A>, t: &Texture<A>) -> Result<(), MemError> {
+        if t.storage == StorageMode::Memoryless {
+            return Ok(());
+        }
+        self.zero_texture(g, t)
     }
 
     pub(crate) fn texture_from_descriptor(
@@ -429,6 +458,7 @@ impl<A: Api> Memory<A> {
             usage: d.usage,
             blocks,
             surface,
+            heap_object: None,
             label,
             stored,
             twins,

@@ -44,8 +44,8 @@ use webmetal_wire::{
     BufferDidModifyRangeReply, CreateBufferNoCopyReply, CreateBufferReply, CreateBufferTextureReply,
     CreateBufferWithBytesReply, CreateHeapReply, CreateLinearTextureReply, CreateTextureReply,
     CreateTextureWithIOSurfaceReply, Failure, GetBytesReply, GetBytesSliceReply, Handle, HeapCreateBufferReply,
-    MakeAliasableReply, Region, ReplaceRegionReply, ReplaceRegionSliceReply, Reply, Request, SetPurgeableState,
-    SetPurgeableStateReply, opcode,
+    HeapCreateTextureReply, MakeAliasableReply, Region, ReplaceRegionReply, ReplaceRegionSliceReply, Reply, Request,
+    SetPurgeableState, SetPurgeableStateReply, opcode,
 };
 
 use super::buffer::{Buffer, Readbacks};
@@ -58,8 +58,23 @@ use super::purgeable::Purgeable;
 use super::surface::SurfaceReadback;
 use super::texture::{Texture, TextureBytes, TextureRead};
 
-/// The buffers of each heap, for a heap's purgeable state.
-type HeapMembers<A> = Rc<RefCell<HashMap<(TaskId, Handle), Vec<Weak<Buffer<A>>>>>>;
+/// A resource of a heap.
+enum Member<A: Api> {
+    Buffer(Weak<Buffer<A>>),
+    Texture(Weak<Texture<A>>),
+}
+
+impl<A: Api> Clone for Member<A> {
+    fn clone(&self) -> Member<A> {
+        match self {
+            Member::Buffer(b) => Member::Buffer(b.clone()),
+            Member::Texture(t) => Member::Texture(t.clone()),
+        }
+    }
+}
+
+/// The resources of each heap, for a heap's purgeable state.
+type HeapMembers<A> = Rc<RefCell<HashMap<(TaskId, Handle), Vec<Member<A>>>>>;
 
 /// Decoded blocks read back after a blit, waiting for the next commit to reach their stored texture.
 type Decoded<A> = Rc<RefCell<Vec<(Rc<Texture<A>>, TextureBytes<A>)>>>;
@@ -184,15 +199,19 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 let heap = payload::<RefCell<Heap>>(objects, r.heap).ok_or_else(|| missing(r.heap))?;
                 let b = mem.create_heap_buffer(g, e, task, &heap, r)?;
                 if let Some(list) = self.heaps.borrow_mut().get_mut(&(task, r.heap)) {
-                    list.push(Rc::downgrade(&b));
+                    list.push(Member::Buffer(Rc::downgrade(&b)));
                 }
                 attach = b;
                 ok!(HeapCreateBuffer, HeapCreateBufferReply)
             }
             Request::HeapCreateTexture(r) => {
                 let heap = payload::<RefCell<Heap>>(objects, r.heap).ok_or_else(|| missing(r.heap))?;
-                heap.borrow_mut().allocate_texture()?;
-                return Err(MemError::unimplemented("-[MTLHeap newTextureWithDescriptor:]"));
+                let t = mem.create_heap_texture(g, task, r.texture, &r.descriptor, &heap)?;
+                if let Some(list) = self.heaps.borrow_mut().get_mut(&(task, r.heap)) {
+                    list.push(Member::Texture(Rc::downgrade(&t)));
+                }
+                attach = t;
+                ok!(HeapCreateTexture, HeapCreateTextureReply)
             }
             Request::CreateTexture(r) => {
                 attach = mem.create_texture(g, task, r.texture, &r.descriptor)?;
@@ -275,8 +294,11 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 }))));
             }
             Request::MakeAliasable(r) => {
-                let b = payload::<Buffer<A>>(objects, r.resource);
-                match b.as_ref().and_then(|b| b.heap_object.clone()) {
+                let heap = match payload::<Buffer<A>>(objects, r.resource) {
+                    Some(b) => b.heap_object.clone(),
+                    None => payload::<Texture<A>>(objects, r.resource).and_then(|t| t.heap_object.clone()),
+                };
+                match heap {
                     Some(heap) => heap.borrow().make_aliasable()?,
                     None => {
                         return Err(MemError::undefined(
@@ -333,14 +355,28 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
             };
         }
         if let Some(t) = payload::<Texture<A>>(objects, r.object) {
-            return self.memory.set_texture_purgeable(g, &t, r.state);
+            return match &t.heap_object {
+                Some(heap) => Purgeable::set_on_heap_resource(heap.borrow().purgeable, r.state, CALL),
+                None => self.memory.set_texture_purgeable(g, &t, r.state),
+            };
         }
         if let Some(heap) = payload::<RefCell<Heap>>(objects, r.object) {
             let t = heap.borrow_mut().purgeable.set(r.state, "-[MTLHeap setPurgeableState:]")?;
             if t.discard {
                 let members = self.heaps.borrow().get(&(cx.task(), r.object)).cloned().unwrap_or_default();
-                for b in members.iter().filter_map(Weak::upgrade) {
-                    self.memory.discard_buffer(g, e, &b)?;
+                for member in members.iter() {
+                    match member {
+                        Member::Buffer(b) => {
+                            if let Some(b) = b.upgrade() {
+                                self.memory.discard_buffer(g, e, &b)?;
+                            }
+                        }
+                        Member::Texture(t) => {
+                            if let Some(t) = t.upgrade() {
+                                self.memory.discard_texture(g, &t)?;
+                            }
+                        }
+                    }
                 }
             }
             return Ok(t.previous);
