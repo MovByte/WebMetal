@@ -9,7 +9,7 @@ use std::process::Command as Process;
 use std::sync::OnceLock;
 
 use webmetal_wire::fuzz::Rng;
-use webmetal_wire::{Channel, Command, Event, Reply, Request, Value, OPS};
+use webmetal_wire::{Channel, Command, Event, OPS, Reply, Request, Value};
 
 const SEEDS: [u64; 3] = [11, 0x0123_4567_89ab_cdef, 0xffff_ffff_ffff_fffe];
 
@@ -84,7 +84,8 @@ macro_rules! cpp_to_rust {
             }
             assert!(again == cpp, "re-encoding the decoded records differs (seed {})", seed);
         }
-        let all: std::collections::BTreeSet<u16> = OPS.iter().filter(|op| op.channel == $channel).map(|op| op.opcode).collect();
+        let all: std::collections::BTreeSet<u16> =
+            OPS.iter().filter(|op| op.channel == $channel).map(|op| op.opcode).collect();
         assert_eq!(seen, all, "some records were never exercised");
     }};
 }

@@ -22,7 +22,7 @@ pub mod value;
 
 pub use codec::{DecodeError, DecodeErrorKind, EncodeError, GuestAddr, Handle, SurfaceId};
 pub use generated::*;
-pub use value::{Value, VALUE_DEPTH_LIMIT};
+pub use value::{VALUE_DEPTH_LIMIT, Value};
 
 /// Failure statuses (the `status` field of [`Failure`] and of a reply).
 pub mod status {

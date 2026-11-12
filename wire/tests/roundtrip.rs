@@ -4,9 +4,9 @@ use std::collections::BTreeSet;
 
 use webmetal_wire::fuzz::Rng;
 use webmetal_wire::{
-    opcode, Channel, Command, EncodeError, EncoderPushDebugGroup, Event, Failure, Handle, Hash, RegisterFunction, Reply,
-    Request, RenderSampleCountersInBuffer, RenderSetStencilReferenceValue, RenderSetVertexBuffer, RenderSetVertexBuffers,
-    CreateBufferReply, Range, OPS,
+    Channel, Command, CreateBufferReply, EncodeError, EncoderPushDebugGroup, Event, Failure, Handle, Hash, OPS, Range,
+    RegisterFunction, RenderSampleCountersInBuffer, RenderSetStencilReferenceValue, RenderSetVertexBuffer,
+    RenderSetVertexBuffers, Reply, Request, opcode,
 };
 
 const SEEDS: [u64; 4] = [1, 2, 0x5eed, 0xdead_beef_cafe_f00d];
@@ -109,7 +109,9 @@ fn golden_u64_fields() {
 #[test]
 fn golden_padding() {
     // u32 at offset 8, then zero padding to the 8-byte record alignment.
-    let bytes = encode(Command::RenderSetStencilReferenceValue(RenderSetStencilReferenceValue { reference_value: 0xa1b2_c3d4 }));
+    let bytes = encode(Command::RenderSetStencilReferenceValue(RenderSetStencilReferenceValue {
+        reference_value: 0xa1b2_c3d4,
+    }));
     let mut expected = header(opcode::RENDER_SET_STENCIL_REFERENCE_VALUE, 16);
     expected.extend_from_slice(&[0xd4, 0xc3, 0xb2, 0xa1, 0, 0, 0, 0]);
     assert_eq!(bytes, expected);

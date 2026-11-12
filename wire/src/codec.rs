@@ -352,7 +352,8 @@ impl<'a> Reader<'a> {
 
     pub fn handle(&mut self, field: &'static str) -> Result<Handle, DecodeError> {
         let v = self.u64()?;
-        Handle::new(v).ok_or_else(|| DecodeError { offset: self.base + self.at - 8, kind: DecodeErrorKind::NullHandle(field) })
+        Handle::new(v)
+            .ok_or_else(|| DecodeError { offset: self.base + self.at - 8, kind: DecodeErrorKind::NullHandle(field) })
     }
 
     pub fn opt_handle(&mut self) -> Result<Option<Handle>, DecodeError> {

@@ -51,7 +51,11 @@ pub struct GuestMemoryError {
 
 impl fmt::Display for GuestMemoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "guest memory {:?} at {:#x} (access {:#x}+{:#x}) in task {}", self.kind, self.fault, self.addr, self.len, self.task.0)
+        write!(
+            f,
+            "guest memory {:?} at {:#x} (access {:#x}+{:#x}) in task {}",
+            self.kind, self.fault, self.addr, self.len, self.task.0
+        )
     }
 }
 
