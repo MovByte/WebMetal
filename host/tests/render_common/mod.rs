@@ -451,7 +451,9 @@ pub fn stencil_attachment(texture: Handle) -> RenderPassStencilAttachment {
     }
 }
 
-/// `[MTLRenderPassDescriptor renderPassDescriptor]`: eight color attachments without textures.
+/// `[MTLRenderPassDescriptor renderPassDescriptor]`: eight color attachments without textures, and the four sample
+/// buffer attachment slots the guest sends, without sample buffers and with every index `MTLCounterDontSample` (the
+/// defaults, read on macOS 27.0.1).
 pub fn pass_descriptor() -> RenderPassDescriptor {
     RenderPassDescriptor {
         binary_archives: vec![],
@@ -468,7 +470,15 @@ pub fn pass_descriptor() -> RenderPassDescriptor {
         render_target_array_length: 0,
         render_target_height: 0,
         render_target_width: 0,
-        sample_buffer_attachments: vec![],
+        sample_buffer_attachments: (0..4)
+            .map(|_| RenderPassSampleBufferAttachment {
+                end_of_fragment_sample_index: u64::MAX,
+                end_of_vertex_sample_index: u64::MAX,
+                sample_buffer: None,
+                start_of_fragment_sample_index: u64::MAX,
+                start_of_vertex_sample_index: u64::MAX,
+            })
+            .collect(),
         skip_empty_tiles_on_clear_enabled: false,
         stencil_attachment: None,
         threadgroup_memory_length: 0,

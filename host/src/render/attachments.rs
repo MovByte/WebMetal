@@ -362,7 +362,8 @@ impl<A: Api> Targets<A> {
                  part of the A10X's family",
             ));
         }
-        if !d.sample_buffer_attachments.is_empty() {
+        // The descriptor always has its four attachment slots; one without a sample buffer samples nothing.
+        if d.sample_buffer_attachments.iter().any(|a| a.sample_buffer.is_some()) {
             return Err(RenderError::unimplemented("counter sample buffer attachments of a render pass"));
         }
         for (set, what) in [
