@@ -8,6 +8,7 @@
 //! - [`etc2`], [`astc`], [`pvrtc`]: software decoders of the compressed formats, and [`decode`], which decodes a
 //!   Metal format's image with them.
 //! - [`packed`]: bit layouts and exact conversions of the formats stored in another WebGPU format.
+//! - [`reinterpret`]: views in another pixel format.
 
 pub mod astc;
 pub mod decode;
@@ -15,6 +16,7 @@ pub mod etc2;
 pub mod handling;
 pub mod packed;
 pub mod pvrtc;
+pub mod reinterpret;
 #[rustfmt::skip]
 pub mod table;
 pub mod webgpu;
