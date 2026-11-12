@@ -205,6 +205,7 @@ impl<A: Api, E: Embedder + 'static> PipelineService<A, E> {
         } else {
             c.settings.label.clone()
         };
+        gpu::check_layout::<A>(call, cx.gpu().device(), &compiled_ref.layout)?;
         let desc = render::plan(call, &label, &c.settings, compiled_ref)?;
         let pipeline = RenderPipeline::create(cx.gpu(), desc).map_err(|e| e.failure())?;
         if pipeline.rasterization {

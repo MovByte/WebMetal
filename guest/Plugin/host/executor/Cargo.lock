@@ -14,7 +14,7 @@ dependencies = [
 [[package]]
 name = "airwgsl"
 version = "0.1.0"
-source = "git+https://github.com/MovByte/AirWgsl?rev=07395cfd9ead0433865a6d724a38b1a43a93f0fb#07395cfd9ead0433865a6d724a38b1a43a93f0fb"
+source = "git+https://github.com/MovByte/AirWgsl?rev=b86696c3557b0dc61432ec1e9257984fe5191150#b86696c3557b0dc61432ec1e9257984fe5191150"
 
 [[package]]
 name = "bindgen"

@@ -1442,6 +1442,14 @@ impl<A: Api> Run<'_, A> {
                 ),
             ));
         }
+        let [.., near, far] = self.state.viewport;
+        if p.writes_depth && (near, far) != (0.0, 1.0) {
+            return Err(RenderError::unimplemented(format!(
+                "{DRAW}: the fragment function writes the depth with the viewport depth range [{near}, {far}]: Metal \
+                 stores the written depth clamped to [0, 1], WebGPU clamps it to the viewport's depth range (WebGPU \
+                 23.2.6), and the two agree only for [0, 1]"
+            )));
+        }
         if p.topology_class != TopologyClass::Unspecified && p.topology_class != prim.class() {
             return Err(RenderError::undefined(
                 DRAW,

@@ -273,6 +273,11 @@ pub struct RenderPipelineDesc {
     /// no observable effect (plan section 6.7).
     pub rasterization: bool,
     pub passes: PassPlan,
+    /// The fragment stage writes the depth (`[[depth(...)]]`, WGSL `frag_depth`). Metal stores the written depth
+    /// clamped to [0, 1] only, while WebGPU clamps it to the viewport's depth range (WebGPU 23.2.6, "If frag_depth
+    /// builtin is produced by the shader"), so its draws need the viewport depth range [0, 1] (AirWgsl
+    /// `tables/intrinsics.toml`, `air.depth`, measured on Apple M4).
+    pub writes_depth: bool,
 }
 
 /// The payload of a `RenderPipelineState` handle.
@@ -293,6 +298,8 @@ pub struct RenderPipeline<A: Api> {
     pub topology_class: TopologyClass,
     pub rasterization: bool,
     pub passes: PassPlan,
+    /// See [`RenderPipelineDesc::writes_depth`].
+    pub writes_depth: bool,
     /// The size of the largest uniform block of the pipeline's bindings (0 without one).
     pub uniform_size: u64,
     variants: RefCell<HashMap<VariantKey, A::RenderPipeline>>,
@@ -462,6 +469,7 @@ impl<A: Api> RenderPipeline<A> {
             topology_class: desc.topology_class,
             rasterization: desc.rasterization,
             passes: desc.passes,
+            writes_depth: desc.writes_depth,
             uniform_size,
             variants: RefCell::new(HashMap::new()),
         })

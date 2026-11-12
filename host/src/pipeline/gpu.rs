@@ -18,6 +18,7 @@ use webmetal_wire::Failure;
 use super::compile::KeyWriter;
 use super::sha256::sha256;
 use crate::exec::failure;
+use crate::format::webgpu::{Feature, HostFeatures, WebGpuFormat};
 use crate::gpu::idl::{
     self, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferBindingLayout, ComputePipelineDescriptor,
     PipelineLayoutDescriptor, PipelineLayoutOrAuto, ProgrammableStage, SamplerBindingLayout, ShaderModuleDescriptor,
@@ -152,14 +153,190 @@ pub fn layout_entry(e: &airwgsl::BindingEntry) -> Result<BindGroupLayoutEntry, F
     Ok(out)
 }
 
+/// Check a compiled binding layout against WebGPU's rules for `createBindGroupLayout` (WebGPU 8.1.1, "Bind Group
+/// Layout Creation") before any WebGPU call, so that a layout WebGPU would reject is reported here and never raised as
+/// a WebGPU error: an entry the rules forbid is a compiler defect (status 2), a layout over the device's binding limits
+/// is the host's shortfall (status 3).
+pub fn check_layout<A: Api>(call: &str, device: &A::Device, layout: &BindingLayout) -> Result<(), Failure> {
+    let limits = device.limits();
+    let names = device.features();
+    let features = HostFeatures::new(Feature::ALL.into_iter().filter(|f| names.contains(f.name())));
+    let defect = |group: u32, binding: u32, rule: &str| {
+        failure::unimplemented(format!(
+            "{call}: the compiler's bind group {group}, binding {binding}, breaks WebGPU's createBindGroupLayout rule \
+             that {rule} (WebGPU 8.1.1)"
+        ))
+    };
+    // The pipeline layout's group count (createPipelineLayout: at most maxBindGroups layouts).
+    let groups = layout.groups.iter().map(|g| u64::from(g.group) + 1).max().unwrap_or(0);
+    if groups > 0 && limits.get("maxBindGroups").is_none_or(|l| groups > l) {
+        return Err(failure::host_unsupported(format!(
+            "{call}: the pipeline uses {groups} bind groups; this device's maxBindGroups is {:?}",
+            limits.get("maxBindGroups")
+        )));
+    }
+    // Per stage (vertex, fragment, compute): sampled textures, samplers, storage buffers, storage textures, uniform
+    // buffers, over every group: createPipelineLayout checks all the layouts' entries together against the binding slot
+    // limits, which bounds each layout's own entries as well.
+    let mut counts = [[0u64; 5]; 3];
+    for g in &layout.groups {
+        let mut seen = std::collections::BTreeSet::new();
+        for e in &g.entries {
+            if !seen.insert(e.binding) {
+                return Err(defect(g.group, e.binding, "each binding of a layout is unique"));
+            }
+            if let Some(max) = limits.get("maxBindingsPerBindGroup")
+                && u64::from(e.binding) >= max
+            {
+                return Err(failure::host_unsupported(format!(
+                    "{call}: binding {} of bind group {} is not below this device's maxBindingsPerBindGroup {max}",
+                    e.binding, g.group
+                )));
+            }
+            if e.visibility.0 & !0x7 != 0 {
+                return Err(defect(g.group, e.binding, "visibility contains only GPUShaderStage bits"));
+            }
+            let vertex = e.visibility.contains(airwgsl::ShaderStages::VERTEX);
+            let category = match &e.resource {
+                BindingResource::Buffer { ty, .. } => {
+                    if vertex && *ty == airwgsl::BufferBindingType::Storage {
+                        return Err(defect(
+                            g.group,
+                            e.binding,
+                            "a buffer the vertex stage sees is uniform or read-only",
+                        ));
+                    }
+                    if *ty == airwgsl::BufferBindingType::Uniform { 4 } else { 2 }
+                }
+                BindingResource::Sampler { .. } => 1,
+                BindingResource::Texture { sample_type, view_dimension, multisampled } => {
+                    if *multisampled
+                        && (*view_dimension != airwgsl::TextureViewDimension::D2
+                            || *sample_type == airwgsl::TextureSampleType::Float)
+                    {
+                        return Err(defect(
+                            g.group,
+                            e.binding,
+                            "a multisampled texture has view dimension \"2d\" and a sample type other than \"float\"",
+                        ));
+                    }
+                    0
+                }
+                BindingResource::StorageTexture { access, format, view_dimension } => {
+                    if vertex && *access != airwgsl::StorageTextureAccess::ReadOnly {
+                        return Err(defect(g.group, e.binding, "a storage texture the vertex stage sees is read-only"));
+                    }
+                    if matches!(
+                        view_dimension,
+                        airwgsl::TextureViewDimension::Cube | airwgsl::TextureViewDimension::CubeArray
+                    ) {
+                        return Err(defect(g.group, e.binding, "a storage texture's view dimension is not a cube"));
+                    }
+                    let f = WebGpuFormat::from_name(format).ok_or_else(|| {
+                        defect(g.group, e.binding, "a storage texture's format is a GPUTextureFormat")
+                    })?;
+                    let caps = f.caps();
+                    let cond = match access {
+                        airwgsl::StorageTextureAccess::WriteOnly => caps.storage_wo,
+                        airwgsl::StorageTextureAccess::ReadOnly => caps.storage_ro,
+                        airwgsl::StorageTextureAccess::ReadWrite => caps.storage_rw,
+                    };
+                    if !features.allows(cond) {
+                        return Err(failure::host_unsupported(format!(
+                            "{call}: bind group {}, binding {}: this device cannot bind {format} for storage access \
+                             {access:?} (WebGPU 26.1.1)",
+                            g.group, e.binding
+                        )));
+                    }
+                    3
+                }
+            };
+            for (i, stage) in
+                [airwgsl::ShaderStages::VERTEX, airwgsl::ShaderStages::FRAGMENT, airwgsl::ShaderStages::COMPUTE]
+                    .into_iter()
+                    .enumerate()
+            {
+                if e.visibility.contains(stage) {
+                    counts[i][category] += 1;
+                }
+            }
+        }
+    }
+    // The binding slot limits (WebGPU 8.1.1, "exceeds the binding slot limits"): storage buffers and storage
+    // textures of the vertex and fragment stages count against their stage's own limit, the compute stage's
+    // against the per-stage limit. An implementation that does not report a stage's own limit (a webgpu.h without
+    // the field) predates it and counts those bindings against the per-stage limit.
+    let slot = |stage: usize, category: usize| -> &'static str {
+        match (stage, category) {
+            (_, 0) => "maxSampledTexturesPerShaderStage",
+            (_, 1) => "maxSamplersPerShaderStage",
+            (0, 2) => "maxStorageBuffersInVertexStage",
+            (1, 2) => "maxStorageBuffersInFragmentStage",
+            (_, 2) => "maxStorageBuffersPerShaderStage",
+            (0, 3) => "maxStorageTexturesInVertexStage",
+            (1, 3) => "maxStorageTexturesInFragmentStage",
+            (_, 3) => "maxStorageTexturesPerShaderStage",
+            _ => "maxUniformBuffersPerShaderStage",
+        }
+    };
+    for (i, stage) in ["vertex", "fragment", "compute"].iter().enumerate() {
+        for (k, &used) in counts[i].iter().enumerate() {
+            if used == 0 {
+                continue;
+            }
+            let mut name = slot(i, k);
+            let mut limit = limits.get(name);
+            if limit.is_none() && matches!(k, 2 | 3) {
+                name = slot(2, k);
+                limit = limits.get(name);
+            }
+            match limit {
+                Some(l) if used <= l => {}
+                Some(l) => {
+                    return Err(failure::host_unsupported(format!(
+                        "{call}: the pipeline uses {used} {name} slots in the {stage} stage; this device allows {l}"
+                    )));
+                }
+                None => {
+                    return Err(failure::host_unsupported(format!(
+                        "{call}: this implementation does not report {name}, which the pipeline uses"
+                    )));
+                }
+            }
+        }
+    }
+    for (ty, name) in [
+        (airwgsl::BufferBindingType::Uniform, "maxDynamicUniformBuffersPerPipelineLayout"),
+        (airwgsl::BufferBindingType::Storage, "maxDynamicStorageBuffersPerPipelineLayout"),
+    ] {
+        let used = layout
+            .groups
+            .iter()
+            .flat_map(|g| &g.entries)
+            .filter(
+                |e| matches!(&e.resource, BindingResource::Buffer { ty: t, has_dynamic_offset: true, .. } if *t == ty),
+            )
+            .count() as u64;
+        if used > 0 && limits.get(name).is_none_or(|l| used > l) {
+            return Err(failure::host_unsupported(format!(
+                "{call}: the pipeline uses {used} {name} slots; this device allows {:?}",
+                limits.get(name)
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// The bind group layouts of a pipeline (each with its `@group` index) and its pipeline layout.
 pub struct Layouts<A: Api> {
     pub groups: Vec<(u32, A::BindGroupLayout)>,
     pub pipeline: A::PipelineLayout,
 }
 
-/// Create the bind group layouts and the pipeline layout of `layout`. Group indices the layout skips are null in the
-/// pipeline layout.
+/// Create the bind group layouts and the pipeline layout of `layout`. A group index the layout skips gets an empty
+/// layout, which `createPipelineLayout` treats as null (it keeps only layouts with entries, WebGPU 8.3.1); wgpu-native
+/// does not take the null entries `GPUPipelineLayoutDescriptor` allows (its createPipelineLayout aborts on one). The
+/// encoder binds an empty bind group there.
 pub fn create_layouts<A: Api>(g: &impl Calls<A>, label: &str, layout: &BindingLayout) -> Result<Layouts<A>, Failure> {
     let mut groups: Vec<(u32, A::BindGroupLayout)> = Vec::new();
     for group in &layout.groups {
@@ -178,10 +355,19 @@ pub fn create_layouts<A: Api>(g: &impl Calls<A>, label: &str, layout: &BindingLa
         groups.push((group.group, bgl));
     }
     let count = groups.iter().map(|(i, _)| *i + 1).max().unwrap_or(0);
-    let mut slots: Vec<Option<&A::BindGroupLayout>> = vec![None; count as usize];
-    for (i, l) in &groups {
-        slots[*i as usize] = Some(l);
+    for index in 0..count {
+        if groups.iter().any(|(i, _)| *i == index) {
+            continue;
+        }
+        let mut d = BindGroupLayoutDescriptor::new(Vec::new());
+        d.label = format!("{label} group {index} (empty)");
+        let bgl = g
+            .call("GPUDevice.createBindGroupLayout", &d.label, |dev| dev.create_bind_group_layout(&d))
+            .map_err(|e| gpu_failure("GPUDevice.createBindGroupLayout", label, &e))?;
+        groups.push((index, bgl));
     }
+    groups.sort_by_key(|(i, _)| *i);
+    let slots: Vec<Option<&A::BindGroupLayout>> = groups.iter().map(|(_, l)| Some(l)).collect();
     let mut pd = PipelineLayoutDescriptor::new(slots);
     pd.label = label.to_string();
     let pipeline = g.call("GPUDevice.createPipelineLayout", label, |dev| dev.create_pipeline_layout(&pd));
@@ -364,6 +550,7 @@ fn compute_parts<'c, A: Api>(
             stage.stage
         )));
     }
+    check_layout::<A>(label, g.device(), &c.layout)?;
     let mut md = ShaderModuleDescriptor::new(stage.source.clone());
     md.label = label.to_string();
     let module = g.call("GPUDevice.createShaderModule", label, |dev| dev.create_shader_module(&md));

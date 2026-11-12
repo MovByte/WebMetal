@@ -306,6 +306,7 @@ impl Pipelines {
         {
             return Err(format!("the host lacks {f}"));
         }
+        let writes_depth = fragment.as_ref().is_some_and(|f| f.wgsl.contains("@builtin(frag_depth)"));
         let desc = RenderPipelineDesc {
             label: d.label.clone().unwrap_or_else(|| format!("{vname} pipeline")),
             vertex: StageSource { wgsl: vwgsl, entry_point: "main".into(), constants: vec![] },
@@ -322,6 +323,7 @@ impl Pipelines {
             topology_class: TopologyClass::from_value(d.input_primitive_topology, "test").map_err(|e| e.to_string())?,
             rasterization: d.rasterization_enabled,
             passes,
+            writes_depth,
         };
         RenderPipeline::create(cx.gpu(), desc).map_err(|e| e.to_string())
     }

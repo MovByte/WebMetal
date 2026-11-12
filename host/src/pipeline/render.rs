@@ -80,6 +80,8 @@ pub struct RenderSettings {
     pub sample_mask: u32,
     pub blend_constant: BlendConstant,
     pub support_indirect_command_buffers: bool,
+    /// The fragment function writes the depth (`[[depth(...)]]`).
+    pub writes_depth: bool,
 }
 
 /// `MTLPrimitiveTopologyClass` values: Unspecified, Point, Line, Triangle.
@@ -605,6 +607,8 @@ pub fn check_descriptor(
         sample_mask: (*sample_mask & 0xffff_ffff) as u32,
         blend_constant,
         support_indirect_command_buffers: *support_indirect_command_buffers,
+        // Set from the fragment function (check_functions).
+        writes_depth: false,
     })
 }
 
@@ -621,36 +625,8 @@ pub fn tessellation_of(d: &RenderPipelineDescriptor) -> Tessellation {
     }
 }
 
-/// A scalar kind and component count of an MSL type name as AIR records it (`float4`, `half`, `uint2`, ...).
-fn scalar(type_name: &str) -> Option<(SampleType, u32)> {
-    let digits = type_name.trim_start_matches(|c: char| c.is_ascii_alphabetic());
-    let base = &type_name[..type_name.len() - digits.len()];
-    let n = if digits.is_empty() { 1 } else { digits.parse().ok()? };
-    let kind = match base {
-        "float" | "half" => SampleType::Float,
-        "uint" | "ushort" | "uchar" => SampleType::Uint,
-        "int" | "short" | "char" => SampleType::Sint,
-        _ => return None,
-    };
-    Some((kind, n))
-}
-
-/// The components of a WebGPU color format.
-fn components(f: WebGpuFormat) -> u32 {
-    let name = f.name();
-    if name.starts_with("rgba") || name.starts_with("bgra") || name.starts_with("rgb10a2") {
-        4
-    } else if name.starts_with("rg11b10") || name.starts_with("rgb9e5") {
-        3
-    } else if name.starts_with("rg") {
-        2
-    } else {
-        1
-    }
-}
-
-/// The checks Metal's driver makes on the functions of a render pipeline (as measured; [`super::errors`]) and the
-/// fragment outputs against the color targets.
+/// The checks Metal's driver makes on the functions of a render pipeline (as measured; [`super::errors`]), and the
+/// color attachments the fragment function leaves unwritten (write mask 0).
 pub fn check_functions(
     call: &str,
     settings: &mut RenderSettings,
@@ -744,64 +720,18 @@ pub fn check_functions(
             format!("fragment inputs {}", unmatched.join(", ")),
         ));
     }
-    // Fragment outputs against the color targets (WebGPU 10.3.4, validating GPUFragmentState).
+    settings.writes_depth = fe.outputs.iter().any(|o| matches!(o.role, OutputRole::Depth(_)));
+    // The color attachments the fragment function writes. Whether each output suits its attachment's format (class,
+    // components, an alpha the blend factors read) is the compiler's check, with Metal's measured rule.
     let mut written = vec![false; settings.colors.len()];
     for o in &fe.outputs {
-        let OutputRole::RenderTarget { index, blend_index } = &o.role else { continue };
+        let OutputRole::RenderTarget { index, blend_index: 0 } = &o.role else { continue };
         let airwgsl::air::Slot::Value(index) = index else {
             return Err(failure::unimplemented(format!("{call}: a color output whose index is a function constant")));
         };
-        let i = *index as usize;
-        let Some(target) = settings.colors.get(i).and_then(|c| c.state.as_ref()) else { continue };
-        if *blend_index != 0 {
-            continue;
+        if let Some(w) = written.get_mut(*index as usize) {
+            *w = true;
         }
-        let f = WebGpuFormat::ALL.into_iter().find(|f| idl_format(*f) == target.format).expect("a stored format");
-        let (kind, n) = o.type_name.as_deref().and_then(scalar).ok_or_else(|| {
-            failure::unimplemented(format!("{call}: color output {i} of type {:?} has no WebGPU form", o.type_name))
-        })?;
-        let wants = match f.caps().sample {
-            SampleType::Uint => SampleType::Uint,
-            SampleType::Sint => SampleType::Sint,
-            _ => SampleType::Float,
-        };
-        if kind != wants {
-            return Err(failure::undefined_in_metal(
-                &format!(
-                    "{call}: color output {i} of type {:?} into pixel format {}",
-                    o.type_name, settings.colors[i].pixel_format
-                ),
-                "WebGPU 10.3.4: the output's scalar type must match the format's sample type",
-            ));
-        }
-        if n < components(f) {
-            return Err(failure::undefined_in_metal(
-                &format!(
-                    "{call}: color output {i} of type {:?} into pixel format {}",
-                    o.type_name, settings.colors[i].pixel_format
-                ),
-                "WebGPU 10.3.4: the output must have a component for every component of the format",
-            ));
-        }
-        let alpha_factor = target.blend.as_ref().is_some_and(|b| {
-            [b.color.src_factor, b.color.dst_factor].iter().any(|f| {
-                matches!(
-                    f,
-                    BlendFactor::SrcAlpha
-                        | BlendFactor::OneMinusSrcAlpha
-                        | BlendFactor::SrcAlphaSaturated
-                        | BlendFactor::Src1Alpha
-                        | BlendFactor::OneMinusSrc1Alpha
-                )
-            })
-        });
-        if alpha_factor && n < 4 {
-            return Err(failure::undefined_in_metal(
-                &format!("{call}: color output {i} of type {:?} blended with a source-alpha factor", o.type_name),
-                "WebGPU 10.3.4: an output blended with the source alpha must be a vec4",
-            ));
-        }
-        written[i] = true;
     }
     // An attachment the function does not write keeps its contents: Metal leaves it undefined, and WebGPU requires a
     // shader output for a target with a non-zero write mask.
@@ -990,6 +920,7 @@ pub fn plan(call: &str, label: &str, settings: &RenderSettings, c: &Compiled) ->
             .map_err(|e| e.failure())?,
         rasterization: settings.state.rasterization_enabled,
         passes,
+        writes_depth: settings.writes_depth,
     })
 }
 
@@ -1061,18 +992,5 @@ mod tests {
             (c.operation, c.src_factor, c.dst_factor),
             (BlendOperation::Min, BlendFactor::One, BlendFactor::One)
         );
-    }
-
-    #[test]
-    fn output_types_name_their_scalars() {
-        assert_eq!(scalar("float4"), Some((SampleType::Float, 4)));
-        assert_eq!(scalar("half"), Some((SampleType::Float, 1)));
-        assert_eq!(scalar("uint2"), Some((SampleType::Uint, 2)));
-        assert_eq!(scalar("short3"), Some((SampleType::Sint, 3)));
-        assert_eq!(scalar("bool"), None);
-        assert_eq!(components(WebGpuFormat::Rgba8unorm), 4);
-        assert_eq!(components(WebGpuFormat::Rg11b10ufloat), 3);
-        assert_eq!(components(WebGpuFormat::Rg16float), 2);
-        assert_eq!(components(WebGpuFormat::R32uint), 1);
     }
 }

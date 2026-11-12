@@ -51,7 +51,10 @@ fn predicted(h: &Harness, f: &LibraryFunction, name: &str) -> Result<(), (u32, S
     let info = compute::kernel_info(&function).map_err(|r| (kind(&r), r.to_string()))?;
     let desc = compute::creation_desc(&settings, &info);
     match h.shared.compiler.compile_fresh(&[function.stage_module()], &desc) {
-        Ok(_) => Ok(()),
+        // A compiled layout WebGPU would reject is the compiler's defect, which creation reports before any WebGPU
+        // call.
+        Ok(c) => webmetal_host::pipeline::gpu::check_layout::<pipeline_common::A>("test", &h.g.device, &c.layout)
+            .map_err(|f| (f.status, f.message.rsplit(": ").next().unwrap_or("").to_string())),
         Err(r) => Err((kind(&r), r.to_string())),
     }
 }
@@ -406,12 +409,11 @@ fn reference_render_pipelines_create_or_fail_as_metal_defines() {
         assert!(f.message.contains("integer format"), "{f:?}");
     }
 
-    // A fragment output whose type does not match the attachment's format: undefined in Metal, rejected by WebGPU.
+    // A float fragment output into an integer attachment: Metal refuses the pipeline with the driver's error (measured
+    // on Apple M4 by the compiler's color-output-format rule).
     let f = render_status(&h, render_descriptor(Some(vertex), Some(fragment), RGBA32_UINT));
-    if render_predicted(&h, &lib, "pip_simple_vertex", Some("pip_simple_fragment"), RGBA32_UINT) == status::OK {
-        assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
-        assert!(f.message.contains("sample type"), "{f:?}");
-    }
+    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+    assert!(f.message.contains("NSError from the driver") && f.message.contains("color-output-format"), "{f:?}");
 
     // Two samples have no WebGPU form; alpha-to-one has none either.
     let mut d = render_descriptor(Some(vertex), Some(fragment), RGBA8_UNORM);

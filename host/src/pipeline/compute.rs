@@ -434,6 +434,9 @@ fn bind_groups<A: Api>(
                             airwgsl::UniformValue::BufferLength { stage, index } if kernel(stage) => {
                                 UniformValue::BufferLength { index: *index }
                             }
+                            // Three words each, at consecutive offsets, in both.
+                            airwgsl::UniformValue::StageInOrigin => UniformValue::StageInOrigin,
+                            airwgsl::UniformValue::StageInSize => UniformValue::StageInSize,
                             other => return Err(what(&format!("a uniform field holding {other:?}"))),
                         };
                         fields.push((f.offset, value));
@@ -446,6 +449,13 @@ fn bind_groups<A: Api>(
         }
         out.push(BindGroup { group: g.group, layout, entries });
     }
+    // The groups the compiled layout skips have empty layouts (see `gpu::create_layouts`), bound empty.
+    for (index, layout) in &objects.layouts.groups {
+        if !out.iter().any(|g| g.group == *index) {
+            out.push(BindGroup { group: *index, layout: layout.clone(), entries: Vec::new() });
+        }
+    }
+    out.sort_by_key(|g| g.group);
     Ok(out)
 }
 

@@ -20,7 +20,7 @@ webmetal-wire = { path = "../wire" }
 #
 #     [patch."https://github.com/MovByte/AirWgsl"]
 #     airwgsl = { path = "/path/to/AirWgsl" }
-airwgsl = { git = "https://github.com/MovByte/AirWgsl", rev = "07395cfd9ead0433865a6d724a38b1a43a93f0fb" }
+airwgsl = { git = "https://github.com/MovByte/AirWgsl", rev = "b86696c3557b0dc61432ec1e9257984fe5191150" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # The wasm-bindgen crate and the wasm-bindgen CLI that post-processes the module must be the same version.
