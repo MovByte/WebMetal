@@ -51,3 +51,11 @@ target = "AGXA10FamilySampler"
 [[class]]
 name = "WebMetalDepthStencilState"
 target = "AGXA10FamilyDepthStencilState"
+
+[[class]]
+name = "WebMetalComputePipelineState"
+target = "AGXA10FamilyComputePipeline"
+
+[[class]]
+name = "WebMetalRenderPipelineState"
+target = "AGXA10FamilyRenderPipeline"
