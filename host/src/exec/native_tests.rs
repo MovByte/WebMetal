@@ -920,6 +920,7 @@ fn status_handlers_and_timing() {
         unreachable!()
     };
     assert_eq!(s.kernel_start_time, c.kernel_start_time);
+    assert_eq!(s.kernel_end_time, c.kernel_end_time);
     assert!(x.exec.take_reports().is_empty());
 }
 

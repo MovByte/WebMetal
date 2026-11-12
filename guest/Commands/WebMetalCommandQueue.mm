@@ -75,18 +75,6 @@ dispatch_queue_t completionDispatch(id queue)
     return (dispatch_queue_t)object_getIvar(queue, completionDispatchIvar());
 }
 
-void reportOnce(const char *what, const char *problem)
-{
-    static std::mutex lock;
-    static std::unordered_set<std::string> reported;
-    {
-        std::lock_guard<std::mutex> guard(lock);
-        if (!reported.insert(std::string(what) + problem).second)
-            return;
-    }
-    WMReport(what, problem);
-}
-
 // Runs the events the host has for one queue (WebMetalCommandQueue's doorbell, and -dispatchAvailableCompletionNotifications).
 void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connection, uint64_t handle)
 {
@@ -112,13 +100,9 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
                 continue;
             }
             // The kernel's scheduled notification carries the start and the end of its submission, and IOGPU passes
-            // both. CommandBufferScheduled carries the start only; the end reaches the guest with
-            // CommandBufferCompleted, after the framework has stored kernelEndTime.
-            reportOnce("CommandBufferScheduled",
-                       "kernelEndTime is not implemented: the event carries no kernel end time, so the command "
-                       "buffer's kernelEndTime stays 0");
+            // both.
             [buffer didScheduleWithStartTime:webmetal::MachTicksFromNanoseconds(scheduled->kernelStartTime)
-                                     endTime:0
+                                     endTime:webmetal::MachTicksFromNanoseconds(scheduled->kernelEndTime)
                                        error:nil];
         } else if (auto *completed = std::get_if<webmetal::wire::CommandBufferCompleted>(&event)) {
             WebMetalCommandBuffer *buffer = nil;

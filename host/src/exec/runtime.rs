@@ -895,6 +895,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
             Event::CommandBufferScheduled(CommandBufferScheduled {
                 command_buffer: run.info.command_buffer,
                 kernel_start_time: run.kernel_start,
+                kernel_end_time: run.kernel_end,
             }),
         );
         if self.lost.is_none() {

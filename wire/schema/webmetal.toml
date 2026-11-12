@@ -3322,8 +3322,8 @@ args = ["store_action_options: u64 (MTLStoreActionOptions)"]
 code = 0x7001
 name = "CommandBufferScheduled"
 channel = "event"
-args = ["command_buffer: CommandBuffer", "kernel_start_time: u64"]
-doc = "The command buffer's stream was accepted and all its work submitted to the host GPU queue."
+args = ["command_buffer: CommandBuffer", "kernel_start_time: u64", "kernel_end_time: u64"]
+doc = "The command buffer's stream was accepted and all its work submitted to the host GPU queue. kernel_start_time is when the host began processing the command buffer and kernel_end_time when it had submitted all its work, the two times the kernel's scheduled notification carries (IOGPUFamily's IOGPUCommandQueue reads the clock when it begins a submission and again once the command buffer is processed and submitted, and IOGPU passes both to didScheduleWithStartTime:endTime:error:, which stores kernelStartTime and kernelEndTime)."
 
 [[op]]
 code = 0x7002

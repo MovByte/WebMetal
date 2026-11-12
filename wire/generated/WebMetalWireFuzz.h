@@ -4237,11 +4237,13 @@ inline void random(Gen& g, ParallelSetStencilStoreActionOptions& v) {
 inline void random(Gen& g, CommandBufferScheduled& v) {
     v.commandBuffer = g.handle();
     v.kernelStartTime = g.u64();
+    v.kernelEndTime = g.u64();
 }
 
 inline bool same(const CommandBufferScheduled& a, const CommandBufferScheduled& b) {
     return a.commandBuffer == b.commandBuffer &&
-           a.kernelStartTime == b.kernelStartTime;
+           a.kernelStartTime == b.kernelStartTime &&
+           a.kernelEndTime == b.kernelEndTime;
 }
 
 inline void random(Gen& g, CommandBufferCompleted& v) {

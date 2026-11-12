@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: 00535406ce9c7bf74bd9e22ddbed24a4114327808053d658460d8223aa425e19
+// Schema SHA-256: e66975b8b2c59d2a8b49ee09abbedfc19aa80161071eb3a5ad5d723bc05dfed1
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0x00, 0x53, 0x54, 0x06, 0xce, 0x9c, 0x7b, 0xf7, 0x4b, 0xd9, 0xe2, 0x2d, 0xdb, 0xed, 0x24, 0xa4, 0x11, 0x43, 0x27, 0x80, 0x80, 0x53, 0xd6, 0x58, 0x46, 0x0d, 0x82, 0x23, 0xaa, 0x42, 0x5e, 0x19};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0xe6, 0x69, 0x75, 0xb8, 0xb2, 0xc5, 0x9d, 0x2a, 0x8b, 0x49, 0xee, 0x09, 0xab, 0xbe, 0xdf, 0xc1, 0x9a, 0xa8, 0x01, 0x61, 0x07, 0x1e, 0xb3, 0xa5, 0xad, 0x5d, 0x72, 0x3b, 0xc0, 0x5d, 0xfe, 0xd1};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -12103,16 +12103,22 @@ inline bool encode(Writer& w, const ParallelSetStencilStoreActionOptions& v) {
 }
 
 // 0x7001 event record. The command buffer's stream was accepted and all its work submitted to the host GPU queue.
+// kernel_start_time is when the host began processing the command buffer and kernel_end_time when it had submitted
+// all its work, the two times the kernel's scheduled notification carries (IOGPUFamily's IOGPUCommandQueue reads the
+// clock when it begins a submission and again once the command buffer is processed and submitted, and IOGPU passes
+// both to didScheduleWithStartTime:endTime:error:, which stores kernelStartTime and kernelEndTime).
 struct CommandBufferScheduled {
     static constexpr uint16_t kOpcode = 0x7001;
     uint64_t commandBuffer = 0;  // wire type `CommandBuffer`.
     uint64_t kernelStartTime = 0;  // wire type `u64`.
+    uint64_t kernelEndTime = 0;  // wire type `u64`.
 };
 
 inline bool decodeFields(Reader& r, CommandBufferScheduled& v) {
     if (!r.u64(v.commandBuffer)) return false;
     if (v.commandBuffer == 0) return r.fail(DecodeError::NullHandle);
     if (!r.u64(v.kernelStartTime)) return false;
+    if (!r.u64(v.kernelEndTime)) return false;
     return true;
 }
 
