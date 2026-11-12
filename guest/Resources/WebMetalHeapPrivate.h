@@ -34,6 +34,16 @@ namespace webmetal {
 WebMetalHeap *NewHeap(WebMetalDevice *device, SEL _cmd, MTLHeapDescriptor *descriptor);
 uint64_t HeapHandle(WebMetalHeap *heap);
 
+// IOGPUMetalHeap's sub-resource methods: a range of `length` bytes at `alignment` from an automatic heap (its offset
+// returned in *offset), or, for `placement`, the range at *offset of a placement heap. False when the heap does not
+// grant it. The mode checks report through MTLReportFailure as IOGPU does.
+bool HeapSubResource(WebMetalHeap *heap, SEL _cmd, uint64_t length, uint64_t alignment, uint64_t options, bool placement,
+                     uint64_t *offset);
+// The heap resource's options, which its sub-resources take (-[IOGPUMetalResource initWithResource:]).
+uint64_t HeapOptions(WebMetalHeap *heap);
+// The CPU address of a heap offset (null for a private heap).
+void *HeapContents(WebMetalHeap *heap, uint64_t offset);
+
 // A buffer over [offset, offset + rangeLength) of `heap`, which the heap has granted; `contents` is the range's CPU
 // address (null for a private heap). -[IOGPUMetalBuffer initWithHeap:resource:offset:length:] gives it the heap's
 // options (`heapOptions`); `options` are the caller's, carried to the host as given.

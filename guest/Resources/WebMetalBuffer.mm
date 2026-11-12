@@ -28,15 +28,11 @@ NSString *MTLResourceOptionsString(MTLResourceOptions options);
 NSString *MTLPurgeableStateString(MTLPurgeableState state);
 }
 
-namespace {
-
-// The function names the driver's failure reports carry.
-const char kIOGPUBufferInit[] = "-[IOGPUMetalBuffer initWithDevice:pointer:length:alignment:options:sysMemSize:"
-                                "gpuAddress:args:argsSize:deallocator:]";
+namespace webmetal {
 
 // IOGPUMetalSuballocatorAllocate (IOGPU 0x1fcb2805c) serves lengths 1 to 0x20000 with storage mode at most private,
 // CPU cache mode at most write-combined and hazard tracking untracked or default (tracked counts as default).
-bool suballocatorServes(NSUInteger length, MTLResourceOptions options)
+bool SuballocatorServes(uint64_t length, uint64_t options)
 {
     uint64_t hazard = (options & webmetal::kHazardTrackingModeMask) >> webmetal::kHazardTrackingModeShift;
     if (hazard == MTLHazardTrackingModeTracked)
@@ -48,7 +44,7 @@ bool suballocatorServes(NSUInteger length, MTLResourceOptions options)
 
 // -[AGXA10FamilyDevice initWithAcceleratorPort:simultaneousInstances:] (AGXMetalA10 0x21c8d22bc) disables driver
 // sub-allocation when the com.apple.Metal preference DisableDriverSuballocation is set to true.
-bool suballocationDisabled()
+bool SuballocationDisabled()
 {
     static const bool disabled = [] {
         Boolean valid = false;
@@ -58,6 +54,14 @@ bool suballocationDisabled()
     }();
     return disabled;
 }
+
+}  // namespace webmetal
+
+namespace {
+
+// The function names the driver's failure reports carry.
+const char kIOGPUBufferInit[] = "-[IOGPUMetalBuffer initWithDevice:pointer:length:alignment:options:sysMemSize:"
+                                "gpuAddress:args:argsSize:deallocator:]";
 
 // The checks -[IOGPUMetalBuffer initWithDevice:pointer:...] (IOGPU 0x1fcb2b3c8) reports through MTLReportFailure and
 // then continues past.
@@ -138,7 +142,7 @@ WebMetalBuffer *NewDeviceBuffer(WebMetalDevice *device, SEL _cmd, NSUInteger len
     const uint64_t sysMemSize = (static_cast<uint64_t>(length) + page - 1) & ~(page - 1);
     if (sysMemSize < length)
         return nil;
-    const bool suballocated = length < page && !suballocationDisabled() && suballocatorServes(length, options);
+    const bool suballocated = length < page && !SuballocationDisabled() && SuballocatorServes(length, options);
     if (!suballocated)
         reportInitFailures(options, false);
     const uint64_t storage = (options & kStorageModeMask) >> kStorageModeShift;

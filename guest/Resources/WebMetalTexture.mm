@@ -4,13 +4,18 @@
 // The driver checks a descriptor with Metal.framework's own -[MTLTextureDescriptorInternal validateWithDevice:], lays
 // the texture out in its private memory format (AGX::Texture, the AGX layout), and creates the kernel resource. The
 // plugin calls the same validation, and the host executor holds the texture's contents (CreateTexture and the other
-// creation requests). What depends on the AGX layout itself, the allocated size, its alignment and row pitch, has no
-// source yet: those answers are LOUD.
+// creation requests). The AGX layout's sizes, alignment and row pitch come from the port of AGX::TextureGen2
+// (WebMetalTextureLayout.h) for device and heap textures; textures over IOSurfaces, buffers and caller memory have no
+// layout here, and what depends on it is LOUD for them.
 
 #import "WebMetalTexture.h"
 #import "WebMetalBuffer.h"
+#import "WebMetalHeapPrivate.h"
+#import "WebMetalTextureLayout.h"
 
 #import <objc/message.h>
+
+#include <IOSurface/IOSurfaceRef.h>
 
 #include <cstring>
 
@@ -34,7 +39,13 @@ size_t IOSurfaceGetSliceCount(IOSurfaceRef surface);
 
 namespace {
 
-constexpr char kLayout[] = "the A10X texture layout (AGX::Texture in AGXMetalA10) that decides it is not established";
+constexpr char kLayout[] = "the A10X texture layout (AGX::TextureGen2 in AGXMetalA10) of a texture over an IOSurface, a "
+                           "buffer or caller memory is not ported";
+
+// The kernel's page size on 21H461 (page_size, set to 0x4000 at 0xfffffff007339070 of kernelcache.release.ipad7).
+// IOGPUResource::newResourceWithOptions (0xfffffff005bc3f94) rounds a resource's system memory up to it, and the
+// rounded size is the resident size new_resource returns (IOGPUDevice::new_resource, 0xfffffff005bd07b4).
+constexpr uint64_t kKernelPageSize = 0x4000;
 
 }  // namespace
 
@@ -68,6 +79,15 @@ constexpr char kLayout[] = "the A10X texture layout (AGX::Texture in AGXMetalA10
     void *_pointer;                      // _pointer: caller memory of a no-copy texture
     void (^_deallocator)(void *pointer, NSUInteger length);  // _deallocator
     NSUInteger _noCopyLength;
+    // AGXTexture's layout answers, for device and heap textures (_hasLayout).
+    bool _hasLayout;
+    uint64_t _alignment;     // _alignment
+    uint64_t _cpuSizeBytes;  // _cpuSizeBytes
+    uint64_t _bytesPerRow;   // _bytesPerRow
+    // The driver sub-allocates the texture (-[AGXTexture initWithDevice:desc:isSuballocDisabled:]): its allocated size
+    // is its CPU size, which it adds to the device total (_accounted).
+    bool _suballocated;
+    int64_t _accounted;
 }
 @end
 
@@ -118,6 +138,52 @@ ResourceState *TextureState(WebMetalTexture *texture)
     return &texture->_state;
 }
 
+// What the AGX layout reads besides the descriptor: the page size, and the IOSurface offset alignment that
+// AGX::Texture's constructor keeps in a static local (IOSurfaceAlignProperty(kIOSurfaceOffset, 1)).
+static agx::SystemValues layoutSystem()
+{
+    static const agx::SystemValues values = [] {
+        agx::SystemValues v;
+        v.vmPageSize = PageSize();
+        v.iosurfaceAlignment = IOSurfaceAlignProperty(kIOSurfaceOffset, 1);
+        return v;
+    }();
+    return values;
+}
+
+// The MTLTextureDescriptorPrivate fields the driver's layout callers read.
+static agx::DescriptorFields layoutFields(const wire::TextureDescriptor &d)
+{
+    agx::DescriptorFields f;
+    f.textureType = d.textureType;
+    f.pixelFormat = d.pixelFormat;
+    f.width = d.width;
+    f.height = d.height;
+    f.depth = d.depth;
+    f.mipmapLevelCount = d.mipmapLevelCount;
+    f.sampleCount = d.sampleCount;
+    f.arrayLength = d.arrayLength;
+    f.rotation = d.rotation;
+    f.swizzle = d.swizzleKey;
+    f.compressionMode = d.compressionMode;
+    f.usage = d.usage;
+    f.resourceOptions = d.resourceOptions;
+    f.allowGPUOptimizedContents = d.allowGpuOptimizedContents;
+    f.compressionFootprint = d.compressionFootprint;
+    f.colorSpaceConversion = d.colorSpaceConversionMatrix;
+    f.storageMode = d.storageMode;
+    return f;
+}
+
+SizeAndAlign HeapTextureSizeAndAlign(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor)
+{
+    if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
+        return SizeAndAlign{0, 0};
+    const agx::SizeAndAlign sa =
+        agx::heapTextureSizeAndAlign(layoutFields(WireTextureDescriptor(device, _cmd, descriptor)), layoutSystem());
+    return SizeAndAlign{sa.size, sa.align};
+}
+
 // The fields -[IOGPUMetalTexture initWithDevice:descriptor:sysMemSize:sysMemRowBytes:vidMemSize:vidMemRowBytes:args:
 // argsSize:] (IOGPU 0x1fcb2b8a8) copies from the descriptor's private state: type, size, levels, samples, array length,
 // pixel format, usage, swizzle, write swizzle, drawable and GPU-optimized contents; six faces for cube and cube-array
@@ -160,17 +226,54 @@ static void create(WebMetalDevice *device, SEL _cmd, WebMetalTexture *texture, c
     if (!reply.ok)
         WMLoudMethod(device, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
     texture->_state.created = true;
-    DeviceAddUnsized(device, 1);
+    if (texture->_hasLayout) {
+        texture->_accounted = static_cast<int64_t>(texture->_suballocated ? texture->_cpuSizeBytes
+                                                                          : texture->_state.residentSize);
+        DeviceAddAllocation(device, texture->_accounted);
+    } else {
+        DeviceAddUnsized(device, 1);
+    }
+}
+
+static void setLayout(WebMetalTexture *texture, const agx::TextureAllocation &layout)
+{
+    texture->_hasLayout = true;
+    texture->_alignment = layout.alignment;
+    texture->_cpuSizeBytes = layout.cpuSizeBytes;
+    texture->_bytesPerRow = layout.bytesPerRow;
 }
 
 // -[AGXTexture initWithDevice:desc:isSuballocDisabled:] (AGXMetalA10 0x21c9d48a8): Metal's descriptor validation, then
-// the AGX layout and the kernel resource (CreateTexture).
+// the AGX layout (-[AGXA10FamilyTexture initImplWithDevice:...allowNPOT:YES ... isHeapBacked:NO], which fails for a
+// layout that is not valid). A texture that is not memoryless, has no protection options, is smaller than a page and
+// whose layout does not veto it (initNewTextureData: +0x58 bit 0) is sub-allocated from the device's buffers, unless
+// DisableDriverSuballocation is set (AGX::Device +0x945) or the sub-allocator refuses it
+// (-[IOGPUMetalDevice allocBufferSubDataWithLength:options:alignment:...]: a private texture's options gain 0x20000,
+// which picks no other pool; alignments above 0x20000 are refused). Then the kernel resource (CreateTexture).
 WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor)
 {
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
     const wire::TextureDescriptor d = WireTextureDescriptor(device, _cmd, descriptor);
+    const agx::TextureAllocation layout = agx::initImplDevice(layoutFields(d), layoutSystem());
+    if (!layout.initialized)
+        return nil;
     WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    setLayout(texture, layout);
+    uint64_t options = d.resourceOptions;
+    if ((options & kStorageModeMask) == (uint64_t(MTLStorageModePrivate) << kStorageModeShift))
+        options |= 0x20000;
+    texture->_suballocated = d.storageMode != MTLStorageModeMemoryless && d.protectionOptions == 0 &&
+                             layout.cpuSizeBytes < PageSize() && !(layout.textureData58 & 1) &&
+                             !SuballocationDisabled() && SuballocatorServes(layout.cpuSizeBytes, options) &&
+                             layout.alignment <= 0x20000;
+    // Otherwise -[IOGPUMetalTexture initWithDevice:descriptor:sysMemSize:...] creates the kernel resource with the CPU
+    // size as its system memory (IOGPU 0x1fcb2c870), whose resident size is that size rounded up to the kernel page;
+    // a memoryless texture has no kernel resource and a resident size of 0 (IOGPU 0x1fcb2bbe8).
+    if (!texture->_suballocated)
+        texture->_state.residentSize = d.storageMode == MTLStorageModeMemoryless
+                                           ? 0
+                                           : (layout.cpuSizeBytes + kKernelPageSize - 1) & ~(kKernelPageSize - 1);
     wire::CreateTexture request;
     request.texture = texture->_state.handle;
     request.descriptor = d;
@@ -274,6 +377,50 @@ WebMetalTexture *NewBufferTexture(WebMetalBuffer *buffer, SEL _cmd, MTLTextureDe
     return texture;
 }
 
+// -[AGXTexture initWithHeap:desc:] (AGXMetalA10 0x21c9d4d6c) and initWithHeap:desc:atOffset: (0x21c9d4ea4): an
+// automatic heap (a placement heap for the offset form; nil for any other), Metal's descriptor validation against the
+// heap's device, the AGX layout of a heap texture (initImpl with allowNPOT:NO isHeapBacked:YES), and the heap's range
+// of the layout's CPU size at its alignment (-[IOGPUMetalHeap newSubResourceWithLength:alignment:options:offset:] or
+// newSubResourceAtOffset:withLength:alignment:options:); then -[IOGPUMetalTexture initWithHeap:resource:offset:length:
+// device:descriptor:] (IOGPU 0x1fcb2d5d8) takes the heap resource's state, pinned unless the heap is a placement heap.
+WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescriptor *descriptor, bool placement,
+                                NSUInteger offset)
+{
+    if (heap.type != (placement ? MTLHeapTypePlacement : MTLHeapTypeAutomatic))
+        return nil;
+    WebMetalDevice *device = static_cast<WebMetalDevice *>(heap.device);
+    if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
+        return nil;
+    const wire::TextureDescriptor d = WireTextureDescriptor(heap, _cmd, descriptor);
+    const agx::TextureAllocation layout = agx::initImplHeap(layoutFields(d), layoutSystem());
+    if (!layout.initialized)
+        return nil;
+    if (d.storageMode == MTLStorageModeMemoryless)
+        WMLoudMethod(heap, _cmd, "a memoryless heap texture (-[AGXTexture initWithImplHeapMemoryless:descriptor:length:])");
+    uint64_t at = offset;
+    if (!HeapSubResource(heap, _cmd, layout.cpuSizeBytes, layout.alignment, d.resourceOptions, placement, &at))
+        return nil;
+    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    InitResourceState(texture->_state, device, HeapOptions(heap));
+    texture->_state.protectionOptions = d.protectionOptions;
+    texture->_state.purgeableAllowed = false;
+    texture->_state.heap = heap;
+    texture->_state.heapOffset = at;
+    texture->_state.heapLength = layout.cpuSizeBytes;
+    texture->_state.pinned = !placement;
+    setLayout(texture, layout);
+    wire::HeapCreateTexture request;
+    request.heap = HeapHandle(heap);
+    request.texture = texture->_state.handle;
+    request.descriptor = d;
+    wire::Reply<wire::HeapCreateTextureReply> reply;
+    DeviceConnection(device)->Call(heap, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(heap, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+    texture->_state.created = true;
+    return texture;
+}
+
 }  // namespace webmetal
 
 @implementation WebMetalTexture
@@ -283,8 +430,16 @@ WebMetalTexture *NewBufferTexture(WebMetalBuffer *buffer, SEL _cmd, MTLTextureDe
 - (void)dealloc
 {
     using namespace webmetal;
-    if (_state.created)
-        DeviceAddUnsized(_state.device, -1);
+    if (_state.created && !_state.heap) {
+        if (_hasLayout)
+            DeviceAddAllocation(_state.device, -_accounted);
+        else
+            DeviceAddUnsized(_state.device, -1);
+    }
+    if (_state.heap) {
+        MakeAliasable(self, _cmd, _state, true);
+        [(WebMetalHeap *)_state.heap deallocHeapSubResource];
+    }
     ReleaseObject(_state, "-[WebMetalTexture dealloc]");
     if (_deallocator) {
         _deallocator(_pointer, _noCopyLength);
@@ -359,13 +514,40 @@ WebMetalTexture *NewBufferTexture(WebMetalBuffer *buffer, SEL _cmd, MTLTextureDe
     webmetal::MakeAliasable(self, _cmd, _state, false);
 }
 
-// -[IOGPUMetalResource allocatedSize] (0x1fcb3a10c): a heap texture's range length, or the kernel resource's resident
-// size, which the AGX layout decides.
+// -[IOGPUMetalTexture allocatedSize] (0x1fcb3a7bc): a sub-allocated texture's length (its CPU size); otherwise
+// -[IOGPUMetalResource allocatedSize] (0x1fcb3a10c): a heap texture's range length, or the kernel resource's size.
 - (NSUInteger)allocatedSize
 {
+    if (_suballocated)
+        return _cpuSizeBytes;
     if (_state.heap)
         return _state.heapLength;
-    WMLoudMethod(self, _cmd, kLayout);
+    if (!_hasLayout)
+        WMLoudMethod(self, _cmd, kLayout);
+    return _state.residentSize;
+}
+
+// -[AGXTexture getAlignment], getCPUSizeBytes, getBytesPerRow (AGXMetalA10 0x21c9d5da0, 0x21c9d5dc0, 0x21c9d5de0): the
+// layout's answers initImpl stored.
+- (uint64_t)getAlignment
+{
+    if (!_hasLayout)
+        WMLoudMethod(self, _cmd, kLayout);
+    return _alignment;
+}
+
+- (uint64_t)getCPUSizeBytes
+{
+    if (!_hasLayout)
+        WMLoudMethod(self, _cmd, kLayout);
+    return _cpuSizeBytes;
+}
+
+- (uint64_t)getBytesPerRow
+{
+    if (!_hasLayout)
+        WMLoudMethod(self, _cmd, kLayout);
+    return _bytesPerRow;
 }
 
 - (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state

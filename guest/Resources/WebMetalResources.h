@@ -72,6 +72,11 @@ constexpr uint64_t kHazardTrackingModeMask = 0x3 << kHazardTrackingModeShift;
 // The page size the driver rounds allocations to (vm_page_size, read by AGXBuffer's initializers).
 uint64_t PageSize();
 
+// The device's sub-allocator (IOGPUMetalSuballocatorAllocate) and the com.apple.Metal DisableDriverSuballocation
+// preference that turns driver sub-allocation off (WebMetalBuffer.mm).
+bool SuballocatorServes(uint64_t length, uint64_t options);
+bool SuballocationDisabled();
+
 // The device's connection, and the device's live-allocation total (currentAllocatedSize).
 Connection *DeviceConnection(WebMetalDevice *device);
 void DeviceAddAllocation(WebMetalDevice *device, int64_t bytes);

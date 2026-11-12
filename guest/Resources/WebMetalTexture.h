@@ -25,6 +25,19 @@ WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes,
 WebMetalTexture *NewBufferTexture(WebMetalBuffer *buffer, SEL _cmd, MTLTextureDescriptor *descriptor, NSUInteger offset,
                                   NSUInteger bytesPerRow, bool linear, NSUInteger bytesPerImage);
 
+// -[AGXA10FamilyHeap newTextureWithDescriptor:] (AGXMetalA10 0x21c91a050) and newTextureWithDescriptor:atOffset:
+// (0x21c91a0d0, `placement`).
+WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescriptor *descriptor, bool placement,
+                                NSUInteger offset);
+
+// -[AGXA10FamilyDevice heapTextureSizeAndAlignWithDescriptor:] (AGXMetalA10 0x21c8d6694): {0, 0} for a descriptor
+// Metal's validation refuses, else the AGX layout's size and alignment for a heap texture.
+struct SizeAndAlign {
+    uint64_t size;
+    uint64_t align;
+};
+SizeAndAlign HeapTextureSizeAndAlign(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor);
+
 // The wire form of a texture descriptor: every field the schema carries, read with the descriptor's own getters.
 wire::TextureDescriptor WireTextureDescriptor(id self, SEL _cmd, MTLTextureDescriptor *descriptor);
 

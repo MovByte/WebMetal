@@ -1243,8 +1243,8 @@ AGXA10FamilyHeap	instance	newBufferWithLength:options:atOffset:	-	agx	driver	Web
 AGXA10FamilyHeap	instance	newBufferWithLength:options:offset:	MTLHeap	framework	framework	WebMetalHeap	inherited
 AGXA10FamilyHeap	instance	newSubResourceAtOffset:withLength:alignment:options:	-	iogpu	driver	WebMetalHeap	loud
 AGXA10FamilyHeap	instance	newSubResourceWithLength:alignment:options:offset:	-	iogpu	driver	WebMetalHeap	loud
-AGXA10FamilyHeap	instance	newTextureWithDescriptor:	MTLHeap	agx	driver	WebMetalHeap	loud
-AGXA10FamilyHeap	instance	newTextureWithDescriptor:atOffset:	-	agx	driver	WebMetalHeap	loud
+AGXA10FamilyHeap	instance	newTextureWithDescriptor:	MTLHeap	agx	driver	WebMetalHeap	implemented
+AGXA10FamilyHeap	instance	newTextureWithDescriptor:atOffset:	-	agx	driver	WebMetalHeap	implemented
 AGXA10FamilyHeap	instance	newTextureWithDescriptor:offset:	MTLHeap	framework	framework	WebMetalHeap	inherited
 AGXA10FamilyHeap	instance	protectionOptions	MTLHeapSPI	iogpu	driver	WebMetalHeap	implemented
 AGXA10FamilyHeap	instance	resourceOptions	MTLHeap	framework	framework	WebMetalHeap	inherited
@@ -2256,11 +2256,11 @@ AGXA10FamilyTexture	instance	finalizeTextureCreation	-	agx	driver	WebMetalTextur
 AGXA10FamilyTexture	instance	firstMipmapInTail	MTLTexture	agx	driver	WebMetalTexture	loud
 AGXA10FamilyTexture	instance	formattedDescription:	MTLTextureImplementation	iogpu	driver	WebMetalTexture	loud
 AGXA10FamilyTexture	instance	generateMipmapLevel:slice:	MTLTextureSPI	agx	driver	WebMetalTexture	loud
-AGXA10FamilyTexture	instance	getAlignment	-	agx	driver	WebMetalTexture	loud
+AGXA10FamilyTexture	instance	getAlignment	-	agx	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:	MTLTexture	agx	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	getBytes:bytesPerRow:fromRegion:mipmapLevel:	MTLTexture	iogpu	driver	WebMetalTexture	implemented
-AGXA10FamilyTexture	instance	getBytesPerRow	-	agx	driver	WebMetalTexture	loud
-AGXA10FamilyTexture	instance	getCPUSizeBytes	-	agx	driver	WebMetalTexture	loud
+AGXA10FamilyTexture	instance	getBytesPerRow	-	agx	driver	WebMetalTexture	implemented
+AGXA10FamilyTexture	instance	getCPUSizeBytes	-	agx	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	gpuAddress	MTLTextureSPI	iogpu	driver	WebMetalTexture	loud
 AGXA10FamilyTexture	instance	gpuHandle	MTLTextureSPI	iogpu	driver	WebMetalTexture	loud
 AGXA10FamilyTexture	instance	gpuResourceID	MTLTexture	iogpu	driver	WebMetalTexture	loud
@@ -2590,7 +2590,7 @@ AGXA10XDevice	instance	hasUnifiedMemory	MTLDevice	iogpu	driver	WebMetalDevice	pr
 AGXA10XDevice	instance	heapAccelerationStructureSizeAndAlignWithDescriptor:	MTLDevice	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	heapAccelerationStructureSizeAndAlignWithSize:	MTLDevice	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	heapBufferSizeAndAlignWithLength:options:	MTLDevice	agx	driver	WebMetalDevice	profile
-AGXA10XDevice	instance	heapTextureSizeAndAlignWithDescriptor:	MTLDevice	agx	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	heapTextureSizeAndAlignWithDescriptor:	MTLDevice	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	hwResourcePoolCount	-	iogpu	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	hwResourcePools	-	iogpu	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	indirectArgumentBufferCapabilities	MTLDeviceSPI	agx	driver	WebMetalDevice	profile

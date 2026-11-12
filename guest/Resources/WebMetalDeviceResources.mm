@@ -40,11 +40,11 @@ id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, 
 
 // -[IOGPUMetalDevice currentAllocatedSize] (IOGPU 0x1fcb2be10) asks the kernel for the device's allocation total; the
 // WebMetal service's total is the sum of the allocated sizes of the device's live resources (wire schema, guest-local
-// methods). A live texture's size depends on the AGX layout, which has no source yet.
+// methods). It is not answered while a live texture's allocated size is not established (WebMetalTexture.mm).
 - (NSUInteger)currentAllocatedSize
 {
     if (webmetal::DeviceUnsizedCount(self))
-        WMLoudMethod(self, _cmd, "a live texture's allocated size depends on the A10X texture layout, not established");
+        WMLoudMethod(self, _cmd, "a live texture's allocated size is not established");
     return static_cast<NSUInteger>(webmetal::DeviceAllocatedSize(self));
 }
 
@@ -93,6 +93,13 @@ id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, 
 - (id<MTLSamplerState>)newSamplerStateWithDescriptor:(MTLSamplerDescriptor *)descriptor
 {
     return webmetal::NewSamplerState(self, _cmd, descriptor);
+}
+
+// -[AGXA10FamilyDevice heapTextureSizeAndAlignWithDescriptor:] (AGXMetalA10 0x21c8d6694).
+- (MTLSizeAndAlign)heapTextureSizeAndAlignWithDescriptor:(MTLTextureDescriptor *)descriptor
+{
+    const webmetal::SizeAndAlign sa = webmetal::HeapTextureSizeAndAlign(self, _cmd, descriptor);
+    return MTLSizeAndAlign{sa.size, sa.align};
 }
 
 // -[AGXA10FamilyDevice newDepthStencilStateWithDescriptor:] (AGXMetalA10 0x21c8d53e0).

@@ -7,6 +7,7 @@
 
 #import "WebMetalBuffer.h"
 #import "WebMetalHeapPrivate.h"
+#import "WebMetalTexture.h"
 
 #import <objc/runtime.h>
 
@@ -64,6 +65,39 @@ void reportModes(const char *function, int cacheLine, int storageLine, uint64_t 
 }
 
 }  // namespace
+
+// -[IOGPUMetalHeap newSubResourceWithLength:alignment:options:offset:] (IOGPU 0x1fcb2d96c): an automatic heap (the
+// driver traps on any other) grants a range of at most its size, after the mode checks, from its allocator at the
+// alignment given. -[IOGPUMetalHeap newSubResourceAtOffset:withLength:alignment:options:] (IOGPU 0x1fcb3099c): a
+// placement heap grants a range inside the heap whose offset is a multiple of the alignment.
+bool HeapSubResource(WebMetalHeap *heap, SEL _cmd, uint64_t length, uint64_t alignment, uint64_t options, bool placement,
+                     uint64_t *offset)
+{
+    if (!placement) {
+        if (heap.type != MTLHeapTypeAutomatic)
+            WMLoudMethod(heap, _cmd, "21H461 IOGPU traps on a range requested from a heap that is not automatic");
+        if (length > heap->_size)
+            return false;
+        reportModes(kSubResource, 0xb7, 0xc0, options, heap->_resource.options, true);
+        pthread_mutex_lock(&heap->_mutex);
+        const bool granted = MTLRangeAllocatorAllocate(&heap->_allocator, length, offset, alignment);
+        pthread_mutex_unlock(&heap->_mutex);
+        return granted;
+    }
+    reportModes(kSubResourceAt, 0x106, 0x10b, options, heap->_resource.options, false);
+    uint64_t end = 0;
+    return !__builtin_add_overflow(*offset, length, &end) && end <= heap->_size && !((alignment | *offset) & (alignment - 1));
+}
+
+uint64_t HeapOptions(WebMetalHeap *heap)
+{
+    return heap->_resource.options;
+}
+
+void *HeapContents(WebMetalHeap *heap, uint64_t offset)
+{
+    return heap->_contents ? static_cast<uint8_t *>(heap->_contents) + offset : nullptr;
+}
 
 // -[AGXA10FamilyHeap initWithDevice:descriptor:] (AGXMetalA10 0x21c919e5c), then
 // -[IOGPUMetalHeap initWithDevice:size:options:args:argsSize:desc:] (IOGPU 0x1fcb2fc30).
@@ -253,16 +287,10 @@ uint64_t HeapHandle(WebMetalHeap *heap)
 {
     if (self.type != MTLHeapTypeAutomatic)
         return nil;
-    if (length > _size)
-        return nil;
-    webmetal::reportModes(webmetal::kSubResource, 0xb7, 0xc0, options, _resource.options, true);
     uint64_t offset = 0;
-    pthread_mutex_lock(&_mutex);
-    const bool granted = MTLRangeAllocatorAllocate(&_allocator, length, &offset, 0x100);
-    pthread_mutex_unlock(&_mutex);
-    if (!granted)
+    if (!webmetal::HeapSubResource(self, _cmd, length, 0x100, options, false, &offset))
         return nil;
-    void *contents = _contents ? static_cast<uint8_t *>(_contents) + offset : nullptr;
+    void *contents = webmetal::HeapContents(self, offset);
     return webmetal::NewHeapBuffer(self, _cmd, length, options, _resource.options, offset, length, contents, false);
 }
 
@@ -274,14 +302,23 @@ uint64_t HeapHandle(WebMetalHeap *heap)
 {
     if (self.type != MTLHeapTypePlacement)
         return nil;
-    webmetal::reportModes(webmetal::kSubResourceAt, 0x106, 0x10b, options, _resource.options, false);
-    const uint64_t alignment = 0x100;
-    uint64_t end = 0;
-    if (__builtin_add_overflow(static_cast<uint64_t>(offset), static_cast<uint64_t>(length), &end) || end > _size ||
-        ((alignment | offset) & (alignment - 1)))
+    uint64_t at = offset;
+    if (!webmetal::HeapSubResource(self, _cmd, length, 0x100, options, true, &at))
         return nil;
-    void *contents = _contents ? static_cast<uint8_t *>(_contents) + offset : nullptr;
+    void *contents = webmetal::HeapContents(self, offset);
     return webmetal::NewHeapBuffer(self, _cmd, length, options, _resource.options, offset, length, contents, true);
+}
+
+// -[AGXA10FamilyHeap newTextureWithDescriptor:] (AGXMetalA10 0x21c91a050).
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
+{
+    return webmetal::NewHeapTexture(self, _cmd, descriptor, false, 0);
+}
+
+// -[AGXA10FamilyHeap newTextureWithDescriptor:atOffset:] (AGXMetalA10 0x21c91a0d0).
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor atOffset:(NSUInteger)offset
+{
+    return webmetal::NewHeapTexture(self, _cmd, descriptor, true, offset);
 }
 
 // -[IOGPUMetalHeap gpuAddress] (0x1fcb37158): the backing resource's GPU address.
