@@ -46,6 +46,8 @@
 //! DeviceLost event. Every failure with status 2 or 3 is also kept as a [`Report`] for the embedder.
 
 pub mod failure;
+#[cfg(all(test, feature = "native"))]
+mod native_tests;
 pub mod objects;
 mod runtime;
 #[rustfmt::skip]
