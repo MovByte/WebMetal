@@ -2,11 +2,13 @@
 //!
 //! - [`api`]: the WebGPU IDL as Rust traits, with the types of [`idl`] (generated from the IDL index of the pinned
 //!   specification by `host/gen/gpugen.py`) and the numeric domains of [`num`].
-//! - [`tables`]: the limits, features and format requirements the binding reads at run time.
+//! - [`negotiate`]: which features and limits to request from an adapter, from the tables of `tables/limits.toml`
+//!   ([`tables`]), and the check that the device received them.
 
 pub mod api;
 #[rustfmt::skip]
 pub mod idl;
+pub mod negotiate;
 pub mod num;
 #[rustfmt::skip]
 pub mod tables;
