@@ -18,7 +18,8 @@
 @interface WebMetalDevice : _MTLDevice <MTLDeviceSPI>
 
 // The accelerator service the device belongs to. The device retains it. Returns nil, after a report, when the running
-// Metal.framework is not the one the plugin was built for or the service has no registry entry ID.
+// Metal.framework is not the one the plugin was built for, the service's IOGPU device cannot be created
+// (WebMetalIOGPUDevice.h), or the service has no registry entry ID.
 - (instancetype)initWithAcceleratorPort:(io_service_t)service;
 
 @end

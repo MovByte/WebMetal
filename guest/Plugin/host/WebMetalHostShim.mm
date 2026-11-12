@@ -6,11 +6,12 @@
 //  - The service. macOS has no WebMetal accelerator service; the device is given the I/O Registry's root entry, so its
 //    acceleratorPort and registryID are that entry's, and its control requests go to the host executor running in this
 //    process (executor/lib.rs) instead of the service's user client.
-//  - Device state the kernel supplies. The 21H461 driver reads maxBufferLength from the kernel
-//    (IOGPUDeviceGetMaxResourceSize) and Metal.framework's -initLimits copies it into the device's limits during
-//    MTLAddDevice. WebMetal has no source for it yet, and the iOS bundle answers it with a LOUD stub. The shim stands
-//    in for the kernel: it adds -maxBufferLength with a sentinel value the caller chooses, so the checks can show that
-//    the limits carry exactly that input.
+//  - Device state the kernel supplies. On the target the device reads the GPU's configuration from the service's IOGPU
+//    device client as IOGPU.framework does (WebMetalIOGPUDevice.h): maxBufferLength, recommendedMaxWorkingSetSize,
+//    sharedMemorySize and supportPriorityBand come from it. The shim's device has no such client, and those getters are
+//    LOUD here, except maxBufferLength, which Metal.framework's -initLimits copies into the device's limits during
+//    MTLAddDevice. The shim stands in for the kernel there: it replaces -maxBufferLength with a sentinel value the caller
+//    chooses, so the checks can show that the limits carry exactly that input.
 //  - Shared events. The target's kernel resolves a shared event's port for the executor; here the shim does, with this
 //    process's IOSurface shared events (Metal.framework's _MTLSharedEvent), and tells the executor about CPU-side
 //    signals it observes.
@@ -19,6 +20,7 @@
 
 #import "../WebMetalConnection.h"
 #import "../WebMetalDevice.h"
+#import "../WebMetalIOGPUDevice.h"
 #import "../WebMetalReport.h"
 #import "../WebMetalSurface.h"
 
@@ -180,9 +182,10 @@ extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShim
             return gDevice;
         }
         gMaxBufferLength = maxBufferLength;
+        // The device's own -maxBufferLength reads the IOGPU device client this process does not have.
         IMP fixture = imp_implementationWithBlock(^NSUInteger(id) { return maxBufferLength; });
-        if (!class_addMethod([WebMetalDevice class], sel_registerName("maxBufferLength"), fixture, "Q16@0:8")) {
-            WMReport("WebMetalHostShimRegister", "refused: WebMetalDevice already implements maxBufferLength");
+        if (!class_replaceMethod([WebMetalDevice class], sel_registerName("maxBufferLength"), fixture, "Q16@0:8")) {
+            WMReport("WebMetalHostShimRegister", "refused: WebMetalDevice does not implement maxBufferLength");
             return nil;
         }
         char error[512];
@@ -191,6 +194,7 @@ extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShim
             return nil;
         }
         webmetal::SetTransportOverride(executorTransport, nullptr);
+        webmetal::SetNoIOGPUDevice();
         webmetal_shim_executor_set_doorbell(executorDoorbell, nullptr);
         gListener = [[MTLSharedEventListener alloc] init];
         webmetal_shim_executor_set_shared_events(&kSharedEvents);

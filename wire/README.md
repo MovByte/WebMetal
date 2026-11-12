@@ -118,6 +118,14 @@ User client selectors, all taking and returning 64-bit scalars:
 | 1 `fetch_reply` | reply address, reply capacity | reply length | Writes the pending reply of the last `control` call without running the request again. |
 | 2 `register_event_port` | queue handle (0: device-level events) | | Asynchronous method: the host sends an async completion with the queue handle as its argument whenever events for that queue become pending. |
 
+The service is also an `IOGPU`, and the device reads the GPU's configuration from its IOGPU device client as
+IOGPU.framework's `IOGPUDeviceCreateWithAPIProperty` does on 21H461: it opens type 1 (IOGPUFamily's
+`IOGPUDeviceUserClient`) with the device options in the type's high 16 bits, sets the client's API (selector 6, `Metal`),
+then reads the client's stamps (selector 2, 0x218 bytes) and the configuration (selector 0, 64 bytes). The device is not
+created when the client cannot be opened or either read fails. `maxBufferLength` is the configuration's largest resource
+(+0x28); `recommendedMaxWorkingSetSize` and `sharedMemorySize` are its wired limit (+0x20); `supportPriorityBand` is bit
+6 of its bits (+0x0).
+
 ## Checking the schema against 21H461
 
 ```sh
