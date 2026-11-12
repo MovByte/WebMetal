@@ -1,0 +1,98 @@
+// The Metal device of the WebMetal accelerator service (WebMetalDevice.h).
+
+#import "WebMetalDevice.h"
+#import "WebMetalReport.h"
+#import "WebMetalSurface.h"
+
+#include <dispatch/dispatch.h>
+
+#include <cstdio>
+#include <string>
+
+// The class adopts MTLDevice and MTLDeviceSPI as AGXA10XDevice does and implements only what the 21H461 driver layers
+// implement. The protocols' other methods are inherited from _MTLDevice or are LOUD stubs added at run time
+// (WebMetalStubs.mm); the compiler sees neither.
+#pragma clang diagnostic ignored "-Wprotocol"
+#pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
+
+namespace {
+
+// The base-class guard, then the LOUD stubs: once per process, before the first device is created.
+bool prepareClasses()
+{
+    static bool ready;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        std::string problem;
+        if (!webmetal::CheckLayouts(webmetal::kExpectedLayouts, &problem)) {
+            const std::string text = std::string("refused: the running Metal.framework is not the one the plugin was "
+                                                 "built for (") + webmetal::kExpectedLayouts.source + "): " + problem;
+            WMReport("WebMetalDevice", text.c_str());
+            return;
+        }
+        if (!webmetal::InstallLoudStubs(&problem)) {
+            WMReport("WebMetalDevice", ("refused: " + problem).c_str());
+            return;
+        }
+        ready = true;
+    });
+    return ready;
+}
+
+}  // namespace
+
+@implementation WebMetalDevice {
+    io_service_t _acceleratorPort;
+    uint64_t _registryID;
+}
+
+// -[IOGPUMetalDevice initWithAcceleratorPort:options:] on 21H461 initializes _MTLDevice, opens the kernel's GPU
+// device, then keeps the service's registry entry ID and a reference to the service.
+- (instancetype)initWithAcceleratorPort:(io_service_t)service
+{
+    // The stubs are in place before _MTLDevice's initializer runs, as the driver's own methods are on the target.
+    // A refused device is still initialized: ARC releases it, and _MTLDevice's -dealloc expects its initializer to
+    // have run.
+    const bool ready = prepareClasses();
+    self = [super init];
+    if (!self || !ready)
+        return nil;
+    uint64_t registryID = 0;
+    const kern_return_t status = IORegistryEntryGetRegistryEntryID(service, &registryID);
+    if (status != KERN_SUCCESS) {
+        char text[96];
+        snprintf(text, sizeof text, "refused: service 0x%x has no registry entry ID (status 0x%x)", service, status);
+        WMReport("-[WebMetalDevice initWithAcceleratorPort:]", text);
+        return nil;
+    }
+    IOObjectRetain(service);
+    _acceleratorPort = service;
+    _registryID = registryID;
+    return self;
+}
+
+- (void)dealloc
+{
+    if (_acceleratorPort)
+        IOObjectRelease(_acceleratorPort);
+}
+
+- (io_service_t)acceleratorPort
+{
+    return _acceleratorPort;
+}
+
+- (uint64_t)registryID
+{
+    return _registryID;
+}
+
+// -[AGXA10FamilyDevice minimumTextureBufferAlignmentForPixelFormat:] (0x21c8db1f4 on 21H461) is a tail call to
+// minimumLinearTextureAlignmentForPixelFormat:, which _MTLDevice implements; its answers and its validation failures
+// are Metal.framework's.
+- (NSUInteger)minimumTextureBufferAlignmentForPixelFormat:(MTLPixelFormat)format
+{
+    return [self minimumLinearTextureAlignmentForPixelFormat:format];
+}
+
+@end

@@ -1,0 +1,9 @@
+# The plugin's classes and the AGXMetalA10 driver class of iPadOS 17.7.11 (21H461) each one stands in for.
+#
+# UniXNU's scripts/audit-target-web-metal-surface.py generates guest/Generated from this list: the driver selectors of
+# each target class (implemented by the plugin class or a LOUD stub), the layout of its Metal.framework base, and the
+# audit of the built plugin. A plugin class must subclass the target class's Metal.framework base directly.
+
+[[class]]
+name = "WebMetalDevice"
+target = "AGXA10XDevice"
