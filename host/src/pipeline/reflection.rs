@@ -3,6 +3,9 @@
 //!
 //! The two have the same members with the same meaning (the compiler's type is defined field for field after the wire
 //! struct); every struct is destructured here, so a member either side gains breaks the build until it is carried.
+//! The wire also has members the compiler's reflection does not produce yet (a buffer's address space, the data type of
+//! threadgroup memory, a stage's built-in arguments); they are sent as not reported (0, MTLDataTypeNone, None), and the
+//! guest does not build the reflection objects that need them.
 
 use webmetal_wire as wire;
 
@@ -18,6 +21,7 @@ fn stage(s: &airwgsl::StageReflection) -> wire::StageReflection {
         function_type: *function_type,
         arguments: arguments.iter().map(argument).collect(),
         types: types.iter().map(ty).collect(),
+        builtins: None,
     }
 }
 
@@ -65,6 +69,8 @@ fn argument(a: &airwgsl::ArgumentReflection) -> wire::ArgumentReflection {
         indirect_constant_alignment: *indirect_constant_alignment,
         indirect_constant_data_size: *indirect_constant_data_size,
         indirect_constant_data_type: *indirect_constant_data_type,
+        buffer_address_space: 0,
+        threadgroup_memory_data_type: 0,
     }
 }
 
@@ -112,6 +118,7 @@ fn ty(t: &airwgsl::TypeReflection) -> wire::TypeReflection {
         texture_data_type: *texture_data_type,
         texture_type: *texture_type,
         is_depth_texture: *is_depth_texture,
+        address_space: 0,
     }
 }
 

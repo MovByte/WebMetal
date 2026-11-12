@@ -299,6 +299,8 @@ inline void random(Gen& g, ArgumentReflection& v) {
     v.indirectConstantAlignment = g.u64();
     v.indirectConstantDataSize = g.u64();
     v.indirectConstantDataType = g.u64();
+    v.bufferAddressSpace = g.u32();
+    v.threadgroupMemoryDataType = g.u64();
 }
 
 inline bool same(const ArgumentReflection& a, const ArgumentReflection& b) {
@@ -321,7 +323,9 @@ inline bool same(const ArgumentReflection& a, const ArgumentReflection& b) {
            a.arrayLength == b.arrayLength &&
            a.indirectConstantAlignment == b.indirectConstantAlignment &&
            a.indirectConstantDataSize == b.indirectConstantDataSize &&
-           a.indirectConstantDataType == b.indirectConstantDataType;
+           a.indirectConstantDataType == b.indirectConstantDataType &&
+           a.bufferAddressSpace == b.bufferAddressSpace &&
+           a.threadgroupMemoryDataType == b.threadgroupMemoryDataType;
 }
 
 inline void random(Gen& g, StructMemberReflection& v) {
@@ -361,6 +365,7 @@ inline void random(Gen& g, TypeReflection& v) {
     v.textureDataType = g.u64();
     v.textureType = g.u64();
     v.isDepthTexture = g.boolean();
+    v.addressSpace = g.u32();
 }
 
 inline bool same(const TypeReflection& a, const TypeReflection& b) {
@@ -377,7 +382,42 @@ inline bool same(const TypeReflection& a, const TypeReflection& b) {
            a.elementIsArgumentBuffer == b.elementIsArgumentBuffer &&
            a.textureDataType == b.textureDataType &&
            a.textureType == b.textureType &&
-           a.isDepthTexture == b.isDepthTexture;
+           a.isDepthTexture == b.isDepthTexture &&
+           a.addressSpace == b.addressSpace;
+}
+
+inline void random(Gen& g, BuiltinReflection& v) {
+    v.name = g.ownString(g.stringLength());
+    v.type = g.u64();
+    v.access = g.u64();
+    v.active = g.boolean();
+    v.index = g.u64();
+    v.dataType = g.u64();
+    v.builtinType = g.u64();
+}
+
+inline bool same(const BuiltinReflection& a, const BuiltinReflection& b) {
+    return a.name == b.name &&
+           a.type == b.type &&
+           a.access == b.access &&
+           a.active == b.active &&
+           a.index == b.index &&
+           a.dataType == b.dataType &&
+           a.builtinType == b.builtinType;
+}
+
+inline void random(Gen& g, Builtins& v) {
+    {
+        uint64_t n = g.arrayLength();
+        v.list.assign(n, {});
+        for (auto& item : v.list) {
+            random(g, item);
+        }
+    }
+}
+
+inline bool same(const Builtins& a, const Builtins& b) {
+    return sameVector(a.list, b.list, [](const auto& x, const auto& y) { return same(x, y); });
 }
 
 inline void random(Gen& g, StageReflection& v) {
@@ -396,12 +436,19 @@ inline void random(Gen& g, StageReflection& v) {
             random(g, item);
         }
     }
+    if (g.boolean()) {
+        v.builtins.emplace();
+        random(g, *v.builtins);
+    } else {
+        v.builtins.reset();
+    }
 }
 
 inline bool same(const StageReflection& a, const StageReflection& b) {
     return a.functionType == b.functionType &&
            sameVector(a.arguments, b.arguments, [](const auto& x, const auto& y) { return same(x, y); }) &&
-           sameVector(a.types, b.types, [](const auto& x, const auto& y) { return same(x, y); });
+           sameVector(a.types, b.types, [](const auto& x, const auto& y) { return same(x, y); }) &&
+           (a.builtins.has_value() == b.builtins.has_value() && (!a.builtins.has_value() || same(*a.builtins, *b.builtins)));
 }
 
 inline void random(Gen& g, Reflection& v) {

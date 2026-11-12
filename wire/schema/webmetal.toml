@@ -233,17 +233,32 @@ fields = ["name: str", "functions: [Function]"]
 
 # Pipeline reflection, returned by the pipeline-creation replies that ask for it. The guest builds Metal's reflection
 # objects from it. Member sets follow the 21H461 MTLArgument, MTLStructMember, MTLArrayType, MTLPointerType and
-# MTLTextureReferenceType classes. Nested types are an index into the stage's types table; 0xffffffff is none.
+# MTLTextureReferenceType classes, and the initializers Metal.framework's own reflection deserializer builds the objects
+# with (MTLBufferBindingInternal, MTLThreadgroupMemoryBindingInternal, MTLPointerTypeInternal, MTLBuiltInArgument).
+# Nested types are an index into the stage's types table; 0xffffffff is none. An address space of 0, a threadgroup data
+# type of 0 (MTLDataTypeNone) or absent builtins mean the host does not report the value; the guest cannot build the
+# objects that need it.
 [[struct]]
 name = "Reflection"
 fields = ["stages: [StageReflection]"]
 
 [[struct]]
 name = "StageReflection"
-fields = ["function_type: u64 (MTLFunctionType)", "arguments: [ArgumentReflection]", "types: [TypeReflection]"]
+fields = ["function_type: u64 (MTLFunctionType)", "arguments: [ArgumentReflection]", "types: [TypeReflection]", "builtins: Builtins?"]
+
+[[struct]]
+name = "Builtins"
+doc = "The built-in arguments of a stage (the reflection's builtInArguments), in the order the function declares them."
+fields = ["list: [BuiltinReflection]"]
+
+[[struct]]
+name = "BuiltinReflection"
+doc = "One built-in argument (MTLBuiltInArgument): the values of -[MTLBuiltInArgument initWithName:type:access:active:index:dataType:builtInType:]."
+fields = ["name: str", "type: u64", "access: u64 (MTLBindingAccess)", "active: bool", "index: u64", "data_type: u64 (MTLDataType)", "builtin_type: u64"]
 
 [[struct]]
 name = "ArgumentReflection"
+doc = "One argument-table argument (MTLBindingInternal and its subclasses). buffer_address_space: the AIR address space of a buffer (1 device, 2 constant; the isConstantBuffer of its MTLPointerType), 0 when not reported; threadgroup_memory_data_type: the element type of threadgroup memory (MTLThreadgroupMemoryBindingInternal's data type), 0 when not reported."
 fields = [
   "name: str",
   "type: u64 (MTLArgumentType)",
@@ -265,11 +280,13 @@ fields = [
   "indirect_constant_alignment: u64",
   "indirect_constant_data_size: u64",
   "indirect_constant_data_type: u64 (MTLDataType)",
+  "buffer_address_space: u32",
+  "threadgroup_memory_data_type: u64 (MTLDataType)",
 ]
 
 [[struct]]
 name = "TypeReflection"
-doc = "One MTLType: data_type selects which members are meaningful (struct: members; array: element_*, array_length, stride, argument_index_stride; pointer: element_*, access, alignment, data_size, element_is_argument_buffer; texture reference: texture_*, access, is_depth_texture)."
+doc = "One MTLType: data_type selects which members are meaningful (struct: members; array: element_*, array_length, stride, argument_index_stride; pointer: element_*, access, alignment, data_size, element_is_argument_buffer, address_space (1 device, 2 constant, 0 not reported); texture reference: texture_*, access, is_depth_texture)."
 fields = [
   "data_type: u64 (MTLDataType)",
   "members: [StructMemberReflection]",
@@ -285,6 +302,7 @@ fields = [
   "texture_data_type: u64 (MTLDataType)",
   "texture_type: u64 (MTLTextureType)",
   "is_depth_texture: bool",
+  "address_space: u32",
 ]
 
 [[struct]]

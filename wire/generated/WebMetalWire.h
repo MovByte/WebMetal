@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: 867bcaeebe7b19d0454abf70c8473668275454692d2bf537bd55e12ccac3b093
+// Schema SHA-256: ba44868b9a381e74e94125ac9525ccef37ca8f33911ad91b54797eeb7493cc1f
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0x86, 0x7b, 0xca, 0xee, 0xbe, 0x7b, 0x19, 0xd0, 0x45, 0x4a, 0xbf, 0x70, 0xc8, 0x47, 0x36, 0x68, 0x27, 0x54, 0x54, 0x69, 0x2d, 0x2b, 0xf5, 0x37, 0xbd, 0x55, 0xe1, 0x2c, 0xca, 0xc3, 0xb0, 0x93};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0xba, 0x44, 0x86, 0x8b, 0x9a, 0x38, 0x1e, 0x74, 0xe9, 0x41, 0x25, 0xac, 0x95, 0x25, 0xcc, 0xef, 0x37, 0xca, 0x8f, 0x33, 0x91, 0x1a, 0xd9, 0x1b, 0x54, 0x79, 0x7e, 0xeb, 0x74, 0x93, 0xcc, 0x1f};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -880,6 +880,10 @@ inline bool encodeFields(Writer& w, const LinkedFunctionGroup& v) {
     return true;
 }
 
+// One argument-table argument (MTLBindingInternal and its subclasses). buffer_address_space: the AIR address space
+// of a buffer (1 device, 2 constant; the isConstantBuffer of its MTLPointerType), 0 when not reported;
+// threadgroup_memory_data_type: the element type of threadgroup memory (MTLThreadgroupMemoryBindingInternal's data
+// type), 0 when not reported.
 struct ArgumentReflection {
     std::string name{};  // wire type `str`.
     uint64_t type = 0;  // `MTLArgumentType`, wire type `u64`.
@@ -901,6 +905,8 @@ struct ArgumentReflection {
     uint64_t indirectConstantAlignment = 0;  // wire type `u64`.
     uint64_t indirectConstantDataSize = 0;  // wire type `u64`.
     uint64_t indirectConstantDataType = 0;  // `MTLDataType`, wire type `u64`.
+    uint32_t bufferAddressSpace = 0;  // wire type `u32`.
+    uint64_t threadgroupMemoryDataType = 0;  // `MTLDataType`, wire type `u64`.
 };
 
 inline bool decodeFields(Reader& r, ArgumentReflection& v) {
@@ -924,6 +930,8 @@ inline bool decodeFields(Reader& r, ArgumentReflection& v) {
     if (!r.u64(v.indirectConstantAlignment)) return false;
     if (!r.u64(v.indirectConstantDataSize)) return false;
     if (!r.u64(v.indirectConstantDataType)) return false;
+    if (!r.u32(v.bufferAddressSpace)) return false;
+    if (!r.u64(v.threadgroupMemoryDataType)) return false;
     return true;
 }
 
@@ -945,8 +953,8 @@ inline bool decodeFields(Reader& r, StructMemberReflection& v) {
 }
 
 // One MTLType: data_type selects which members are meaningful (struct: members; array: element_*, array_length,
-// stride, argument_index_stride; pointer: element_*, access, alignment, data_size, element_is_argument_buffer;
-// texture reference: texture_*, access, is_depth_texture).
+// stride, argument_index_stride; pointer: element_*, access, alignment, data_size, element_is_argument_buffer,
+// address_space (1 device, 2 constant, 0 not reported); texture reference: texture_*, access, is_depth_texture).
 struct TypeReflection {
     uint64_t dataType = 0;  // `MTLDataType`, wire type `u64`.
     std::vector<StructMemberReflection> members{};  // wire type `[StructMemberReflection]`.
@@ -962,6 +970,7 @@ struct TypeReflection {
     uint64_t textureDataType = 0;  // `MTLDataType`, wire type `u64`.
     uint64_t textureType = 0;  // `MTLTextureType`, wire type `u64`.
     bool isDepthTexture = false;  // wire type `bool`.
+    uint32_t addressSpace = 0;  // wire type `u32`.
 };
 
 inline bool decodeFields(Reader& r, TypeReflection& v) {
@@ -987,6 +996,48 @@ inline bool decodeFields(Reader& r, TypeReflection& v) {
     if (!r.u64(v.textureDataType)) return false;
     if (!r.u64(v.textureType)) return false;
     if (!r.boolean(v.isDepthTexture)) return false;
+    if (!r.u32(v.addressSpace)) return false;
+    return true;
+}
+
+// One built-in argument (MTLBuiltInArgument): the values of -[MTLBuiltInArgument
+// initWithName:type:access:active:index:dataType:builtInType:].
+struct BuiltinReflection {
+    std::string name{};  // wire type `str`.
+    uint64_t type = 0;  // wire type `u64`.
+    uint64_t access = 0;  // `MTLBindingAccess`, wire type `u64`.
+    bool active = false;  // wire type `bool`.
+    uint64_t index = 0;  // wire type `u64`.
+    uint64_t dataType = 0;  // `MTLDataType`, wire type `u64`.
+    uint64_t builtinType = 0;  // wire type `u64`.
+};
+
+inline bool decodeFields(Reader& r, BuiltinReflection& v) {
+    if (!r.str(v.name)) return false;
+    if (!r.u64(v.type)) return false;
+    if (!r.u64(v.access)) return false;
+    if (!r.boolean(v.active)) return false;
+    if (!r.u64(v.index)) return false;
+    if (!r.u64(v.dataType)) return false;
+    if (!r.u64(v.builtinType)) return false;
+    return true;
+}
+
+// The built-in arguments of a stage (the reflection's builtInArguments), in the order the function declares them.
+struct Builtins {
+    std::vector<BuiltinReflection> list{};  // wire type `[BuiltinReflection]`.
+};
+
+inline bool decodeFields(Reader& r, Builtins& v) {
+    {
+        uint32_t n = 0;
+        if (!r.count(n)) return false;
+        v.list.clear();
+        v.list.resize(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            if (!decodeFields(r, v.list[i])) return false;
+        }
+    }
     return true;
 }
 
@@ -994,6 +1045,7 @@ struct StageReflection {
     uint64_t functionType = 0;  // `MTLFunctionType`, wire type `u64`.
     std::vector<ArgumentReflection> arguments{};  // wire type `[ArgumentReflection]`.
     std::vector<TypeReflection> types{};  // wire type `[TypeReflection]`.
+    std::optional<Builtins> builtins{};  // wire type `Builtins?`.
 };
 
 inline bool decodeFields(Reader& r, StageReflection& v) {
@@ -1014,6 +1066,16 @@ inline bool decodeFields(Reader& r, StageReflection& v) {
         v.types.resize(n);
         for (uint32_t i = 0; i < n; ++i) {
             if (!decodeFields(r, v.types[i])) return false;
+        }
+    }
+    {
+        bool present = false;
+        if (!r.boolean(present)) return false;
+        if (present) {
+            v.builtins.emplace();
+            if (!decodeFields(r, *v.builtins)) return false;
+        } else {
+            v.builtins.reset();
         }
     }
     return true;
