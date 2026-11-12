@@ -9,6 +9,7 @@
 pub mod astc;
 pub mod decode;
 pub mod etc2;
+pub mod packed;
 pub mod pvrtc;
 #[rustfmt::skip]
 pub mod table;

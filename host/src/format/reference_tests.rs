@@ -338,3 +338,90 @@ fn etc_matches_khronos_vectors() {
         assert_eq!(fnv64(&digests), u64::from_str_radix(f[3], 16).unwrap(), "{kind}");
     }
 }
+
+/// The ideal values of a bounded record (binary64, little-endian hexadecimal).
+fn ideal_values(case: &Case, name: &str) -> Vec<f64> {
+    let hex = case.record(name).and_then(|r| r.get("rule")).and_then(|r| r.get("ideal")).and_then(|v| v.str()).unwrap();
+    super::testdata::hex_bytes(hex).chunks(8).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect()
+}
+
+/// Packed and alpha-only formats: the layouts of `packed` give the codes the reference harness read (its ideal values
+/// `c / (2^n - 1)` are equal), the device's reads equal [`super::packed::unorm_to_f32`] of those codes, and quantizing
+/// the exactly representable render inputs reproduces the bytes the device stored.
+#[test]
+fn packed_layouts_and_conversions_match_real_metal() {
+    use super::packed::{layout, pack, unorm_from_f32, unorm_to_f32, unpack};
+    for (name, value) in [
+        ("A8Unorm", 1),
+        ("B5G6R5Unorm", 40),
+        ("A1BGR5Unorm", 41),
+        ("ABGR4Unorm", 42),
+        ("BGR5A1Unorm", 43),
+        ("BGR10A2Unorm", 94),
+    ] {
+        let l = layout(value).unwrap();
+        let case = Case::load(&format!("format.{name}.upload-read"));
+        assert_eq!(case.status(), "ok");
+        let input = case.bytes("input");
+        assert_eq!(case.bytes("readback"), input, "{name}");
+        let (mut ideal, mut ours) = (Vec::new(), Vec::new());
+        for texel in input.chunks(l.bytes) {
+            let codes = unpack(l, texel);
+            for (comp, code) in codes.iter().enumerate() {
+                if let Some(c) = code {
+                    let bits = l.channels.iter().find(|ch| ch.component as usize == comp).unwrap().bits;
+                    ideal.push(*c as f64 / ((1u64 << bits) - 1) as f64);
+                    ours.push(unorm_to_f32(*c, bits));
+                }
+            }
+        }
+        assert_eq!(ideal_values(&case, "read.normalized"), ideal, "{name}: codes");
+        let read = case.f32s("read.normalized");
+        assert_eq!(
+            read.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            ours.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            "{name}: reads"
+        );
+
+        let render = Case::load(&format!("format.{name}.render"));
+        assert_eq!(render.rule("render.representable"), "exact");
+        let floats = render.f32s("render.input");
+        let stored = render.bytes("render.representable");
+        let texels = stored.len() / l.bytes;
+        for t in 0..texels {
+            let mut codes = [0u32; 4];
+            for c in l.channels {
+                codes[c.component as usize] = unorm_from_f32(floats[t * 4 + c.component as usize], c.bits);
+            }
+            assert_eq!(pack(l, codes), stored[t * l.bytes..(t + 1) * l.bytes], "{name}: render texel {t}");
+        }
+    }
+}
+
+/// The linear XR formats read as `(c - 384) / 510`; the alpha of `BGRA10_XR` is clamped to [0, 1] in sampling
+/// (Apple's documentation, quoted in `tables/formats.toml` question `6.3-xr-encoding`).
+#[test]
+fn xr_reads_match_real_metal() {
+    use super::packed::{layout, unpack, xr_to_f32};
+    for (name, value) in [("BGR10_XR", 554), ("BGRA10_XR", 552)] {
+        let l = layout(value).unwrap();
+        let case = Case::load(&format!("format.{name}.upload-read"));
+        let input = case.bytes("input");
+        assert_eq!(case.bytes("readback"), input, "{name}");
+        let mut ours = Vec::new();
+        for texel in input.chunks(l.bytes) {
+            for (comp, code) in unpack(l, texel).iter().enumerate() {
+                if let Some(c) = code {
+                    let v = xr_to_f32(*c);
+                    ours.push(if comp == 3 { v.clamp(0.0, 1.0) } else { v });
+                }
+            }
+        }
+        let read = case.f32s("read.xr");
+        assert_eq!(
+            read.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            ours.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            "{name}"
+        );
+    }
+}
