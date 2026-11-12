@@ -134,7 +134,7 @@ impl<'a> Writer<'a> {
     }
 
     fn align(&mut self, align: usize) {
-        while (self.out.len() - self.start) % align != 0 {
+        while !(self.out.len() - self.start).is_multiple_of(align) {
             self.out.push(0);
         }
     }
@@ -268,7 +268,7 @@ impl<'a> Reader<'a> {
     }
 
     fn align(&mut self, align: usize) -> Result<(), DecodeError> {
-        while self.at % align != 0 {
+        while !self.at.is_multiple_of(align) {
             let b = *self.bytes.get(self.at).ok_or_else(|| self.error(DecodeErrorKind::Truncated))?;
             if b != 0 {
                 return Err(self.error(DecodeErrorKind::NonZeroPadding));
@@ -438,7 +438,7 @@ pub fn split_record(bytes: &[u8], base: usize) -> Result<(u16, &[u8]), DecodeErr
     if flags != 0 {
         return Err(DecodeError { offset: base + 2, kind: DecodeErrorKind::BadFlags(flags) });
     }
-    if (len as usize) < HEADER_LEN || len as usize % RECORD_ALIGN != 0 || len as usize > bytes.len() {
+    if (len as usize) < HEADER_LEN || !(len as usize).is_multiple_of(RECORD_ALIGN) || len as usize > bytes.len() {
         return Err(DecodeError { offset: base + 4, kind: DecodeErrorKind::BadLength(len) });
     }
     Ok((opcode, &bytes[..len as usize]))

@@ -153,10 +153,10 @@ fn decode_tagged(r: &mut Reader<'_>, tag: u8, depth: usize) -> Result<Value, Dec
             let mut entries: Vec<(String, Value)> = Vec::with_capacity(n);
             for _ in 0..n {
                 let key = r.str("value")?;
-                if let Some((last, _)) = entries.last() {
-                    if last.as_bytes() >= key.as_bytes() {
-                        return Err(r.error(DecodeErrorKind::BadValue));
-                    }
+                if let Some((last, _)) = entries.last()
+                    && last.as_bytes() >= key.as_bytes()
+                {
+                    return Err(r.error(DecodeErrorKind::BadValue));
                 }
                 let tag = r.u8()?;
                 let value = decode_tagged(r, tag, depth + 1)?;
