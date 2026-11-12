@@ -278,6 +278,15 @@ impl<A: Api> Memory<A> {
         if multisampled != (geometry.sample_count > 1) || (multisampled && geometry.mip_levels != 1) {
             return Err(MemError::undefined(call, "sample count and texture type disagree"));
         }
+        // MTLTextureSwizzle red 2, green 3, blue 4, alpha 5: the identity. A descriptor swizzle changes what every read
+        // of the texture returns; nothing here applies one yet.
+        let sw = &d.swizzle;
+        if (sw.red, sw.green, sw.blue, sw.alpha) != (2, 3, 4, 5) {
+            return Err(MemError::unimplemented(format!(
+                "{call}: texture swizzle ({}, {}, {}, {}) is not applied by the host yet",
+                sw.red, sw.green, sw.blue, sw.alpha
+            )));
+        }
         let format = u32::try_from(d.pixel_format).map_err(|_| MemError::undefined(call, "pixel format"))?;
         let dimension = if kind.is_3d() { Dimension::ThreeD } else { Dimension::Planar };
         let resolution = match handling::resolve_texture(format, self.features, dimension) {
