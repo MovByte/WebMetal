@@ -1,0 +1,123 @@
+# The values the WebGPU specification (Candidate Recommendation Draft 2026-09-15) defines for each `check` step of
+# webmetal_host::gpu::smoke, with the clause that defines each. `a || b` accepts either value: the hardware decides
+# whether the step can run. Lines that start with `#` are comments; `info` lines are not compared.
+
+# §4.2 requestAdapter(): a featureLevel that is not a feature level string resolves with null.
+check requestAdapter(featureLevel unknown) = null
+check requestAdapter = adapter
+# §4.2.2 "core": the capabilities of feature level "core" include "core-features-and-limits".
+check adapter.features has core-features-and-limits = true
+# §3.5.2 "a new device": the device's features and limits follow from the request (negotiate.rs).
+check negotiate.plan = ok
+check requestDevice(plan) = ok
+check negotiate.verify = none
+# §3.1.2 "create a new WebGPU object": the label comes from the descriptor.
+check device.label = smoke device
+# §4.4 adapterInfo: the info of the adapter that created the device.
+check device.adapterInfo == adapter.info = true
+check requestAdapter (second) = adapter
+# §4.3 requestDevice(), device timeline: an unknown limit name, a value better than the adapter's, and an alignment
+# that is not a power of two reject with OperationError; an unsupported feature rejects with TypeError; a key whose
+# value is undefined is ignored.
+check requestDevice(unknown limit) = OperationError
+check requestDevice(limit better than adapter) = OperationError
+check requestDevice(alignment not a power of two) = OperationError
+check requestDevice(unsupported feature) = TypeError || untestable: the adapter supports every feature
+check requestDevice(unknown limit, undefined value) = ok
+# §22.3 popErrorScope(): an empty stack rejects with OperationError.
+check popErrorScope(empty stack) = OperationError
+# §5.1.3 createBuffer(): MAP_READ may only be combined with COPY_DST, a validation error. §22.3 "current error scope":
+# the innermost scope whose filter matches.
+check scope(validation) catches invalid createBuffer = validation
+check nested scopes: inner, outer = validation, none
+check validation error skips an out-of-memory scope = none, validation
+# The plumbing (scope.rs): per call, the error names its call; batched, the calls since the previous settle.
+check plumbing per-call = validation from #1 GPUDevice.createBuffer "bad"
+check plumbing per-call valid buffer = ok
+check plumbing per-call close = 0
+check plumbing batch = validation from [first,second]
+check plumbing batch, nothing after = 0
+# §5.1.3 createBuffer(): mappedAtCreation with a size that is not a multiple of 4 throws RangeError.
+check createBuffer(mappedAtCreation, size 6) = RangeError
+check src.mapState = mapped
+# COPY_SRC is 0x0004.
+check src.size, usage, label = 16, 4, src
+check src.label after set = renamed
+# §5.2 getMappedRange(): offset not a multiple of 8, an overlapping range and an unmapped buffer throw OperationError.
+check getMappedRange(offset 4) = OperationError
+check getMappedRange overlapping = OperationError
+# ECMAScript: a view past the end of an ArrayBuffer is a RangeError; any view of a detached one a TypeError; a
+# detached ArrayBuffer has byteLength 0. §5.2 unmap() detaches the mapped ranges.
+check range write past end = RangeError
+check range after unmap: byteLength = 0
+check range after unmap: read = TypeError
+check getMappedRange unmapped = OperationError
+check src.mapState after unmap = unmapped
+# §5.2 unmap() of a WRITE mapping writes the data to the buffer.
+check mappedAtCreation contents = 0102030405060708090a0b0c0d0e0f10
+# §5.2 mapState and mapAsync(): pending while a map is in flight; a second mapAsync rejects with OperationError;
+# unmap() rejects the pending map with AbortError; a failed validation rejects with OperationError.
+check mapState after mapAsync = pending
+check mapAsync while pending = OperationError
+check mapAsync first = ok
+check mapped read buffer byteLength = 16
+check mapAsync then unmap = AbortError
+check mapAsync(WRITE) on a MAP_READ buffer = OperationError
+check mapAsync offset not a multiple of 8 = OperationError
+# §19.2 writeBuffer(): a range outside the data or not a multiple of 4 bytes throws OperationError. New buffers are
+# zero-initialized (§5.1.3).
+check writeBuffer(dataOffset past end) = OperationError
+check writeBuffer(size not multiple of 4) = OperationError
+check writeBuffer(valid) = ok
+check writeBuffer contents = 000000000405060708090a0b00000000
+# §10.1 getBindGroupLayout() returns a new object whose label is never set.
+check getBindGroupLayout(0).label = ""
+# §14.1 setBindGroup() with a Uint32Array: start + length past the array throws RangeError. §14.2 setImmediates(): a
+# size that is not a multiple of 4 bytes throws OperationError.
+check setBindGroup(data range past end) = RangeError
+check setImmediates(size not multiple of 4) = OperationError
+# Integer arithmetic is exact: data[i] = (3i + 1) * 2 + i.
+check compute result = exact
+# §10.2.1 createComputePipelineAsync(): an invalid pipeline rejects with GPUPipelineError, reason "validation".
+check createComputePipelineAsync(valid) = ok
+check createComputePipelineAsync(bad entry point) = GPUPipelineError(validation)
+# §9.1.2 getCompilationInfo(): messages include every error of shader module creation, as type "error".
+check getCompilationInfo(broken) has errors = true
+# §6.1.3 createTexture(): the attributes from the descriptor (usage 0x17); textureBindingViewDimension is undefined on a
+# device with "core-features-and-limits".
+check texture attributes = 4x4x1 mips 1 samples 1 2d rgba8unorm usage 23 textureBindingViewDimension None
+# §24.1 validate GPUExtent3D shape: a sequence of 0 or more than 3 elements throws TypeError. §6.2.1 Validate swizzle
+# string: ^[rgba01]{4}$, else TypeError.
+check createTexture(extent sequence of 4) = TypeError
+check createView(swizzle rgbx) = TypeError
+check writeTexture = ok
+check writeTexture(extent sequence of 0) = TypeError
+check copyTextureToBuffer = ok
+check texture round trip = exact
+check createRenderPipeline = ok
+check createRenderPipelineAsync = ok
+# §10.3.4 valid GPUBlendComponent and §3.6.1: a blend factor whose feature is not enabled throws TypeError; a
+# promise-returning operation rejects with the exception instead (WebIDL).
+check createRenderPipeline(src1 without dual-source-blending) = TypeError
+check createRenderPipelineAsync(src1 without dual-source-blending) = TypeError
+# §24.1 validate GPUColor shape: a sequence of other than 4 elements throws TypeError.
+check beginRenderPass(clearValue of 3) = TypeError
+check setBlendConstant(sequence of 3) = TypeError
+check setBlendConstant(dict) = ok
+# A triangle covering the target, scissored to columns 0-1, writes (1, 0, 1, 1) = ff00ffff over a clear of (0, 0, 1, 1)
+# = 0000ffff; the bundle writes every pixel.
+check render pass with scissor = ff00ffffff00ffff0000ffff0000ffff ff00ffffff00ffff0000ffff0000ffff ff00ffffff00ffff0000ffff0000ffff ff00ffffff00ffff0000ffff0000ffff
+check render bundle = ff00ffffff00ffffff00ffffff00ffff ff00ffffff00ffffff00ffffff00ffff ff00ffffff00ffffff00ffffff00ffff ff00ffffff00ffffff00ffffff00ffff
+# §6.3 Validate texture format required features: TypeError. §20.1.1 createQuerySet(): "timestamp" without
+# "timestamp-query" throws TypeError.
+check createTexture(bc1 without texture-compression-bc) = TypeError
+check createQuerySet(timestamp without timestamp-query) = TypeError
+check createQuerySet(occlusion): type, count = occlusion, 2
+check onSubmittedWorkDone = resolved
+# The invalid mapAsync() calls above each generated a validation error in the standing frame; a scope reports one.
+check plumbing: errors the remaining steps raised = validation
+# §4.4 destroy(): unmap() every buffer, then lose the device with reason "destroyed"; §5.2 mapAsync() on a lost device
+# rejects with AbortError.
+check destroy: buffer mapState = unmapped
+check destroy: lost.reason = destroyed
+check destroy: mapAsync after = AbortError

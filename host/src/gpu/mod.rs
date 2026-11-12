@@ -6,6 +6,7 @@
 //! - [`negotiate`]: which features and limits to request from an adapter, from the tables of `tables/limits.toml`
 //!   ([`tables`]), and the check that the device received them.
 //! - [`scope`]: error-scope plumbing that captures every WebGPU error and attributes it to the call that raised it.
+//! - [`smoke`]: the conformance smoke test, run through every implementation.
 //!
 //! The binding performs the content-timeline steps of the specification itself, so a program sees the values,
 //! exceptions and errors the specification defines; device-timeline behavior is the implementation's.
@@ -16,6 +17,7 @@ pub mod idl;
 pub mod negotiate;
 pub mod num;
 pub mod scope;
+pub mod smoke;
 #[rustfmt::skip]
 pub mod tables;
 

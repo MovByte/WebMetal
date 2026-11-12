@@ -1,0 +1,15 @@
+# Where wgpu-native v29.0.1.1 differs from tests/gpu_smoke_expected.txt, each line as `key: expected | got`, with the
+# reason. The smoke test passes on wgpu-native only when the differences are exactly these.
+
+# The adapter does not report "core-features-and-limits" (wgpu-native maps no WGPUFeatureName_CoreFeaturesAndLimits), so
+# by §4.2.2 it is not a core adapter, and the negotiation refuses it. The remaining steps run on a default device.
+adapter.features has core-features-and-limits: true | false
+negotiate.plan: ok | refused: adapter does not offer core-features-and-limits
+negotiate.verify: none | not run: the adapter was refused
+# wgpuShaderModuleGetCompilationInfo is unimplemented (src/unimplemented.rs).
+getCompilationInfo(broken) has errors: true | Unsupported
+# Follows from the first: on a device without "core-features-and-limits", textureBindingViewDimension is defined
+# (§6.1.3 createTexture()).
+texture attributes: 4x4x1 mips 1 samples 1 2d rgba8unorm usage 23 textureBindingViewDimension None | 4x4x1 mips 1 samples 1 2d rgba8unorm usage 23 textureBindingViewDimension Some("2d")
+# mapAsync on a destroyed device fails its callback with WGPUMapAsyncStatus_Error, not Aborted.
+destroy: mapAsync after: AbortError | OperationError
