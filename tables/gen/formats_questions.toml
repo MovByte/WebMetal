@@ -234,3 +234,31 @@ cite = [
   { src = "msl", ref = "8.7.1.1", quote = "For textures that have 8- or 16-bit normalized signed integer pixel values, the texture sample and read functions convert the pixel values from an 8- or 16-bit signed integer to a normalized single- or half-precision floating-point value in the range [-1.0 … 1.0]." },
   { src = "apple-mtlvertexformat", quote = "MTLVertexFormatChar2Normalized: A two-component vector with 8-bit, normalized, signed integer values." },
 ]
+
+[[question]]
+id = "6.3-pvrtc-on-mac"
+plan = "6.3"
+question = "Does this Mac's Metal decode PVRTC, so that the software PVRTC decoder can be verified against real Metal readback here?"
+status = "resolved"
+answer = "Yes. Measured on an Apple M4 under macOS 27.0.1: Metal creates textures of all four PVRTC formats and a compute read() of an 8x8 texture with a fixed block pattern completes and returns decoded texels, which are recorded in tables/measure/pvrtc_mac.toml as reference values for the decoder's tests. Whether the A10X's hardware decode is bit-identical to this Mac's is not established by this measurement."
+cite = [
+  { measure = "pvrtc-mac", case = "MTLPixelFormatPVRTC_RGBA_4BPP", quote = "texture: created" },
+  { measure = "pvrtc-mac", case = "MTLPixelFormatPVRTC_RGBA_4BPP", quote = "status: 4" },
+  { measure = "pvrtc-mac", case = "meta", quote = "device: Apple M4" },
+  { src = "mfst", quote = "PVRTC pixel formats Metal 3 & 4 Apple2" },
+]
+
+[[question]]
+id = "D1-format-feature-cross-check"
+plan = "6.3"
+question = "Which format and render features does the A10X support (PVRTC, ASTC HDR, BC, extended range, MSAA depth resolve, border color, programmable sample positions, memoryless targets)?"
+status = "open"
+owner = "D1"
+reason = "Device capabilities are D1's to extract from the 21H461 binaries. Apple's published family tables, a cross-check only, list for the A10's family (Apple3): PVRTC, EAC/ETC, ASTC, extended range and wide color formats, MSAA depth resolve, memoryless targets, dual-source blending, programmable sample positions and counting occlusion queries as supported; BC formats from Apple9, border color from Apple7 and cube map arrays from Apple4 as not supported. ASTC HDR has no row; plan 6.3 expects A13 and later."
+cite = [
+  { src = "mfst", quote = "A10-series Metal Apple3" },
+  { src = "mfst", quote = "Extended range pixel formats Metal 3 & 4 Apple3" },
+  { src = "mfst", quote = "Border color Metal 3 & 4 Apple7" },
+  { src = "mfst", quote = "Programmable sample positions Metal 3 & 4 Apple2" },
+  { src = "mfst", quote = "Counting occlusion query Metal 3 & 4 Apple3" },
+]

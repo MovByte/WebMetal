@@ -328,7 +328,12 @@ class PdfDoc:
         self._cache = {}
 
     def scope(self, secno):
-        """Text from a section heading to the next heading at the same or a higher level."""
+        """Text from a section heading to the next heading at the same or a higher level.
+
+        An empty section number names the whole document, for PDFs without numbered
+        sections."""
+        if secno == "":
+            return "\n".join(self.lines)
         if secno not in self.sections:
             return None
         start = self.sections[secno]

@@ -34,6 +34,25 @@ ROW_ARRAYS = {
 }
 
 
+def load_measures():
+    """{measurement id: {case id: text}} from the committed measurement results."""
+    out = {}
+    mdir = os.path.join(HERE, "measure")
+    for name in sorted(os.listdir(mdir)):
+        if not name.endswith(".toml"):
+            continue
+        with open(os.path.join(mdir, name), "rb") as f:
+            d = tomllib.load(f)
+        cases = {"meta": "\n".join("%s: %s" % (k, v) for k, v in d["meta"].items())}
+        for c in d.get("case", []):
+            lines = []
+            for k, v in c.items():
+                lines.append("%s: %s" % (k, " ".join(str(x) for x in v) if isinstance(v, list) else v))
+            cases[c["id"]] = "\n".join(lines)
+        out[d["meta"]["id"]] = cases
+    return out
+
+
 def regenerate(cache, name, script):
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, name)
@@ -50,7 +69,7 @@ def main():
     if not a.cache:
         raise SystemExit("a cache directory is required (--cache or TABLES_CACHE)")
     sources = specdoc.load_sources()
-    chk = citecheck.Checker(sources, a.cache)
+    chk = citecheck.Checker(sources, a.cache, measures=load_measures())
 
     for name, script in GENERATED:
         path = os.path.join(HERE, name)

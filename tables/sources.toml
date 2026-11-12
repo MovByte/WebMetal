@@ -164,6 +164,18 @@ url = "https://registry.khronos.org/DataFormat/specs/1.4/dataformat.1.4.html"
 sha256 = "7b1a6da9921fad991d8dcc9c03f113fa6f27a5a2972639424b3c4747856a3c7e"
 kind = "html"
 
+# Apple's published family tables; a cross-check only. Device capabilities of the
+# target come from the D1 device profile, which reads them from the 21H461 binaries.
+[source.mfst]
+title = "Metal Feature Set Tables"
+publisher = "Apple Inc."
+version = "October 23, 2026"
+date = "2026-10-23"
+url = "https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf"
+sections = false
+sha256 = "1ef9b5528c7d008013ea1effbc4b449dc407dff684d038a602d9b7a6dac9eaa2"
+kind = "pdf"
+
 # Header paths are relative to <SDK>/System/Library/Frameworks.
 [source.sdk]
 title = "iPhoneOS 27.2 SDK Metal.framework headers (Xcode 27.2, build 27B52)"

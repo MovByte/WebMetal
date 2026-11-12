@@ -94,7 +94,8 @@ class Checker:
             self.fail(where, "unknown source %r" % src)
             return
         kind = self.sources[src]["kind"]
-        if "ref" not in c and kind != "appledoc":
+        whole = kind == "appledoc" or self.sources[src].get("sections") is False
+        if "ref" not in c and not whole:
             self.fail(where, "citation without ref")
             return
         doc = specdoc.document(src, self.sources, self.cache)
@@ -105,7 +106,7 @@ class Checker:
                 return
             key = ref[1:]
         elif kind == "pdf":
-            if ref not in doc.sections:
+            if ref != "" and ref not in doc.sections:
                 self.fail(where, "section %s not in %s" % (ref, src))
                 return
             key = ref
