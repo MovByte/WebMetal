@@ -310,3 +310,47 @@ kernel void compute_layout_write(device LayoutRecord *records [[buffer(0)]],
     r.i4.z = as_type<int>(s[41]); r.i4.w = as_type<int>(s[42]);
     r.us = ushort(s[43]);
 }
+
+// Single-precision operations with accuracy stated in MSL 4.1 tables 8.1
+// (metal::precise) and 8.2 (default fast math). Nine inputs per element.
+kernel void compute_float_builtins(device float *out [[buffer(0)]],
+                                   device const float *in [[buffer(1)]],
+                                   uint i [[thread_position_in_grid]])
+{
+    device const float *v = in + i * 9;
+    float x = v[0], y = v[1], z = v[2];
+    float e = v[3], l = v[4], p = v[5], t = v[6], b = v[7], n = v[8];
+    device float *o = out + i * 32;
+    o[0] = x + y;
+    o[1] = x - y;
+    o[2] = x * y;
+    o[3] = fma(x, y, z);
+    o[4] = 1.0f / x;
+    o[5] = x / y;
+    o[6] = fast::exp2(e);
+    o[7] = fast::log2(l);
+    o[8] = fast::log2(p);
+    o[9] = fast::rsqrt(p);
+    o[10] = fast::sin(t);
+    o[11] = fast::cos(t);
+    o[12] = floor(x);
+    o[13] = ceil(x);
+    o[14] = trunc(x);
+    o[15] = rint(x);
+    o[16] = round(x);
+    o[17] = fabs(x);
+    o[18] = copysign(x, y);
+    o[19] = fmin(x, y);
+    o[20] = fmax(x, y);
+    o[21] = fract(x);
+    o[22] = precise::divide(x, y);
+    o[23] = precise::divide(1.0f, x);
+    o[24] = precise::sqrt(p);
+    o[25] = precise::rsqrt(p);
+    o[26] = precise::exp2(e * 16.0f);
+    o[27] = precise::log2(p);
+    o[28] = precise::sin(t);
+    o[29] = precise::cos(t);
+    o[30] = precise::pow(b, n);
+    o[31] = 0.0f;
+}

@@ -527,3 +527,146 @@ WMREF_CASE(computeMemoryLayout, "compute.memory-layout", "compute.memory-model",
     [c data:@"written-record-bytes" elem:WMElemU8 bytes:out length:length
         rule:WMNone(@"padding bytes after component stores are not defined; the components are compared above")];
 }
+
+static float WMRandomFloat(uint32_t bits, int minExponent, int maxExponent, BOOL negative) {
+    // A normal float with a random mantissa and an exponent in
+    // [minExponent, maxExponent].
+    int span = maxExponent - minExponent + 1;
+    int exponent = minExponent + (int)((bits >> 23) % (uint32_t)span);
+    uint32_t pattern = (bits & 0x7fffff) | ((uint32_t)(exponent + 127) << 23) | (negative ? 0x80000000u : 0);
+    float value;
+    memcpy(&value, &pattern, sizeof value);
+    return value;
+}
+
+WMREF_CASE(computeFloatBuiltins, "compute.float-builtins", "compute.float-math",
+           "Single-precision operations against the accuracy stated in MSL tables 8.1 and 8.2")
+{
+    enum { N = 128 };
+    float in[N * 9];
+    uint32_t seed[N * 9];
+    WMPattern(seed, sizeof seed, 61);
+    for (NSUInteger i = 0; i < N; i++) {
+        const uint32_t *s = seed + i * 9;
+        float *v = in + i * 9;
+        // x, y, z: magnitude in [2^-10, 2^11), either sign. 1/x and x/y are
+        // inside the [2^-126, 2^126] domain of table 8.2.
+        v[0] = WMRandomFloat(s[0], -10, 10, s[0] >> 31);
+        v[1] = WMRandomFloat(s[1], -10, 10, s[1] >> 31);
+        v[2] = WMRandomFloat(s[2], -10, 10, s[2] >> 31);
+        // exp2 argument in (-0.5, 0.5): the table 8.2 bound 3 + floor(|2x|)
+        // is then 3 ulp.
+        v[3] = WMRandomFloat(s[3], -12, -2, s[3] >> 31);
+        // log2 argument in [0.5, 2): absolute error bound 2^-22.
+        v[4] = WMRandomFloat(s[4], -1, 0, NO);
+        // Positive argument outside [0.5, 2): log2 bound 2 ulp; also used for
+        // rsqrt and sqrt.
+        v[5] = WMRandomFloat(s[5], 1, 10, NO);
+        if (s[5] & 0x40000000u) v[5] = WMRandomFloat(s[5], -10, -2, NO);
+        // sin/cos argument in [-pi, pi]: absolute error bound 2^-13.
+        v[6] = (float)(((double)(s[6] & 0xffffff) / 0x1000000 * 2.0 - 1.0) * 3.14159265);
+        // pow base in [0.5, 4), exponent in [-4, 4).
+        v[7] = WMRandomFloat(s[7], -1, 1, NO);
+        v[8] = (float)(((double)(s[8] & 0xffffff) / 0x1000000 * 2.0 - 1.0) * 4.0);
+    }
+    id<MTLComputePipelineState> pipeline = [c computePipeline:@"compute_float_builtins"];
+    id<MTLBuffer> input = [c bufferWithBytes:in length:sizeof in];
+    id<MTLBuffer> out = [c buffer:N * 32 * sizeof(float)];
+    [c compute:^(id<MTLComputeCommandEncoder> e) {
+        [e setComputePipelineState:pipeline];
+        [e setBuffer:out offset:0 atIndex:0];
+        [e setBuffer:input offset:0 atIndex:1];
+        [e dispatchThreadgroups:MTLSizeMake(N / 64, 1, 1) threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    }];
+    [c data:@"inputs" elem:WMElemF32 bytes:in length:sizeof in rule:WMExact()];
+
+    // Ideal values are the exact results computed in double precision: the
+    // exact sum, difference and product of two binary32 values whose
+    // exponents differ by at most 20 fit in binary64, and the libm
+    // functions are accurate to about 1 binary64 ulp, far below the binary32
+    // bounds.
+    struct {
+        NSString *name;
+        int slot;
+        NSString *model;
+        NSString *bound;
+        NSString *reference;
+    } ops[] = {
+        {@"add", 0, @"ulp", @"0.5", @"MSL 4.1 table 8.2: x + y correctly rounded"},
+        {@"subtract", 1, @"ulp", @"0.5", @"MSL 4.1 table 8.2: x - y correctly rounded"},
+        {@"multiply", 2, @"ulp", @"0.5", @"MSL 4.1 table 8.2: x * y correctly rounded"},
+        {@"fma", 3, @"ulp", @"0.5", @"MSL 4.1 table 8.2: fma correctly rounded"},
+        {@"fast-reciprocal", 4, @"ulp", @"1", @"MSL 4.1 table 8.2: 1.0 / x <= 1 ulp for x in [2^-126, 2^126]"},
+        {@"fast-divide", 5, @"ulp", @"2.5", @"MSL 4.1 table 8.2: x / y <= 2.5 ulp for y in [2^-126, 2^126]"},
+        {@"fast-exp2", 6, @"ulp", @"3", @"MSL 4.1 table 8.2: exp2(x) <= 3 + floor(fabs(2 * x)) ulp, |x| < 0.5"},
+        {@"fast-log2-near-one", 7, @"abs", @"0.0000002384185791015625",
+         @"MSL 4.1 table 8.2: log2(x) absolute error <= 2^-22 for x in [0.5, 2]"},
+        {@"fast-log2", 8, @"ulp", @"2", @"MSL 4.1 table 8.2: log2(x) <= 2 ulp for x > 0 outside [0.5, 2]"},
+        {@"fast-rsqrt", 9, @"ulp", @"2", @"MSL 4.1 table 8.2: rsqrt <= 2 ulp"},
+        {@"fast-sin", 10, @"abs", @"0.0001220703125",
+         @"MSL 4.1 table 8.2: sin(x) absolute error <= 2^-13 for x in [-pi, pi]"},
+        {@"fast-cos", 11, @"abs", @"0.0001220703125",
+         @"MSL 4.1 table 8.2: cos(x) absolute error <= 2^-13 for x in [-pi, pi]"},
+        {@"floor", 12, @"ulp", @"0.5", @"MSL 4.1 table 8.2: floor correctly rounded"},
+        {@"ceil", 13, @"ulp", @"0.5", @"MSL 4.1 table 8.2: ceil correctly rounded"},
+        {@"trunc", 14, @"ulp", @"0.5", @"MSL 4.1 table 8.2: trunc correctly rounded"},
+        {@"rint", 15, @"ulp", @"0.5", @"MSL 4.1 table 8.2: rint correctly rounded"},
+        {@"round", 16, @"ulp", @"0.5", @"MSL 4.1 table 8.2: round correctly rounded"},
+        {@"fabs", 17, @"ulp", @"0", @"MSL 4.1 table 8.2: fabs 0 ulp"},
+        {@"copysign", 18, @"ulp", @"0", @"MSL 4.1 table 8.2: copysign 0 ulp"},
+        {@"fmin", 19, @"ulp", @"0", @"MSL 4.1 table 8.2: fmin 0 ulp"},
+        {@"fmax", 20, @"ulp", @"0", @"MSL 4.1 table 8.2: fmax 0 ulp"},
+        {@"fract", 21, @"ulp", @"0.5", @"MSL 4.1 table 8.2: fract correctly rounded"},
+        {@"precise-divide", 22, @"ulp", @"0.5", @"MSL 4.1 table 8.1: x / y correctly rounded"},
+        {@"precise-reciprocal", 23, @"ulp", @"0.5", @"MSL 4.1 table 8.1: 1.0 / x correctly rounded"},
+        {@"precise-sqrt", 24, @"ulp", @"0.5", @"MSL 4.1 table 8.1: sqrt correctly rounded"},
+        {@"precise-rsqrt", 25, @"ulp", @"0.5", @"MSL 4.1 table 8.1: rsqrt correctly rounded"},
+        {@"precise-exp2", 26, @"ulp", @"4", @"MSL 4.1 table 8.1: exp2 <= 4 ulp"},
+        {@"precise-log2", 27, @"ulp", @"4", @"MSL 4.1 table 8.1: log2 <= 4 ulp"},
+        {@"precise-sin", 28, @"ulp", @"4", @"MSL 4.1 table 8.1: sin <= 4 ulp"},
+        {@"precise-cos", 29, @"ulp", @"4", @"MSL 4.1 table 8.1: cos <= 4 ulp"},
+        {@"precise-pow", 30, @"ulp", @"16", @"MSL 4.1 table 8.1: pow <= 16 ulp"},
+    };
+    const float *results = out.contents;
+    for (size_t k = 0; k < sizeof ops / sizeof ops[0]; k++) {
+        float measured[N];
+        double ideal[N];
+        for (NSUInteger i = 0; i < N; i++) {
+            const float *v = in + i * 9;
+            double x = v[0], y = v[1], z = v[2], e = v[3], l = v[4], p = v[5], t = v[6], b = v[7], n = v[8];
+            double r;
+            switch (ops[k].slot) {
+            case 0: r = x + y; break;
+            case 1: r = x - y; break;
+            case 2: r = x * y; break;
+            case 3: r = fma(x, y, z); break;
+            case 4: case 23: r = 1.0 / x; break;
+            case 5: case 22: r = x / y; break;
+            case 6: r = exp2(e); break;
+            case 7: r = log2(l); break;
+            case 8: case 27: r = log2(p); break;
+            case 9: case 25: r = 1.0 / sqrt(p); break;
+            case 10: case 28: r = sin(t); break;
+            case 11: case 29: r = cos(t); break;
+            case 12: r = floor(x); break;
+            case 13: r = ceil(x); break;
+            case 14: r = trunc(x); break;
+            case 15: r = rint(x); break;
+            case 16: r = round(x); break;
+            case 17: r = fabs(x); break;
+            case 18: r = copysign(x, y); break;
+            case 19: r = fmin(x, y); break;
+            case 20: r = fmax(x, y); break;
+            case 21: r = fmin(x - floor(x), 0x1.fffffep-1); break;
+            case 24: r = sqrt(p); break;
+            case 26: r = exp2(e * 16.0); break;
+            case 30: r = pow(b, n); break;
+            default: r = NAN;
+            }
+            ideal[i] = r;
+            measured[i] = results[i * 32 + ops[k].slot];
+        }
+        [c bounded:ops[k].name elem:WMElemF32 bytes:measured count:N ideal:ideal model:ops[k].model
+             bound:ops[k].bound reference:ops[k].reference];
+    }
+}
