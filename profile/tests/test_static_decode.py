@@ -37,13 +37,30 @@ class Evaluate(unittest.TestCase):
         regs, _, _ = out['state']
         self.assertEqual(regs['x9'], 3)
 
+    def test_sample_count_predicate(self):
+        # sub x8, x2, #1; tst x2, x8; ccmp x2, #0, #4, eq; ccmp x2, #5, #2, ne; cset w0, lo
+        body = [('sub', 'x8, x2, #1'), ('tst', 'x2, x8'), ('ccmp', 'x2, #0, #4, eq'),
+                ('ccmp', 'x2, #5, #2, ne'), ('cset', 'w0, lo'), ('ret', '')]
+        accepted = [n for n in range(0, 17) if evaluate(list(body), arguments=(n,))['x0']]
+        self.assertEqual(accepted, [1, 2, 4])
+
+    def test_csinc(self):
+        body = [('cmp', 'x2, #4'), ('csinc', 'w0, wzr, w2, hs'), ('ret', '')]
+        self.assertEqual(evaluate(list(body), arguments=(3,))['x0'], 4)
+        self.assertEqual(evaluate(list(body), arguments=(9,))['x0'], 0)
+
+    def test_signed_conditions(self):
+        body = [('cmp', 'w2, #0'), ('cset', 'w0, lt'), ('ret', '')]
+        self.assertEqual(evaluate(list(body), arguments=(0xffffffff,))['x0'], 1)
+        self.assertEqual(evaluate(list(body), arguments=(1,))['x0'], 0)
+
+    def test_compare_needs_a_value(self):
+        with self.assertRaises(DecodeError):
+            evaluate([('cmp', 'x2, #7'), ('cset', 'w0, lo'), ('ret', '')])
+
     def test_rejects_loads(self):
         with self.assertRaises(DecodeError):
             evaluate([('ldr', 'x0, [x0, #8]'), ('ret', '')])
-
-    def test_rejects_compare(self):
-        with self.assertRaises(DecodeError):
-            evaluate([('cmp', 'x2, #7'), ('cset', 'w0, lo'), ('ret', '')])
 
     def test_requires_ret(self):
         with self.assertRaises(DecodeError):

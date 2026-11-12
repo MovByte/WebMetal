@@ -173,6 +173,7 @@ def collect(cache_path, build_dir, llvm_bin, log=print):
     profile.b['sampler'] = sampler.check_with_compiler(p['sampler'], llvm_bin, Path(build_dir) / 'sampler')
     log('method B2: static decoding of driver getters')
     profile.b['static'] = static_check(target, {**getters, **p['driver_getters']}, llvm_bin)
+    profile.b['static_parameterized'] = static_parameterized(target, parameterized, llvm_bin)
     log('method B1: host Metal.framework')
     profile.b['host'] = host_check(target, profile, build_dir)
     profile.target = target
@@ -205,6 +206,31 @@ def static_check(target, getters, llvm_bin):
         out[selector] = ('value', static_decode.decode_getter(target.cache, tool, method.imp))
     except static_decode.DecodeError as error:
         out[selector] = ('unreachable', str(error))
+    return out
+
+
+def static_parameterized(target, parameterized, llvm_bin):
+    """{selector: {arg: ('value', x0) | ('unreachable', reason)}} for driver-implemented queries."""
+    tool = static_decode.llvm_mc(llvm_bin)
+    out = {}
+
+    def resolve(selector):
+        cls, method = target.method(selector)
+        if method is None:
+            raise static_decode.DecodeError(f'no implementation of {selector}')
+        return method.imp
+    for selector, (table, types) in parameterized.items():
+        cls, method = target.method(selector)
+        if cls.name not in DRIVER_CLASSES:
+            continue
+        answers = {}
+        for arg, outcome in table.items():
+            try:
+                decoded = static_decode.decode_getter(target.cache, tool, method.imp, resolve, arguments=(arg,))
+                answers[arg] = ('value', decoded)
+            except static_decode.DecodeError as error:
+                answers[arg] = ('unreachable', str(error))
+        out[selector] = answers
     return out
 
 

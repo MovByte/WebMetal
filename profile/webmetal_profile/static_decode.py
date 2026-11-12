@@ -32,8 +32,18 @@ def llvm_mc(llvm_bin=None):
     return found
 
 
+_DISASSEMBLED = {}
+
+
 def disassemble(tool, code):
     """[(mnemonic, operands)] for the little-endian AArch64 words in code."""
+    key = (tool, bytes(code))
+    if key not in _DISASSEMBLED:
+        _DISASSEMBLED[key] = _disassemble(tool, code)
+    return list(_DISASSEMBLED[key])
+
+
+def _disassemble(tool, code):
     text = ' '.join(f'0x{b:02x}' for b in code)
     result = subprocess.run([tool, '--disassemble', '-triple=arm64-apple-ios', '-show-encoding'],
                             input=text, capture_output=True, text=True, timeout=120)
@@ -56,16 +66,58 @@ def _imm(text):
     return int(text, 0)
 
 
-def evaluate(instructions, state=None):
-    """Value(s) a straight-line constant getter returns, or raise DecodeError.
+# Condition codes over (N, Z, C, V), Arm ARM ConditionHolds().
+CONDITIONS = {
+    'eq': lambda n, z, c, v: z, 'ne': lambda n, z, c, v: not z,
+    'hs': lambda n, z, c, v: c, 'cs': lambda n, z, c, v: c,
+    'lo': lambda n, z, c, v: not c, 'cc': lambda n, z, c, v: not c,
+    'mi': lambda n, z, c, v: n, 'pl': lambda n, z, c, v: not n,
+    'vs': lambda n, z, c, v: v, 'vc': lambda n, z, c, v: not v,
+    'hi': lambda n, z, c, v: c and not z, 'ls': lambda n, z, c, v: not (c and not z),
+    'ge': lambda n, z, c, v: n == v, 'lt': lambda n, z, c, v: n != v,
+    'gt': lambda n, z, c, v: not z and n == v, 'le': lambda n, z, c, v: not (not z and n == v),
+}
+
+
+def _subs_flags(a, b, width):
+    """NZCV of a - b at width bits (AddWithCarry(a, NOT b, 1))."""
+    mask = (1 << width) - 1
+    a, b = a & mask, b & mask
+    result = (a + (~b & mask) + 1) & mask
+    sign = 1 << (width - 1)
+    n = bool(result & sign)
+    z = result == 0
+    c = a >= b
+    v = bool((a ^ b) & (a ^ result) & sign)
+    return (n, z, c, v), result
+
+
+def evaluate(instructions, state=None, arguments=None):
+    """Value(s) a straight-line getter returns, or raise DecodeError.
 
     Returns {'x0': v, 'x1': v, 's0': bits, 'x8_stores': {offset: (size, value)}} for the
-    registers written before the first `ret`.
+    registers written before the first `ret`. Arguments after self and _cmd (x2..x7) are
+    symbolic unless `arguments` gives their values; compares and conditional selects
+    (cmp, tst, ccmp, cset, csinc, sub) need concrete operands.
     """
-    # Arguments after self and _cmd arrive in x2..x7; they stay symbolic.
     if state is None:
-        state = ({f'x{i}': ('arg', i - 2) for i in range(2, 8)}, {}, {})
+        regs = {f'x{i}': ('arg', i - 2) for i in range(2, 8)}
+        for i, value in enumerate(arguments or ()):
+            regs[f'x{i + 2}'] = value & MASK64
+        state = (regs, {}, {})
     regs, vectors, stores = state
+    flags = regs.get('nzcv')
+
+    def operand(text, width):
+        if text.startswith('#'):
+            return _imm(text) & ((1 << width) - 1)
+        if text in ('wzr', 'xzr'):
+            return 0
+        key = 'x' + text[1:]
+        if key not in regs or isinstance(regs[key], tuple):
+            raise DecodeError(f'operand {text} is not a known value')
+        return regs[key] & ((1 << width) - 1)
+
     for index, (mnemonic, ops) in enumerate(instructions):
         args = [a.strip() for a in re.split(r',(?![^\[]*\])', ops)] if ops else []
         if mnemonic == 'b' and len(args) == 1 and index == len(instructions) - 1:
@@ -137,6 +189,45 @@ def evaluate(instructions, state=None):
                     raise DecodeError(f'store of undefined {src}')
                 stores[offset + i * size] = (size, value)
             continue
+        if mnemonic in ('cmp', 'tst') and len(args) == 2:
+            width = 32 if args[0][0] == 'w' else 64
+            a, b = operand(args[0], width), operand(args[1], width)
+            if mnemonic == 'cmp':
+                flags, _ = _subs_flags(a, b, width)
+            else:
+                result = a & b
+                flags = (bool(result >> (width - 1) & 1), result == 0, False, False)
+            regs['nzcv'] = flags
+            continue
+        if mnemonic == 'ccmp' and len(args) == 4:
+            if flags is None:
+                raise DecodeError('ccmp without flags')
+            width = 32 if args[0][0] == 'w' else 64
+            if CONDITIONS[args[3]](*flags):
+                flags, _ = _subs_flags(operand(args[0], width), operand(args[1], width), width)
+            else:
+                nzcv = _imm(args[2])
+                flags = (bool(nzcv & 8), bool(nzcv & 4), bool(nzcv & 2), bool(nzcv & 1))
+            regs['nzcv'] = flags
+            continue
+        if mnemonic == 'cset' and len(args) == 2:
+            if flags is None:
+                raise DecodeError('cset without flags')
+            regs['x' + args[0][1:]] = int(CONDITIONS[args[1]](*flags))
+            continue
+        if mnemonic == 'csinc' and len(args) == 4:
+            if flags is None:
+                raise DecodeError('csinc without flags')
+            width = 32 if args[0][0] == 'w' else 64
+            chosen = (operand(args[1], width) if CONDITIONS[args[3]](*flags)
+                      else (operand(args[2], width) + 1) & ((1 << width) - 1))
+            regs['x' + args[0][1:]] = chosen
+            continue
+        if mnemonic == 'sub' and len(args) == 3 and args[2].startswith('#'):
+            width = 32 if args[0][0] == 'w' else 64
+            _, result = _subs_flags(operand(args[1], width), operand(args[2], width), width)
+            regs['x' + args[0][1:]] = result
+            continue
         raise DecodeError(f'not a constant getter: {mnemonic} {ops}')
     raise DecodeError('no ret within the decoded range')
 
@@ -158,7 +249,7 @@ def in_section(cache, address, name):
                                      for _, start, size in image.section('__TEXT', name))
 
 
-def decode_getter(cache, tool, address, resolve=None, limit=16, hops=4):
+def decode_getter(cache, tool, address, resolve=None, limit=16, hops=4, arguments=None):
     """Decode a getter at address, following unconditional tail branches.
 
     A tail branch to an `_objc_msgSend$<selector>` stub is a message to self with the same
@@ -182,7 +273,7 @@ def decode_getter(cache, tool, address, resolve=None, limit=16, hops=4):
         end = next((i for i, w in enumerate(words) if w == 0xd65f03c0 or w & 0xfc000000 == 0x14000000), None)
         if end is None:
             raise DecodeError('no ret or branch in the first instructions')
-        result = evaluate(disassemble(tool, code[:4 * (end + 1)]), state)
+        result = evaluate(disassemble(tool, code[:4 * (end + 1)]), state, arguments)
         if 'branch' not in result:
             return result
         address = address + 4 * end + result['branch']

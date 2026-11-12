@@ -194,10 +194,19 @@ def render(profile):
         for arg, outcome in sorted(table.items()):
             if outcome.kind != 'value':
                 continue
-            label = names.get(arg, 'not declared in the SDK')
+            label = names.get(arg, f'not declared in {SDK_ENUMS[selector]}') if selector in SDK_ENUMS else 'integer argument'
             if driver_side:
-                verdict = 'B1 not applicable: driver method; B2 unreachable: not a constant body'
-                verified = False
+                kind, decoded = profile.b['static_parameterized'][selector][arg]
+                if kind != 'value':
+                    verdict, verified = f'B1 not applicable: driver method; B2 unreachable: {decoded}', False
+                else:
+                    sv = static_value(decoded, ret_kind(types))
+                    if sv is None:
+                        verdict, verified = 'B2 unreachable: decoded registers do not hold the return value', False
+                    elif same(sv, outcome.value):
+                        verdict, verified = 'B2 agrees', True
+                    else:
+                        raise BuildError(f'{selector}({arg}): A {outcome.value} B2 {sv}')
             else:
                 entry = host_table.get(str(arg)) if host_table and 'unimplemented' not in host_table else host_table
                 verdict = host_verdict(entry, outcome.value)
@@ -216,7 +225,9 @@ def render(profile):
             for arg, outcome in failures:
                 if outcome.kind != 'failure':
                     raise BuildError(f'{selector}({arg}): {outcome}')
-                w.value(str(arg), outcome.value, f'{names.get(arg, "not declared in the SDK")}; A {outcome.detail}; '
+                label = (names.get(arg, f'not declared in {SDK_ENUMS[selector]}') if selector in SDK_ENUMS
+                         else 'integer argument')
+                w.value(str(arg), outcome.value, f'{label}; A {outcome.detail}; '
                                                  'B1 not asked: the failure path is not run in the host process', False)
 
     # -- limits -------------------------------------------------------------------------------
