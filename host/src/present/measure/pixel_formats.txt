@@ -1,0 +1,112 @@
+# Version 27.0.1 (Build 26A434)
+kCVPixelFormatType_32ARGB 0x20
+  BitsPerBlock = 32
+  BitsPerComponent = 8
+  BlackBlock = {length = 4, bytes = 0xff000000}
+  CGBitmapContextCompatibility = 1
+  CGBitmapInfo = 16388
+  CGImageCompatibility = 1
+  ComponentRange = FullRange
+  ContainsAlpha = 1
+  ContainsGrayscale = 0
+  ContainsRGB = 1
+  ContainsYCbCr = 0
+  OpenGLCompatibility = 1
+  OpenGLFormat = 32993
+  OpenGLInternalFormat = 32856
+  OpenGLTextureCacheCompatibility = 1
+  OpenGLType = 32821
+  PixelFormat = 32
+  QDCompatibility = 1
+kCVPixelFormatType_32BGRA 0x42475241
+  BitsPerBlock = 32
+  BitsPerComponent = 8
+  BlackBlock = {length = 4, bytes = 0x000000ff}
+  CGBitmapContextCompatibility = 1
+  CGBitmapInfo = 8196
+  CGImageCompatibility = 1
+  ComponentRange = FullRange
+  ContainsAlpha = 1
+  ContainsGrayscale = 0
+  ContainsRGB = 1
+  ContainsYCbCr = 0
+  IOSurfaceCoreAnimationCompatibility = 1
+  IOSurfaceOpenGLFBOCompatibility = 1
+  IOSurfaceOpenGLTextureCompatibility = 1
+  OpenGLCompatibility = 1
+  OpenGLFormat = 32993
+  OpenGLInternalFormat = 32856
+  OpenGLTextureCacheCompatibility = 1
+  OpenGLType = 33639
+  PixelFormat = 1111970369
+kCVPixelFormatType_32ABGR 0x41424752
+  (no description)
+kCVPixelFormatType_32RGBA 0x52474241
+  (no description)
+kCVPixelFormatType_ARGB2101010LEPacked 0x6c313072
+  BitsPerBlock = 32
+  BitsPerComponent = 10
+  BlackBlock = {length = 4, bytes = 0x000000c0}
+  CGBitmapContextCompatibility = 0
+  CGImageCompatibility = 0
+  ComponentRange = FullRange
+  ContainsAlpha = 1
+  ContainsGrayscale = 0
+  ContainsRGB = 1
+  ContainsYCbCr = 0
+  IOSurfaceOpenGLTextureCompatibility = 1
+  OpenGLCompatibility = 1
+  OpenGLFormat = 32993
+  OpenGLInternalFormat = 32857
+  OpenGLTextureCacheCompatibility = 1
+  OpenGLType = 33640
+  PixelFormat = 1815162994
+kCVPixelFormatType_30RGBLEPackedWideGamut 0x77333072
+  BitsPerBlock = 32
+  BitsPerComponent = 10
+  BlackBlock = {length = 4, bytes = 0x80010618}
+  CGBitmapContextCompatibility = 0
+  CGImageCompatibility = 0
+  ComponentRange = WideRange
+  ContainsAlpha = 0
+  ContainsGrayscale = 0
+  ContainsRGB = 1
+  ContainsYCbCr = 0
+  IOSurfaceCoreAnimationCompatibility = 1
+  IOSurfaceOpenGLTextureCompatibility = 1
+  OpenGLCompatibility = 1
+  OpenGLFormat = 32993
+  OpenGLInternalFormat = 32857
+  OpenGLTextureCacheCompatibility = 1
+  OpenGLType = 33640
+  PixelFormat = 1999843442
+kCVPixelFormatType_40ARGBLEWideGamut 0x77343061
+  BitsPerBlock = 64
+  BitsPerComponent = 10
+  BlackBlock = {length = 8, bytes = 0x8001800180018001}
+  CGBitmapContextCompatibility = 0
+  CGImageCompatibility = 0
+  ContainsAlpha = 1
+  ContainsGrayscale = 0
+  ContainsRGB = 1
+  ContainsYCbCr = 0
+  PixelFormat = 1999908961
+kCVPixelFormatType_64RGBAHalf 0x52476841
+  BitsPerBlock = 64
+  BitsPerComponent = 16
+  BlackBlock = {length = 8, bytes = 0x000000000000003c}
+  CGBitmapContextCompatibility = 0
+  CGImageCompatibility = 0
+  ComponentRange = FullRange
+  ContainsAlpha = 1
+  ContainsGrayscale = 0
+  ContainsRGB = 1
+  ContainsYCbCr = 0
+  IOSurfaceCoreAnimationCompatibility = 1
+  IOSurfaceOpenGLTextureCompatibility = 1
+  OpenGLCompatibility = 1
+  OpenGLFormat = 6408
+  OpenGLInternalFormat = 6408
+  OpenGLTextureCacheCompatibility = 1
+  OpenGLType = 5131
+  PixelFormat = 1380411457
