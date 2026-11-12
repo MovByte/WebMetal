@@ -172,7 +172,8 @@ mod page {
         let device = adapter.request_device(&d).await.map_err(err)?;
         let embedder = Rc::new(RefEmbedder::new(Clock::Manual(Cell::new(0))));
         let config = Config { scopes: Policy { granularity: Granularity::PerCall, strict: true } };
-        let host = RefHost::<Web>::new(device.clone(), embedder.clone(), config).await.map_err(err)?;
+        let wgsl = webmetal_embed_ref::host::wgsl_language_features::<Web>(&gpu).map_err(err)?;
+        let host = RefHost::<Web>::new(device.clone(), wgsl, embedder.clone(), config).await.map_err(err)?;
         let document = get(&js_sys::global(), "document");
         let body = get(&document, "body");
 

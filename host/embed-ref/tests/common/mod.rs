@@ -40,7 +40,9 @@ impl H {
         let (gpu, device) = native::device("present test device").expect("a device");
         let embedder = Rc::new(RefEmbedder::new(Clock::Manual(Cell::new(0))));
         let config = Config { scopes: Policy { granularity: Granularity::PerCall, strict: true } };
-        let host = gpu.block_on(RefHost::new(device, embedder, config), WAIT).expect("setup stalled").expect("setup");
+        let wgsl = webmetal_embed_ref::host::wgsl_language_features::<Native>(&gpu).expect("wgslLanguageFeatures");
+        let host =
+            gpu.block_on(RefHost::new(device, wgsl, embedder, config), WAIT).expect("setup stalled").expect("setup");
         host.embedder.map(TASK, BASE, 64 << 20).unwrap();
         H { gpu, host, next: Cell::new(0x100), alloc: Cell::new(BASE + 0x1000) }
     }

@@ -2,24 +2,25 @@
 //! over a [`RefEmbedder`].
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
 use webmetal_host::blit::BlitService;
 use webmetal_host::compute::ComputeService;
 use webmetal_host::exec::{Config, ControlService, Executor, Services};
 use webmetal_host::format::webgpu::{Feature, HostFeatures};
-use webmetal_host::gpu::{Api, Device as _, GpuFuture};
+use webmetal_host::gpu::{Api, Device as _, ExceptionKind, Gpu as _, GpuFuture};
 use webmetal_host::mem::Memory;
 use webmetal_host::mem::service::MemoryServices;
+use webmetal_host::pipeline::{self, PipelineServices};
 use webmetal_host::present::{DisplayMode, Offscreen, PresentFailure, Presenter};
 use webmetal_host::render::RenderServices;
 use webmetal_wire::{DecodeError, Reply, Request};
 
 use crate::embedder::RefEmbedder;
 
-/// The executor of one device with the memory, render, compute and blit services, the presentation sink, and an
-/// offscreen target per display. Pipeline creation has no service here, so it is answered as not implemented.
+/// The executor of one device with the memory, pipeline, render, compute and blit services, the presentation sink, and
+/// an offscreen target per display.
 pub struct RefHost<A: Api> {
     pub embedder: Rc<RefEmbedder>,
     pub exec: Executor<A, RefEmbedder>,
@@ -35,16 +36,38 @@ pub fn host_features<A: Api>(device: &A::Device) -> HostFeatures {
     HostFeatures::new(Feature::ALL.into_iter().filter(|f| names.contains(f.name())))
 }
 
+/// `wgslLanguageFeatures` of `gpu`. An implementation that does not provide the attribute (wgpu-native) is taken to
+/// offer no extension, as the pipeline service requires: a pipeline that needs one is refused for the host, never
+/// assumed to work (`webmetal_host::pipeline::PipelineServices::new`).
+pub fn wgsl_language_features<A: Api>(gpu: &A::Gpu) -> Result<BTreeSet<String>, String> {
+    match gpu.wgsl_language_features() {
+        Ok(f) => Ok(f),
+        Err(e) if e.kind == ExceptionKind::Unsupported => Ok(BTreeSet::new()),
+        Err(e) => Err(format!("wgslLanguageFeatures: {e}")),
+    }
+}
+
 impl<A: Api> RefHost<A> {
-    /// Set up the services on `device` (which no one else uses) and the executor.
-    pub fn new(device: A::Device, embedder: Rc<RefEmbedder>, config: Config) -> GpuFuture<Result<RefHost<A>, String>> {
+    /// Set up the services on `device` (which no one else uses) and the executor. `wgsl_language_features` are those of
+    /// the `GPU` the device came from ([`wgsl_language_features`]).
+    pub fn new(
+        device: A::Device,
+        wgsl_language_features: BTreeSet<String>,
+        embedder: Rc<RefEmbedder>,
+        config: Config,
+    ) -> GpuFuture<Result<RefHost<A>, String>> {
         let services = MemoryServices::new(&device, host_features::<A>(&device), embedder.clone());
         Box::pin(async move {
             let svc = services.await.map_err(|e| format!("memory services: {e}"))?;
             let memory = svc.memory();
+            let pipelines = PipelineServices::<A>::new(&device, wgsl_language_features, pipeline::Config::default());
             let render = RenderServices::new(memory.clone());
             let services = Services {
-                control: vec![svc.control() as Box<dyn ControlService<A, RefEmbedder>>, render.control()],
+                control: vec![
+                    svc.control() as Box<dyn ControlService<A, RefEmbedder>>,
+                    pipelines.control(),
+                    render.control(),
+                ],
                 render: Some(render.encoder()),
                 compute: Some(Box::new(ComputeService::new(memory.clone()))),
                 blit: Some(Box::new(BlitService::new(memory.clone()))),

@@ -85,7 +85,8 @@ fn new_host() -> (webmetal_host::gpu::native::NativeGpu, RefHost<webmetal_host::
     let (gpu, device) = webmetal_embed_ref::host::native::device("recording test device").unwrap();
     let embedder = Rc::new(RefEmbedder::new(Clock::Manual(Cell::new(0))));
     let config = Config { scopes: Policy { granularity: Granularity::PerCall, strict: true } };
-    let host = gpu.block_on(RefHost::new(device, embedder, config), WAIT).unwrap().unwrap();
+    let wgsl = webmetal_embed_ref::host::wgsl_language_features::<webmetal_host::gpu::native::Native>(&gpu).unwrap();
+    let host = gpu.block_on(RefHost::new(device, wgsl, embedder, config), WAIT).unwrap().unwrap();
     (gpu, host)
 }
 

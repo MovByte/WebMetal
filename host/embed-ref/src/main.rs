@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use webmetal_embed_ref::host::native;
+use webmetal_embed_ref::host::{native, wgsl_language_features};
 use webmetal_embed_ref::recording::{self, Step, StepOutcome};
 use webmetal_embed_ref::{Clock, RefEmbedder, RefHost};
 use webmetal_host::exec::Config;
@@ -93,7 +93,14 @@ fn main() -> ExitCode {
     let embedder = Rc::new(RefEmbedder::new(clock));
     let config = Config { scopes: Policy { granularity: Granularity::PerCall, strict: true } };
     let wait = Duration::from_secs(120);
-    let host = match gpu.block_on(RefHost::<Native>::new(device, embedder, config), wait) {
+    let wgsl = match wgsl_language_features::<Native>(&gpu) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("WebGPU: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let host = match gpu.block_on(RefHost::<Native>::new(device, wgsl, embedder, config), wait) {
         Ok(Ok(h)) => h,
         Ok(Err(e)) => {
             eprintln!("setup: {e}");
