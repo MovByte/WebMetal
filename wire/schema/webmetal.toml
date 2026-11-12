@@ -1,0 +1,3682 @@
+# WebMetal wire protocol: the single source of truth.
+#
+# wire/gen/wiregen.py generates from this file the ObjC++ encoder header (wire/generated/WebMetalWire.h), the Rust
+# decoder and encoder (wire/src/generated.rs), the fuzz value generators for both languages and the opcode table
+# (wire/generated/opcodes.md). Hand-written copies of any of them are forbidden. The protocol version is the SHA-256 of
+# this file's bytes; both ends exchange it in Open and refuse a connection whose hash differs.
+#
+# wire/tools/target_surface.py checks this file against the iPadOS 17.7.11 (21H461) binaries: every op's arguments
+# against the extended type encoding of each Metal method it lists, every descriptor struct against its class's
+# settable state, every guest-local annotation against the declaring protocol and the implementing layer, and coverage of
+# the QuartzCore driver-selector list (wire/target/quartzcore-driver-selectors.tsv).
+#
+# Field syntax: "name: type", optionally followed by " (MetalType)" naming the Metal enum or typedef the raw value
+# belongs to, and by " = expr" stating that an array, byte string or string has exactly as many elements as the value of
+# expr (another field of the same record, or field.member). Types:
+#
+#   u8 u16 u32 u64 i32 i64 f32 f64 bool   little-endian scalars; bool is one byte, 0 or 1
+#   Kind, Kind?                           object handle (u64); Kind names an [[object]]; Kind? allows 0 (nil)
+#   Struct, Struct?                       a [[struct]]; Struct? is a u8 presence tag (0 or 1) followed by the struct
+#   str, str?, url?                       UTF-8 string: u32 byte count (0xffffffff: nil), bytes; url? carries an
+#                                         NSURL as its absolute string
+#   cstr?                                 C string: like str? but any bytes except NUL, not necessarily UTF-8
+#   bytes                                 u32 byte count, bytes
+#   [T]                                   u32 element count, elements
+#   [u8; N]                               N bytes, no count
+#   value?                                a property-list value (NSDictionary, NSArray, NSString, NSNumber, NSData), or nil
+#   guest_addr                            u64 virtual address in the calling task; the host reads or writes it during
+#                                         the request (control) or when the command executes (stream)
+#   surface                               u32 IOSurfaceID
+#   block, out, present                   one byte, 1 when the caller passed a non-nil block / out-pointer / object that
+#                                         has no wire form (the block, pointer or object stays in the guest)
+
+[schema]
+name = "webmetal"
+record_alignment = 8
+header = ["opcode: u16", "flags: u16", "length: u32"]
+reply_bit = 0x8000
+value_depth_limit = 32
+
+# The accelerator service and its user client. Metal.framework (343.21 on 21H461) matches services in category
+# IOAcceleratorES and loads the bundle named by MetalPluginName from /System/Library/Extensions, instantiating
+# MetalPluginClassName. The selectors below are this protocol's, numbered from 0 in list order;
+# every call passes and returns 64-bit scalars only.
+[transport]
+service_class = "WebMetalAccelerator"
+match_category = "IOAcceleratorES"
+metal_plugin_name = "WebMetal"
+metal_plugin_class_name = "WebMetalDevice"
+user_client_type = 0
+selectors = [
+  "control: in [request_addr, request_length, reply_addr, reply_capacity] out [reply_length]; runs one control request read from the calling task and writes its reply; when reply_length > reply_capacity nothing is written and the reply stays pending",
+  "fetch_reply: in [reply_addr, reply_capacity] out [reply_length]; writes the pending reply of the last control call, which is not run again",
+  "register_event_port: async (wake port, reference) in [queue_handle] out []; the host sends an async completion with arguments [queue_handle] whenever events for that queue (0: device-level) become pending; the guest then sends FetchEvents",
+]
+
+# Object kinds. A handle is a u64 the guest allocates, unique for the life of the connection and never reused; 0 is
+# nil. The same value is the word an argument buffer holds for a texture, sampler or buffer reference.
+[[object]]
+name = "Object"
+protocols = []
+doc = "Any object kind."
+
+[[object]]
+name = "Resource"
+protocols = ["MTLResource", "MTLBuffer", "MTLTexture"]
+doc = "A buffer or a texture."
+
+[[object]]
+name = "Buffer"
+protocols = ["MTLBuffer"]
+
+[[object]]
+name = "Texture"
+protocols = ["MTLTexture"]
+
+[[object]]
+name = "Heap"
+protocols = ["MTLHeap"]
+
+[[object]]
+name = "SamplerState"
+protocols = ["MTLSamplerState"]
+
+[[object]]
+name = "DepthStencilState"
+protocols = ["MTLDepthStencilState"]
+
+[[object]]
+name = "RenderPipelineState"
+protocols = ["MTLRenderPipelineState"]
+
+[[object]]
+name = "ComputePipelineState"
+protocols = ["MTLComputePipelineState"]
+
+[[object]]
+name = "Function"
+protocols = ["MTLFunction"]
+
+[[object]]
+name = "BinaryArchive"
+protocols = ["MTLBinaryArchive"]
+
+[[object]]
+name = "DynamicLibrary"
+protocols = ["MTLDynamicLibrary"]
+
+[[object]]
+name = "CommandQueue"
+protocols = ["MTLCommandQueue"]
+
+[[object]]
+name = "CommandBuffer"
+protocols = ["MTLCommandBuffer"]
+
+[[object]]
+name = "Encoder"
+protocols = ["MTLCommandEncoder", "MTLRenderCommandEncoder", "MTLComputeCommandEncoder", "MTLBlitCommandEncoder", "MTLParallelRenderCommandEncoder"]
+
+[[object]]
+name = "Event"
+protocols = ["MTLEvent", "MTLSharedEvent"]
+
+[[object]]
+name = "Fence"
+protocols = ["MTLFence"]
+
+[[object]]
+name = "IndirectCommandBuffer"
+protocols = ["MTLIndirectCommandBuffer"]
+
+[[object]]
+name = "CounterSampleBuffer"
+protocols = ["MTLCounterSampleBuffer"]
+
+[[object]]
+name = "ResourceGroup"
+protocols = ["MTLResourceGroupSPI"]
+
+[[object]]
+name = "VisibleFunctionTable"
+protocols = ["MTLVisibleFunctionTable"]
+
+[[object]]
+name = "IntersectionFunctionTable"
+protocols = ["MTLIntersectionFunctionTable"]
+
+[[object]]
+name = "AccelerationStructure"
+protocols = ["MTLAccelerationStructure"]
+
+[[object]]
+name = "RasterizationRateMap"
+protocols = ["MTLRasterizationRateMap"]
+
+# Plain structures. Member names and types follow the iPhoneOS SDK declarations; encodings are the 21H461 method
+# encodings in which they appear.
+[[struct]]
+name = "Origin"
+metal = "MTLOrigin"
+encoding = "{?=QQQ}"
+fields = ["x: u64", "y: u64", "z: u64"]
+
+[[struct]]
+name = "Size"
+metal = "MTLSize"
+encoding = "{?=QQQ}"
+fields = ["width: u64", "height: u64", "depth: u64"]
+
+[[struct]]
+name = "Region"
+metal = "MTLRegion"
+encoding = "{?={?=QQQ}{?=QQQ}}"
+fields = ["origin: Origin", "size: Size"]
+
+[[struct]]
+name = "Range"
+metal = "NSRange"
+encoding = "{_NSRange=QQ}"
+fields = ["location: u64", "length: u64"]
+
+[[struct]]
+name = "Viewport"
+metal = "MTLViewport"
+encoding = "{?=dddddd}"
+fields = ["origin_x: f64", "origin_y: f64", "width: f64", "height: f64", "znear: f64", "zfar: f64"]
+
+[[struct]]
+name = "ScissorRect"
+metal = "MTLScissorRect"
+encoding = "{?=QQQQ}"
+fields = ["x: u64", "y: u64", "width: u64", "height: u64"]
+
+[[struct]]
+name = "ClearColor"
+metal = "MTLClearColor"
+encoding = "{?=dddd}"
+fields = ["red: f64", "green: f64", "blue: f64", "alpha: f64"]
+
+[[struct]]
+name = "TextureSwizzleChannels"
+metal = "MTLTextureSwizzleChannels"
+encoding = "{?=CCCC}"
+fields = ["red: u8 (MTLTextureSwizzle)", "green: u8 (MTLTextureSwizzle)", "blue: u8 (MTLTextureSwizzle)", "alpha: u8 (MTLTextureSwizzle)"]
+
+[[struct]]
+name = "SamplePosition"
+metal = "MTLSamplePosition"
+encoding = "{?=ff}"
+fields = ["x: f32", "y: f32"]
+
+[[struct]]
+name = "VertexAmplificationViewMapping"
+metal = "MTLVertexAmplificationViewMapping"
+encoding = "{?=II}"
+fields = ["viewport_array_index_offset: u32", "render_target_array_index_offset: u32"]
+
+[[struct]]
+name = "Hash"
+doc = "A SHA-256 digest."
+fields = ["bytes: [u8; 32]"]
+
+[[struct]]
+name = "FunctionConstant"
+doc = "One function constant value (MTLFunctionConstantValues entry): by index, or by name when name is not nil."
+fields = ["index: u64", "name: str?", "data_type: u64 (MTLDataType)", "value: bytes"]
+
+[[struct]]
+name = "LinkedFunctionGroup"
+doc = "One entry of MTLLinkedFunctions.groups (an NSDictionary): a callsite group name and its functions."
+dictionary_entry = true
+fields = ["name: str", "functions: [Function]"]
+
+# Pipeline reflection, returned by the pipeline-creation replies that ask for it. The guest builds Metal's reflection
+# objects from it. Member sets follow the 21H461 MTLArgument, MTLStructMember, MTLArrayType, MTLPointerType and
+# MTLTextureReferenceType classes. Nested types are an index into the stage's types table; 0xffffffff is none.
+[[struct]]
+name = "Reflection"
+fields = ["stages: [StageReflection]"]
+
+[[struct]]
+name = "StageReflection"
+fields = ["function_type: u64 (MTLFunctionType)", "arguments: [ArgumentReflection]", "types: [TypeReflection]"]
+
+[[struct]]
+name = "ArgumentReflection"
+fields = [
+  "name: str",
+  "type: u64 (MTLArgumentType)",
+  "access: u64 (MTLBindingAccess)",
+  "index: u64",
+  "active: bool",
+  "buffer_alignment: u64",
+  "buffer_data_size: u64",
+  "buffer_data_type: u64 (MTLDataType)",
+  "buffer_struct_type: u32",
+  "buffer_pointer_type: u32",
+  "buffer_indirect_argument_type: u32",
+  "threadgroup_memory_alignment: u64",
+  "threadgroup_memory_data_size: u64",
+  "texture_type: u64 (MTLTextureType)",
+  "texture_data_type: u64 (MTLDataType)",
+  "is_depth_texture: bool",
+  "array_length: u64",
+  "indirect_constant_alignment: u64",
+  "indirect_constant_data_size: u64",
+  "indirect_constant_data_type: u64 (MTLDataType)",
+]
+
+[[struct]]
+name = "TypeReflection"
+doc = "One MTLType: data_type selects which members are meaningful (struct: members; array: element_*, array_length, stride, argument_index_stride; pointer: element_*, access, alignment, data_size, element_is_argument_buffer; texture reference: texture_*, access, is_depth_texture)."
+fields = [
+  "data_type: u64 (MTLDataType)",
+  "members: [StructMemberReflection]",
+  "element_data_type: u64 (MTLDataType)",
+  "element_type: u32",
+  "array_length: u64",
+  "stride: u64",
+  "argument_index_stride: u64",
+  "access: u64 (MTLBindingAccess)",
+  "alignment: u64",
+  "data_size: u64",
+  "element_is_argument_buffer: bool",
+  "texture_data_type: u64 (MTLDataType)",
+  "texture_type: u64 (MTLTextureType)",
+  "is_depth_texture: bool",
+]
+
+[[struct]]
+name = "StructMemberReflection"
+fields = ["name: str", "offset: u64", "data_type: u64 (MTLDataType)", "type: u32", "argument_index: u64"]
+
+# Failure detail carried by replies and command-buffer completion. status: 0 Ok, 1 MetalError (domain and code are the
+# NSError Metal itself returns for this case), 2 Unimplemented (the host does not implement this; the guest reports it
+# through the not-implemented channel), 3 HostUnsupported (the host cannot honor a capability the device advertises;
+# reported the same way, naming the limit or feature), 4 Invalid (malformed request, unknown handle, protocol violation).
+[[struct]]
+name = "Failure"
+fields = ["status: u32", "domain: str?", "code: i64", "message: str"]
+
+# Descriptors: fields are the settable state of the named 21H461 class (getter/setter pairs and readonly collection
+# properties). A collection field carries one element per slot of the array, slot i at position i; the guest sends
+# every slot the array has. nil NSArray values are carried as empty arrays.
+
+[[struct]]
+name = "TextureDescriptor"
+class = "MTLTextureDescriptorInternal"
+fields = [
+  "allow_gpu_optimized_contents: bool",
+  "array_length: u64",
+  "color_space_conversion_matrix: u64",
+  "compression_footprint: u64",
+  "compression_mode: u64",
+  "compression_type: i64 (MTLTextureCompressionType)",
+  "cpu_cache_mode: u64 (MTLCPUCacheMode)",
+  "depth: u64",
+  "force_resource_index: bool",
+  "framebuffer_only: bool",
+  "hazard_tracking_mode: u64 (MTLHazardTrackingMode)",
+  "height: u64",
+  "is_drawable: bool",
+  "lossy_compression_mode: i64",
+  "mipmap_level_count: u64",
+  "pixel_format: u64 (MTLPixelFormat)",
+  "protection_options: u64",
+  "resource_index: u64",
+  "resource_options: u64 (MTLResourceOptions)",
+  "rotation: u64",
+  "sample_count: u64",
+  "sparse_surface_default_value: u64",
+  "storage_mode: u64 (MTLStorageMode)",
+  "swizzle: TextureSwizzleChannels",
+  "swizzle_key: u32",
+  "texture_type: u64 (MTLTextureType)",
+  "texture_usage: u64",
+  "usage: u64 (MTLTextureUsage)",
+  "width: u64",
+  "write_swizzle_enabled: bool"
+]
+source = { allow_gpu_optimized_contents = "allowGPUOptimizedContents" }
+
+[[struct]]
+name = "SamplerDescriptor"
+class = "MTLSamplerDescriptorInternal"
+fields = [
+  "border_color: u64 (MTLSamplerBorderColor)",
+  "border_color_spi: u64",
+  "compare_function: u64 (MTLCompareFunction)",
+  "custom_border_color_value_0: u32",
+  "custom_border_color_value_1: u32",
+  "custom_border_color_value_2: u32",
+  "custom_border_color_value_3: u32",
+  "force_resource_index: bool",
+  "force_seams_on_cubemap_filtering: bool",
+  "label: str?",
+  "lod_average: bool",
+  "lod_bias: f32",
+  "lod_max_clamp: f32",
+  "lod_min_clamp: f32",
+  "mag_filter: u64 (MTLSamplerMinMagFilter)",
+  "max_anisotropy: u64",
+  "min_filter: u64 (MTLSamplerMinMagFilter)",
+  "mip_filter: u64 (MTLSamplerMipFilter)",
+  "normalized_coordinates: bool",
+  "pixel_format: u64",
+  "r_address_mode: u64 (MTLSamplerAddressMode)",
+  "resource_index: u64",
+  "s_address_mode: u64 (MTLSamplerAddressMode)",
+  "support_argument_buffers: bool",
+  "t_address_mode: u64 (MTLSamplerAddressMode)"
+]
+source = { border_color_spi = "borderColorSPI", custom_border_color_value_0 = "customBorderColorValue_0", custom_border_color_value_1 = "customBorderColorValue_1", custom_border_color_value_2 = "customBorderColorValue_2", custom_border_color_value_3 = "customBorderColorValue_3" }
+
+[[struct]]
+name = "StencilDescriptor"
+class = "MTLStencilDescriptorInternal"
+fields = [
+  "depth_failure_operation: u64 (MTLStencilOperation)",
+  "depth_stencil_pass_operation: u64 (MTLStencilOperation)",
+  "read_mask: u32",
+  "stencil_compare_function: u64 (MTLCompareFunction)",
+  "stencil_failure_operation: u64 (MTLStencilOperation)",
+  "write_mask: u32"
+]
+
+[[struct]]
+name = "DepthStencilDescriptor"
+class = "MTLDepthStencilDescriptorInternal"
+fields = [
+  "back_face_stencil: StencilDescriptor?",
+  "depth_compare_function: u64 (MTLCompareFunction)",
+  "depth_write_enabled: bool",
+  "front_face_stencil: StencilDescriptor?",
+  "label: str?"
+]
+
+[[struct]]
+name = "HeapDescriptor"
+class = "MTLHeapDescriptorInternal"
+fields = [
+  "cpu_cache_mode: u64 (MTLCPUCacheMode)",
+  "hazard_tracking_mode: u64 (MTLHazardTrackingMode)",
+  "memory_pool_id: u64",
+  "pinned_gpu_address: u64",
+  "protection_options: u64",
+  "resource_options: u64 (MTLResourceOptions)",
+  "size: u64",
+  "sparse_page_access_counters_enabled: bool",
+  "sparse_page_size: i64 (MTLSparsePageSize)",
+  "storage_mode: u64 (MTLStorageMode)",
+  "type: i64 (MTLHeapType)"
+]
+source = { pinned_gpu_address = "pinnedGPUAddress" }
+
+[[struct]]
+name = "RenderPassColorAttachment"
+class = "MTLRenderPassColorAttachmentDescriptorInternal"
+fields = [
+  "clear_color: ClearColor",
+  "depth_plane: u64",
+  "level: u64",
+  "load_action: u64",
+  "resolve_depth_plane: u64",
+  "resolve_level: u64",
+  "resolve_slice: u64",
+  "resolve_texture: Texture?",
+  "slice: u64",
+  "store_action: u64",
+  "store_action_options: u64",
+  "texture: Texture?",
+  "y_invert: bool"
+]
+
+[[struct]]
+name = "RenderPassDepthAttachment"
+class = "MTLRenderPassDepthAttachmentDescriptorInternal"
+fields = [
+  "clear_depth: f64",
+  "depth_plane: u64",
+  "depth_resolve_filter: u64 (MTLMultisampleDepthResolveFilter)",
+  "level: u64",
+  "load_action: u64",
+  "resolve_depth_plane: u64",
+  "resolve_level: u64",
+  "resolve_slice: u64",
+  "resolve_texture: Texture?",
+  "slice: u64",
+  "store_action: u64",
+  "store_action_options: u64",
+  "texture: Texture?",
+  "y_invert: bool"
+]
+
+[[struct]]
+name = "RenderPassStencilAttachment"
+class = "MTLRenderPassStencilAttachmentDescriptorInternal"
+fields = [
+  "clear_stencil: u32",
+  "depth_plane: u64",
+  "level: u64",
+  "load_action: u64",
+  "resolve_depth_plane: u64",
+  "resolve_level: u64",
+  "resolve_slice: u64",
+  "resolve_texture: Texture?",
+  "slice: u64",
+  "stencil_resolve_filter: u64 (MTLMultisampleStencilResolveFilter)",
+  "store_action: u64",
+  "store_action_options: u64",
+  "texture: Texture?",
+  "y_invert: bool"
+]
+
+[[struct]]
+name = "RenderPassSampleBufferAttachment"
+class = "MTLRenderPassSampleBufferAttachmentDescriptorInternal"
+fields = [
+  "end_of_fragment_sample_index: u64",
+  "end_of_vertex_sample_index: u64",
+  "sample_buffer: CounterSampleBuffer?",
+  "start_of_fragment_sample_index: u64",
+  "start_of_vertex_sample_index: u64"
+]
+
+[[struct]]
+name = "RenderPassDescriptor"
+class = "MTLRenderPassDescriptorInternal"
+fields = [
+  "binary_archives: [BinaryArchive]",
+  "color_attachments: [RenderPassColorAttachment]",
+  "default_color_sample_count: u64",
+  "default_raster_sample_count: u64",
+  "depth_attachment: RenderPassDepthAttachment?",
+  "dither_enabled: bool",
+  "fine_grained_background_visibility_enabled: bool",
+  "imageblock_sample_length: u64",
+  "open_gl_mode_enabled: bool",
+  "point_coord_y_flip_enabled: bool",
+  "rasterization_rate_map: RasterizationRateMap?",
+  "render_target_array_length: u64",
+  "render_target_height: u64",
+  "render_target_width: u64",
+  "sample_buffer_attachments: [RenderPassSampleBufferAttachment]",
+  "skip_empty_tiles_on_clear_enabled: bool",
+  "stencil_attachment: RenderPassStencilAttachment?",
+  "threadgroup_memory_length: u64",
+  "tile_height: u64",
+  "tile_width: u64",
+  "visibility_result_buffer: Buffer?",
+  "sample_positions: [SamplePosition]"
+]
+source = { open_gl_mode_enabled = "openGLModeEnabled", sample_positions = "getSamplePositions:count:" }
+accessors = { "getSamplePositions:count:" = "sample_positions" }
+
+[[struct]]
+name = "RenderPipelineColorAttachment"
+class = "MTLRenderPipelineColorAttachmentDescriptorInternal"
+fields = [
+  "alpha_blend_operation: u64 (MTLBlendOperation)",
+  "blending_enabled: bool",
+  "destination_alpha_blend_factor: u64 (MTLBlendFactor)",
+  "destination_rgb_blend_factor: u64 (MTLBlendFactor)",
+  "pixel_format: u64 (MTLPixelFormat)",
+  "rgb_blend_operation: u64 (MTLBlendOperation)",
+  "source_alpha_blend_factor: u64 (MTLBlendFactor)",
+  "source_rgb_blend_factor: u64 (MTLBlendFactor)",
+  "write_mask: u64 (MTLColorWriteMask)"
+]
+source = { destination_rgb_blend_factor = "destinationRGBBlendFactor", source_rgb_blend_factor = "sourceRGBBlendFactor" }
+
+[[struct]]
+name = "PipelineBufferDescriptor"
+class = "MTLPipelineBufferDescriptorInternal"
+fields = [
+  "mutability: u64 (MTLMutability)"
+]
+
+[[struct]]
+name = "VertexBufferLayout"
+class = "MTLVertexBufferLayoutDescriptorInternal"
+fields = [
+  "step_function: u64 (MTLVertexStepFunction)",
+  "step_rate: u64",
+  "stride: u64"
+]
+
+[[struct]]
+name = "VertexAttribute"
+class = "MTLVertexAttributeDescriptorInternal"
+fields = [
+  "buffer_index: u64",
+  "format: u64 (MTLVertexFormat)",
+  "offset: u64"
+]
+
+[[struct]]
+name = "VertexDescriptor"
+class = "MTLVertexDescriptorInternal"
+fields = [
+  "attributes: [VertexAttribute]",
+  "layouts: [VertexBufferLayout]"
+]
+
+[[struct]]
+name = "LinkedFunctions"
+class = "MTLLinkedFunctionsInternal"
+fields = [
+  "binary_functions: [Function]",
+  "functions: [Function]",
+  "groups: [LinkedFunctionGroup]",
+  "private_functions: [Function]"
+]
+
+[[struct]]
+name = "ProfileControl"
+class = "MTLProfileControl"
+fields = [
+  "usc_clique_trace_level: u8",
+  "usc_emit_position: bool",
+  "usc_emit_thread_control_flow: bool"
+]
+
+[[struct]]
+name = "RenderPipelineDescriptor"
+class = "MTLRenderPipelineDescriptorInternal"
+fields = [
+  "alpha_test_enabled: bool",
+  "alpha_test_function: u64",
+  "alpha_to_coverage_enabled: bool",
+  "alpha_to_one_enabled: bool",
+  "binary_archives: [BinaryArchive]",
+  "clip_distance_enable_mask: u8",
+  "color_attachments: [RenderPipelineColorAttachment]",
+  "color_sample_count: u64",
+  "depth_attachment_pixel_format: u64 (MTLPixelFormat)",
+  "depth_stencil_write_disabled: bool",
+  "driver_compiler_options: value?",
+  "explicit_visibility_group_id: u32",
+  "force_resource_index: bool",
+  "force_software_vertex_fetch: bool",
+  "fragment_buffers: [PipelineBufferDescriptor]",
+  "fragment_depth_compare_clamp_mask: u32",
+  "fragment_function: Function?",
+  "fragment_linked_functions: LinkedFunctions?",
+  "fragment_preloaded_libraries: [DynamicLibrary]",
+  "gpu_compiler_spi_options: value?",
+  "input_primitive_topology: u64 (MTLPrimitiveTopologyClass)",
+  "insert_fragment_libraries: [DynamicLibrary]",
+  "insert_mesh_libraries: [DynamicLibrary]",
+  "insert_object_libraries: [DynamicLibrary]",
+  "insert_vertex_libraries: [DynamicLibrary]",
+  "label: str?",
+  "logic_operation: u64",
+  "logic_operation_enabled: bool",
+  "max_acceleration_structure_traversal_depth: u64",
+  "max_fragment_call_stack_depth: u64",
+  "max_mesh_call_stack_depth: u64",
+  "max_object_call_stack_depth: u64",
+  "max_pipeline_children: Size",
+  "max_tessellation_factor: u64",
+  "max_total_threads_per_mesh_threadgroup: u64",
+  "max_total_threads_per_object_threadgroup: u64",
+  "max_vertex_amplification_count: u64",
+  "max_vertex_call_stack_depth: u64",
+  "mesh_function: Function?",
+  "mesh_linked_functions: LinkedFunctions?",
+  "mesh_preloaded_libraries: [DynamicLibrary]",
+  "mesh_threadgroup_size_is_multiple_of_thread_execution_width: bool",
+  "mesh_threads_per_threadgroup: Size",
+  "needs_custom_border_color_samplers: bool",
+  "object_function: Function?",
+  "object_linked_functions: LinkedFunctions?",
+  "object_preloaded_libraries: [DynamicLibrary]",
+  "object_threadgroup_size_is_multiple_of_thread_execution_width: bool",
+  "object_threads_per_threadgroup: Size",
+  "open_gl_mode_enabled: bool",
+  "pipeline_library: present",
+  "pipeline_memory_length: u64",
+  "plugin_data: value?",
+  "point_coord_lower_left: bool",
+  "point_size_output_vs: bool",
+  "point_smooth_enabled: bool",
+  "post_vertex_dump_buffer_index: u64",
+  "profile_control: ProfileControl?",
+  "raster_sample_count: u64",
+  "rasterization_enabled: bool",
+  "resource_index: u64",
+  "sample_count: u64",
+  "sample_coverage: f32",
+  "sample_coverage_invert: bool",
+  "sample_mask: u64",
+  "stencil_attachment_pixel_format: u64 (MTLPixelFormat)",
+  "support_adding_fragment_binary_functions: bool",
+  "support_adding_mesh_binary_functions: bool",
+  "support_adding_object_binary_functions: bool",
+  "support_adding_vertex_binary_functions: bool",
+  "support_indirect_command_buffers: bool",
+  "tessellation_control_point_index_type: u64 (MTLTessellationControlPointIndexType)",
+  "tessellation_factor_format: u64 (MTLTessellationFactorFormat)",
+  "tessellation_factor_scale_enabled: bool",
+  "tessellation_factor_step_function: u64 (MTLTessellationFactorStepFunction)",
+  "tessellation_output_winding_order: u64 (MTLWinding)",
+  "tessellation_partition_mode: u64 (MTLTessellationPartitionMode)",
+  "texture_write_rounding_mode: i64",
+  "two_side_enabled: bool",
+  "vertex_amplification_mode: u64",
+  "vertex_buffers: [PipelineBufferDescriptor]",
+  "vertex_depth_compare_clamp_mask: u32",
+  "vertex_descriptor: VertexDescriptor?",
+  "vertex_function: Function?",
+  "vertex_linked_functions: LinkedFunctions?",
+  "vertex_preloaded_libraries: [DynamicLibrary]",
+  "mesh_buffers: [PipelineBufferDescriptor]",
+  "object_buffers: [PipelineBufferDescriptor]"
+]
+source = { explicit_visibility_group_id = "explicitVisibilityGroupID", gpu_compiler_spi_options = "gpuCompilerSPIOptions", mesh_buffers = "meshBuffers", object_buffers = "objectBuffers", open_gl_mode_enabled = "openGLModeEnabled", point_size_output_vs = "pointSizeOutputVS" }
+accessors = { "meshBuffers" = "mesh_buffers", "objectBuffers" = "object_buffers" }
+
+[[struct]]
+name = "BufferLayout"
+class = "MTLBufferLayoutDescriptorInternal"
+fields = [
+  "step_function: u64 (MTLStepFunction)",
+  "step_rate: u64",
+  "stride: u64"
+]
+
+[[struct]]
+name = "Attribute"
+class = "MTLAttributeDescriptorInternal"
+fields = [
+  "buffer_index: u64",
+  "format: u64 (MTLAttributeFormat)",
+  "offset: u64"
+]
+
+[[struct]]
+name = "StageInputOutputDescriptor"
+class = "MTLStageInputOutputDescriptorInternal"
+fields = [
+  "attributes: [Attribute]",
+  "index_buffer_index: u64",
+  "index_type: u64 (MTLIndexType)",
+  "layouts: [BufferLayout]"
+]
+
+[[struct]]
+name = "ComputePipelineDescriptor"
+class = "MTLComputePipelineDescriptorInternal"
+fields = [
+  "binary_archives: [BinaryArchive]",
+  "binary_libraries: [DynamicLibrary]",
+  "buffers: [PipelineBufferDescriptor]",
+  "compute_function: Function?",
+  "driver_compiler_options: value?",
+  "dynamic_libraries: [DynamicLibrary]",
+  "force_resource_index: bool",
+  "function_pointers: [Function]",
+  "gpu_compiler_spi_options: value?",
+  "insert_libraries: [DynamicLibrary]",
+  "label: str?",
+  "linked_functions: LinkedFunctions?",
+  "max_acceleration_structure_traversal_depth: u64",
+  "max_call_stack_depth: u64",
+  "max_total_threads_per_threadgroup: u64",
+  "needs_custom_border_color_samplers: bool",
+  "open_cl_mode_enabled: bool",
+  "open_gl_mode_enabled: bool",
+  "pipeline_library: present",
+  "plugin_data: value?",
+  "preloaded_libraries: [DynamicLibrary]",
+  "profile_control: ProfileControl?",
+  "resource_index: u64",
+  "stage_input_descriptor: StageInputOutputDescriptor?",
+  "support_adding_binary_functions: bool",
+  "support_indirect_command_buffers: bool",
+  "texture_write_fp_rounding_mode: i64",
+  "texture_write_rounding_mode: i64",
+  "thread_group_size_is_multiple_of_thread_execution_width: bool"
+]
+source = { gpu_compiler_spi_options = "gpuCompilerSPIOptions", open_cl_mode_enabled = "openCLModeEnabled", open_gl_mode_enabled = "openGLModeEnabled", texture_write_fp_rounding_mode = "textureWriteFPRoundingMode" }
+
+[[struct]]
+name = "TileRenderPipelineColorAttachment"
+class = "MTLTileRenderPipelineColorAttachmentDescriptorInternal"
+fields = [
+  "pixel_format: u64 (MTLPixelFormat)"
+]
+
+[[struct]]
+name = "TileRenderPipelineDescriptor"
+class = "MTLTileRenderPipelineDescriptorInternal"
+fields = [
+  "binary_archives: [BinaryArchive]",
+  "color_attachments: [TileRenderPipelineColorAttachment]",
+  "color_sample_count: u64",
+  "gpu_compiler_spi_options: value?",
+  "insert_libraries: [DynamicLibrary]",
+  "label: str?",
+  "linked_functions: LinkedFunctions?",
+  "max_acceleration_structure_traversal_depth: u64",
+  "max_call_stack_depth: u64",
+  "max_total_threads_per_threadgroup: u64",
+  "plugin_data: value?",
+  "preloaded_libraries: [DynamicLibrary]",
+  "profile_control: ProfileControl?",
+  "raster_sample_count: u64",
+  "sample_count: u64",
+  "support_adding_binary_functions: bool",
+  "texture_write_rounding_mode: i64",
+  "threadgroup_size_matches_tile_size: bool",
+  "tile_buffers: [PipelineBufferDescriptor]",
+  "tile_function: Function?"
+]
+source = { gpu_compiler_spi_options = "gpuCompilerSPIOptions" }
+
+[[struct]]
+name = "ComputePassSampleBufferAttachment"
+class = "MTLComputePassSampleBufferAttachmentDescriptorInternal"
+fields = [
+  "end_of_encoder_sample_index: u64",
+  "sample_buffer: CounterSampleBuffer?",
+  "start_of_encoder_sample_index: u64"
+]
+
+[[struct]]
+name = "ComputePassDescriptor"
+class = "MTLComputePassDescriptorInternal"
+fields = [
+  "allow_command_encoder_coalescing: bool",
+  "dispatch_type: u64 (MTLDispatchType)",
+  "sample_buffer_attachments: [ComputePassSampleBufferAttachment]",
+  "substream_count: u32"
+]
+
+[[struct]]
+name = "BlitPassSampleBufferAttachment"
+class = "MTLBlitPassSampleBufferAttachmentDescriptorInternal"
+fields = [
+  "end_of_encoder_sample_index: u64",
+  "sample_buffer: CounterSampleBuffer?",
+  "start_of_encoder_sample_index: u64"
+]
+
+[[struct]]
+name = "BlitPassDescriptor"
+class = "MTLBlitPassDescriptorInternal"
+fields = [
+  "sample_buffer_attachments: [BlitPassSampleBufferAttachment]"
+]
+
+[[struct]]
+name = "BinaryArchiveDescriptor"
+class = "MTLBinaryArchiveDescriptor"
+fields = [
+  "options: u64",
+  "url: url?",
+  "writing_options: u64"
+]
+
+[[struct]]
+name = "IndirectCommandBufferDescriptor"
+class = "MTLIndirectCommandBufferDescriptorInternal"
+fields = [
+  "command_types: u64 (MTLIndirectCommandType)",
+  "inherit_buffers: bool",
+  "inherit_pipeline_state: bool",
+  "max_fragment_buffer_bind_count: u64",
+  "max_kernel_buffer_bind_count: u64",
+  "max_kernel_threadgroup_memory_bind_count: u64",
+  "max_mesh_buffer_bind_count: u64",
+  "max_object_buffer_bind_count: u64",
+  "max_object_threadgroup_memory_bind_count: u64",
+  "max_vertex_buffer_bind_count: u64",
+  "resource_index: u64",
+  "support_dynamic_attribute_stride: bool",
+  "support_ray_tracing: bool"
+]
+
+[[struct]]
+name = "CommandQueueDescriptor"
+class = "MTLCommandQueueDescriptorInternal"
+fields = [
+  "commit_synchronously: bool",
+  "device_partition: u64",
+  "disable_async_completion_dispatch: bool",
+  "disable_cross_queue_hazard_tracking: bool",
+  "disable_io_fencing: bool",
+  "enable_low_latency_signal_shared_event: bool",
+  "enable_low_latency_wait_shared_event: bool",
+  "is_open_gl_queue: bool",
+  "lock_parameter_buffer_size_to_max: bool",
+  "max_command_buffer_count: u64",
+  "qos_level: u64"
+]
+source = { disable_io_fencing = "disableIOFencing", is_open_gl_queue = "isOpenGLQueue" }
+excluded = { commitQueue = "dispatch queue on which the guest submits; guest runtime state", completionQueue = "dispatch queue on which the guest runs completion handlers; guest runtime state" }
+
+# Control requests: guest to host, one reply each ----------------------------------------------------------------------
+
+[[op]]
+code = 0x0001
+name = "Open"
+channel = "control"
+args = ["schema_hash: Hash", "pid: i32"]
+reply = ["schema_hash: Hash"]
+doc = "First request on a connection. The host compares schema_hash with its own and refuses the connection (status Invalid) when they differ. pid is the opening task's process id, for diagnostics."
+
+[[op]]
+code = 0x0002
+name = "FetchEvents"
+channel = "control"
+args = ["queue: CommandQueue?"]
+reply = ["events: bytes"]
+doc = "Collect the pending event records of a command queue (nil: device-level events). The reply carries a sequence of event-channel records. Sent after the event doorbell for that queue fires."
+
+[[op]]
+code = 0x0003
+name = "Release"
+channel = "control"
+args = ["object: Object"]
+doc = "The guest object for this handle was deallocated. Handles are never reused within a connection."
+
+[[op]]
+code = 0x0004
+name = "SetLabel"
+channel = "control"
+methods = ["MTLResource setLabel:", "MTLHeap setLabel:", "MTLCommandQueue setLabel:", "MTLEvent setLabel:"]
+receiver = "object"
+args = ["object: Object", "label: str?"]
+
+[[op]]
+code = 0x0101
+name = "CreateCommandQueue"
+channel = "control"
+methods = ["MTLDevice newCommandQueue"]
+result = "queue"
+args = ["queue: CommandQueue"]
+
+[[op]]
+code = 0x0102
+name = "CreateCommandQueueWithDescriptor"
+channel = "control"
+methods = ["MTLDeviceSPI newCommandQueueWithDescriptor:"]
+result = "queue"
+args = ["queue: CommandQueue", "descriptor: CommandQueueDescriptor"]
+
+[[op]]
+code = 0x0103
+name = "SetGPUPriority"
+channel = "control"
+methods = ["MTLCommandQueueSPI setGPUPriority:"]
+receiver = "queue"
+args = ["queue: CommandQueue", "priority: u64"]
+reply = ["accepted: bool"]
+
+[[op]]
+code = 0x0104
+name = "SetGPUPriorityOffset"
+channel = "control"
+methods = ["MTLCommandQueueSPI setGPUPriority:offset:"]
+receiver = "queue"
+args = ["queue: CommandQueue", "priority: u64", "offset: u16"]
+reply = ["accepted: bool"]
+
+[[op]]
+code = 0x0105
+name = "SetBackgroundGPUPriority"
+channel = "control"
+methods = ["MTLCommandQueueSPI setBackgroundGPUPriority:"]
+receiver = "queue"
+args = ["queue: CommandQueue", "priority: u64"]
+reply = ["accepted: bool"]
+
+[[op]]
+code = 0x0106
+name = "SetBackgroundGPUPriorityOffset"
+channel = "control"
+methods = ["MTLCommandQueueSPI setBackgroundGPUPriority:offset:"]
+receiver = "queue"
+args = ["queue: CommandQueue", "priority: u64", "offset: u16"]
+reply = ["accepted: bool"]
+
+[[op]]
+code = 0x0107
+name = "Commit"
+channel = "control"
+methods = ["MTLCommandBuffer commit"]
+receiver = "command_buffer"
+extra = ["queue", "label", "retained_references", "error_options", "protection_options", "stream", "stream_length", "resources"]
+args = ["command_buffer: CommandBuffer", "queue: CommandQueue", "label: str?", "retained_references: bool", "error_options: u64 (MTLCommandBufferErrorOption)", "protection_options: u64", "stream: guest_addr", "stream_length: u64", "resources: [Object]"]
+doc = "Submit a command buffer. stream/stream_length locate its command stream in the calling task; the host has consumed the stream before it replies. resources lists every object handle the stream references, once each. label, retained_references, error_options and protection_options are the command buffer's state at commit."
+
+[[op]]
+code = 0x0201
+name = "CreateBuffer"
+channel = "control"
+methods = ["MTLDevice newBufferWithLength:options:"]
+result = "buffer"
+extra = ["contents"]
+args = ["buffer: Buffer", "length: u64", "options: u64 (MTLResourceOptions)", "contents: guest_addr"]
+doc = "contents is the guest allocation backing a CPU-visible buffer (0 for storageModePrivate)."
+
+[[op]]
+code = 0x0202
+name = "CreateBufferWithBytes"
+channel = "control"
+methods = ["MTLDevice newBufferWithBytes:length:options:"]
+result = "buffer"
+extra = ["contents"]
+args = ["buffer: Buffer", "pointer: guest_addr", "length: u64", "options: u64 (MTLResourceOptions)", "contents: guest_addr"]
+doc = "The host reads length bytes at bytes during the call."
+
+[[op]]
+code = 0x0203
+name = "CreateBufferNoCopy"
+channel = "control"
+methods = ["MTLDevice newBufferWithBytesNoCopy:length:options:deallocator:"]
+result = "buffer"
+args = ["buffer: Buffer", "pointer: guest_addr", "length: u64", "options: u64 (MTLResourceOptions)", "deallocator: block"]
+doc = "The deallocator block stays in the guest; deallocator records whether one was given."
+
+[[op]]
+code = 0x0204
+name = "CreateTexture"
+channel = "control"
+methods = ["MTLDevice newTextureWithDescriptor:"]
+result = "texture"
+args = ["texture: Texture", "descriptor: TextureDescriptor"]
+
+[[op]]
+code = 0x0205
+name = "CreateTextureWithIOSurface"
+channel = "control"
+methods = ["MTLDevice newTextureWithDescriptor:iosurface:plane:", "MTLDeviceSPI newTextureWithDescriptor:iosurface:plane:"]
+result = "texture"
+args = ["texture: Texture", "descriptor: TextureDescriptor", "iosurface: surface", "plane: u64"]
+
+[[op]]
+code = 0x0206
+name = "CreateTextureNoCopy"
+channel = "control"
+methods = ["MTLDeviceSPI newTextureWithBytesNoCopy:length:descriptor:deallocator:"]
+result = "texture"
+args = ["texture: Texture", "bytes: guest_addr", "length: u64", "descriptor: TextureDescriptor", "deallocator: block"]
+
+[[op]]
+code = 0x0207
+name = "CreateBufferTexture"
+channel = "control"
+methods = ["MTLBuffer newTextureWithDescriptor:offset:bytesPerRow:"]
+receiver = "buffer"
+result = "texture"
+args = ["buffer: Buffer", "texture: Texture", "descriptor: TextureDescriptor", "offset: u64", "bytes_per_row: u64"]
+
+[[op]]
+code = 0x0208
+name = "CreateLinearTexture"
+channel = "control"
+methods = ["MTLBufferSPI newLinearTextureWithDescriptor:offset:bytesPerRow:bytesPerImage:"]
+receiver = "buffer"
+result = "texture"
+args = ["buffer: Buffer", "texture: Texture", "descriptor: TextureDescriptor", "offset: u64", "bytes_per_row: u64", "bytes_per_image: u64"]
+
+[[op]]
+code = 0x0209
+name = "CreateTextureView"
+channel = "control"
+methods = ["MTLTexture newTextureViewWithPixelFormat:"]
+receiver = "texture"
+result = "view"
+args = ["texture: Texture", "view: Texture", "pixel_format: u64 (MTLPixelFormat)"]
+
+[[op]]
+code = 0x020a
+name = "CreateTextureViewLevelsSlices"
+channel = "control"
+methods = ["MTLTexture newTextureViewWithPixelFormat:textureType:levels:slices:"]
+receiver = "texture"
+result = "view"
+args = ["texture: Texture", "view: Texture", "pixel_format: u64 (MTLPixelFormat)", "texture_type: u64 (MTLTextureType)", "level_range: Range", "slice_range: Range"]
+
+[[op]]
+code = 0x020b
+name = "CreateTextureViewLevelsSlicesSwizzle"
+channel = "control"
+methods = ["MTLTexture newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:"]
+receiver = "texture"
+result = "view"
+args = ["texture: Texture", "view: Texture", "pixel_format: u64 (MTLPixelFormat)", "texture_type: u64 (MTLTextureType)", "level_range: Range", "slice_range: Range", "swizzle: TextureSwizzleChannels"]
+
+[[op]]
+code = 0x020c
+name = "CreateTextureViewResourceIndex"
+channel = "control"
+methods = ["MTLTextureSPI newTextureViewWithPixelFormat:resourceIndex:"]
+receiver = "texture"
+result = "view"
+args = ["texture: Texture", "view: Texture", "pixel_format: u64", "resource_index: u64"]
+
+[[op]]
+code = 0x020d
+name = "CreateTextureViewLevelsSlicesResourceIndex"
+channel = "control"
+methods = ["MTLTextureSPI newTextureViewWithPixelFormat:textureType:levels:slices:resourceIndex:"]
+receiver = "texture"
+result = "view"
+args = ["texture: Texture", "view: Texture", "pixel_format: u64", "texture_type: u64", "levels: Range", "slices: Range", "resource_index: u64"]
+
+[[op]]
+code = 0x020e
+name = "CreateTextureViewLevelsSlicesSwizzleResourceIndex"
+channel = "control"
+methods = ["MTLTextureSPI newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:resourceIndex:"]
+receiver = "texture"
+result = "view"
+args = ["texture: Texture", "view: Texture", "pixel_format: u64", "texture_type: u64", "levels: Range", "slices: Range", "swizzle: TextureSwizzleChannels", "resource_index: u64"]
+
+[[op]]
+code = 0x020f
+name = "CreateCompressedTextureView"
+channel = "control"
+methods = ["MTLTextureSPI newCompressedTextureViewWithPixelFormat:textureType:level:slice:"]
+receiver = "texture"
+result = "view"
+args = ["texture: Texture", "view: Texture", "pixel_format: u64", "texture_type: u64", "level: u64", "slice: u64"]
+
+[[op]]
+code = 0x0210
+name = "ReplaceRegion"
+channel = "control"
+methods = ["MTLTexture replaceRegion:mipmapLevel:withBytes:bytesPerRow:"]
+receiver = "texture"
+args = ["texture: Texture", "region: Region", "level: u64", "pixel_bytes: guest_addr", "bytes_per_row: u64"]
+doc = "The host reads the source bytes from the calling task during the call."
+
+[[op]]
+code = 0x0211
+name = "ReplaceRegionSlice"
+channel = "control"
+methods = ["MTLTexture replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:"]
+receiver = "texture"
+args = ["texture: Texture", "region: Region", "level: u64", "slice: u64", "pixel_bytes: guest_addr", "bytes_per_row: u64", "bytes_per_image: u64"]
+doc = "The host reads the source bytes from the calling task during the call."
+
+[[op]]
+code = 0x0212
+name = "GetBytes"
+channel = "control"
+methods = ["MTLTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:"]
+receiver = "texture"
+args = ["texture: Texture", "pixel_bytes: guest_addr", "bytes_per_row: u64", "region: Region", "level: u64"]
+doc = "The host writes the texels into the calling task before it replies."
+
+[[op]]
+code = 0x0213
+name = "GetBytesSlice"
+channel = "control"
+methods = ["MTLTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:"]
+receiver = "texture"
+args = ["texture: Texture", "pixel_bytes: guest_addr", "bytes_per_row: u64", "bytes_per_image: u64", "region: Region", "level: u64", "slice: u64"]
+doc = "The host writes the texels into the calling task before it replies."
+
+[[op]]
+code = 0x0214
+name = "SetPurgeableState"
+channel = "control"
+methods = ["MTLResource setPurgeableState:", "MTLHeap setPurgeableState:"]
+receiver = "object"
+args = ["object: Object", "state: u64 (MTLPurgeableState)"]
+reply = ["previous_state: u64 (MTLPurgeableState)"]
+
+[[op]]
+code = 0x0215
+name = "MakeAliasable"
+channel = "control"
+methods = ["MTLResource makeAliasable"]
+receiver = "resource"
+args = ["resource: Resource"]
+
+[[op]]
+code = 0x0216
+name = "SetOwnerWithIdentity"
+channel = "control"
+methods = ["MTLResource setOwnerWithIdentity:", "MTLResourceSPI setOwnerWithIdentity:"]
+receiver = "resource"
+args = ["resource: Resource", "task_id_token: u32 (task_id_token_t)"]
+reply = ["result: i32"]
+
+[[op]]
+code = 0x0217
+name = "CreateHeap"
+channel = "control"
+methods = ["MTLDevice newHeapWithDescriptor:"]
+result = "heap"
+args = ["heap: Heap", "descriptor: HeapDescriptor"]
+
+[[op]]
+code = 0x0218
+name = "HeapCreateBuffer"
+channel = "control"
+methods = ["MTLHeap newBufferWithLength:options:"]
+receiver = "heap"
+result = "buffer"
+extra = ["contents"]
+args = ["heap: Heap", "buffer: Buffer", "length: u64", "options: u64 (MTLResourceOptions)", "contents: guest_addr"]
+
+[[op]]
+code = 0x0219
+name = "HeapCreateTexture"
+channel = "control"
+methods = ["MTLHeap newTextureWithDescriptor:"]
+receiver = "heap"
+result = "texture"
+args = ["heap: Heap", "texture: Texture", "descriptor: TextureDescriptor"]
+
+[[op]]
+code = 0x021a
+name = "CreateSamplerState"
+channel = "control"
+methods = ["MTLDevice newSamplerStateWithDescriptor:"]
+result = "sampler"
+args = ["sampler: SamplerState", "descriptor: SamplerDescriptor"]
+
+[[op]]
+code = 0x021b
+name = "CreateDepthStencilState"
+channel = "control"
+methods = ["MTLDevice newDepthStencilStateWithDescriptor:"]
+result = "state"
+args = ["state: DepthStencilState", "descriptor: DepthStencilDescriptor"]
+
+[[op]]
+code = 0x021c
+name = "CreateResourceGroup"
+channel = "control"
+methods = ["MTLDeviceSPI newResourceGroupFromResources:count:"]
+result = "group"
+args = ["group: ResourceGroup", "resources: [Resource?] = count", "count: u64"]
+
+[[op]]
+code = 0x021d
+name = "BufferDidModifyRange"
+channel = "control"
+methods = ["MTLBuffer didModifyRange:", "MTLBufferSPI didModifyRange:"]
+receiver = "buffer"
+args = ["buffer: Buffer", "range: Range"]
+
+[[op]]
+code = 0x021e
+name = "BufferAddDebugMarker"
+channel = "control"
+methods = ["MTLBuffer addDebugMarker:range:"]
+receiver = "buffer"
+args = ["buffer: Buffer", "marker: str?", "range: Range"]
+
+[[op]]
+code = 0x021f
+name = "BufferRemoveAllDebugMarkers"
+channel = "control"
+methods = ["MTLBuffer removeAllDebugMarkers"]
+receiver = "buffer"
+args = ["buffer: Buffer"]
+
+[[op]]
+code = 0x0220
+name = "CreateIndirectCommandBuffer"
+channel = "control"
+methods = ["MTLDevice newIndirectCommandBufferWithDescriptor:maxCommandCount:options:"]
+result = "buffer"
+extra = ["contents"]
+args = ["buffer: IndirectCommandBuffer", "descriptor: IndirectCommandBufferDescriptor", "max_count: u64", "options: u64 (MTLResourceOptions)", "contents: guest_addr"]
+doc = "contents is the guest allocation that holds the commands the guest encodes on the CPU (MTLIndirectRenderCommand and MTLIndirectComputeCommand setters), in a layout this schema does not define yet; until it does, the host refuses to execute those commands (status 2)."
+
+[[op]]
+code = 0x0301
+name = "RegisterAir"
+channel = "control"
+args = ["hash: Hash", "bitcode: bytes"]
+doc = "Make an AIR bitcode module known to the host under its SHA-256. Sent once per hash per connection."
+
+[[op]]
+code = 0x0302
+name = "RegisterFunction"
+channel = "control"
+args = ["function: Function", "air: Hash", "name: str", "function_type: u64 (MTLFunctionType)", "constants: [FunctionConstant]"]
+doc = "Name a function of a registered AIR module. constants carries function constant values the bitcode was not already specialized with (empty when it was)."
+
+[[op]]
+code = 0x0303
+name = "CreateRenderPipeline"
+channel = "control"
+methods = ["MTLDevice newRenderPipelineStateWithDescriptor:error:"]
+result = "pipeline"
+args = ["pipeline: RenderPipelineState", "descriptor: RenderPipelineDescriptor", "error: out"]
+reply = []
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x0304
+name = "CreateRenderPipelineReflection"
+channel = "control"
+methods = ["MTLDevice newRenderPipelineStateWithDescriptor:options:reflection:error:"]
+result = "pipeline"
+args = ["pipeline: RenderPipelineState", "descriptor: RenderPipelineDescriptor", "options: u64 (MTLPipelineOption)", "reflection: out", "error: out"]
+reply = ["reflection: Reflection?"]
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x0305
+name = "CreateRenderPipelineAsync"
+channel = "control"
+methods = ["MTLDevice newRenderPipelineStateWithDescriptor:completionHandler:"]
+result = "pipeline"
+args = ["pipeline: RenderPipelineState", "descriptor: RenderPipelineDescriptor", "completion_handler: block"]
+reply = []
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x0306
+name = "CreateRenderPipelineReflectionAsync"
+channel = "control"
+methods = ["MTLDevice newRenderPipelineStateWithDescriptor:options:completionHandler:"]
+result = "pipeline"
+args = ["pipeline: RenderPipelineState", "descriptor: RenderPipelineDescriptor", "options: u64 (MTLPipelineOption)", "completion_handler: block"]
+reply = ["reflection: Reflection?"]
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x0307
+name = "CreateTileRenderPipeline"
+channel = "control"
+methods = ["MTLDevice newRenderPipelineStateWithTileDescriptor:options:reflection:error:"]
+result = "pipeline"
+args = ["pipeline: RenderPipelineState", "descriptor: TileRenderPipelineDescriptor", "options: u64 (MTLPipelineOption)", "reflection: out", "error: out"]
+reply = ["reflection: Reflection?"]
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x0308
+name = "CreateTileRenderPipelineAsync"
+channel = "control"
+methods = ["MTLDevice newRenderPipelineStateWithTileDescriptor:options:completionHandler:"]
+result = "pipeline"
+args = ["pipeline: RenderPipelineState", "descriptor: TileRenderPipelineDescriptor", "options: u64 (MTLPipelineOption)", "completion_handler: block"]
+reply = ["reflection: Reflection?"]
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x0309
+name = "CreateComputePipeline"
+channel = "control"
+methods = ["MTLDevice newComputePipelineStateWithDescriptor:options:reflection:error:"]
+result = "pipeline"
+args = ["pipeline: ComputePipelineState", "descriptor: ComputePipelineDescriptor", "options: u64 (MTLPipelineOption)", "reflection: out", "error: out"]
+reply = ["reflection: Reflection?"]
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x030a
+name = "CreateComputePipelineAsync"
+channel = "control"
+methods = ["MTLDevice newComputePipelineStateWithDescriptor:options:completionHandler:"]
+result = "pipeline"
+args = ["pipeline: ComputePipelineState", "descriptor: ComputePipelineDescriptor", "options: u64 (MTLPipelineOption)", "completion_handler: block"]
+reply = ["reflection: Reflection?"]
+doc = "Out parameters and completion handlers stay in the guest; their arguments record whether the caller passed one. Reflection is returned when the caller asked for it."
+
+[[op]]
+code = 0x030b
+name = "CreateBinaryArchive"
+channel = "control"
+methods = ["MTLDevice newBinaryArchiveWithDescriptor:error:", "MTLDeviceSPI newBinaryArchiveWithDescriptor:error:"]
+result = "archive"
+args = ["archive: BinaryArchive", "descriptor: BinaryArchiveDescriptor", "error: out"]
+
+[[op]]
+code = 0x030c
+name = "BinaryArchiveAddRenderPipelineFunctions"
+channel = "control"
+methods = ["MTLBinaryArchive addRenderPipelineFunctionsWithDescriptor:error:"]
+receiver = "archive"
+args = ["archive: BinaryArchive", "descriptor: RenderPipelineDescriptor", "error: out"]
+
+[[op]]
+code = 0x030d
+name = "BinaryArchiveAddComputePipelineFunctions"
+channel = "control"
+methods = ["MTLBinaryArchive addComputePipelineFunctionsWithDescriptor:error:"]
+receiver = "archive"
+args = ["archive: BinaryArchive", "descriptor: ComputePipelineDescriptor", "error: out"]
+
+[[op]]
+code = 0x030e
+name = "BinaryArchiveAddTileRenderPipelineFunctions"
+channel = "control"
+methods = ["MTLBinaryArchive addTileRenderPipelineFunctionsWithDescriptor:error:"]
+receiver = "archive"
+args = ["archive: BinaryArchive", "descriptor: TileRenderPipelineDescriptor", "error: out"]
+
+[[op]]
+code = 0x0401
+name = "RegisterSharedEvent"
+channel = "control"
+args = ["event: Event", "port: u32"]
+doc = "Name a shared event (an IOSurfaceSharedEvent kernel object; on 21H461 _MTLSharedEvent derives from it) by the send right port names in the calling task, so stream records can refer to it by handle. The host resolves the right through the embedder; signals and waits in streams then act on the kernel object."
+
+[[op]]
+code = 0x0402
+name = "CreateFence"
+channel = "control"
+methods = ["MTLDevice newFence"]
+result = "fence"
+args = ["fence: Fence"]
+
+[[op]]
+code = 0x0403
+name = "CreateEvent"
+channel = "control"
+methods = ["MTLDevice newEvent"]
+result = "event"
+args = ["event: Event"]
+
+# Command-buffer stream records --------------------------------------------------------------------------------------
+
+[[op]]
+code = 0x1001
+name = "BeginRenderPass"
+channel = "stream"
+methods = ["MTLCommandBuffer renderCommandEncoderWithDescriptor:"]
+result = "encoder"
+args = ["encoder: Encoder", "render_pass_descriptor: RenderPassDescriptor"]
+doc = "Starts a render encoder; the commands up to its EndEncoding belong to it."
+
+[[op]]
+code = 0x1002
+name = "BeginParallelRenderPass"
+channel = "stream"
+methods = ["MTLCommandBuffer parallelRenderCommandEncoderWithDescriptor:"]
+result = "encoder"
+args = ["encoder: Encoder", "render_pass_descriptor: RenderPassDescriptor"]
+doc = "Starts a parallel render encoder. The guest splices each sub-encoder's commands, in sub-encoder creation order, between this record and the parallel encoder's EndEncoding."
+
+[[op]]
+code = 0x1003
+name = "BeginParallelSubEncoder"
+channel = "stream"
+methods = ["MTLParallelRenderCommandEncoder renderCommandEncoder"]
+receiver = "parent"
+result = "encoder"
+args = ["parent: Encoder", "encoder: Encoder"]
+
+[[op]]
+code = 0x1004
+name = "BeginCompute"
+channel = "stream"
+methods = ["MTLCommandBuffer computeCommandEncoder"]
+result = "encoder"
+args = ["encoder: Encoder"]
+
+[[op]]
+code = 0x1005
+name = "BeginComputeWithDispatchType"
+channel = "stream"
+methods = ["MTLCommandBuffer computeCommandEncoderWithDispatchType:"]
+result = "encoder"
+args = ["encoder: Encoder", "dispatch_type: u64 (MTLDispatchType)"]
+
+[[op]]
+code = 0x1006
+name = "BeginComputeWithDescriptor"
+channel = "stream"
+methods = ["MTLCommandBuffer computeCommandEncoderWithDescriptor:"]
+result = "encoder"
+args = ["encoder: Encoder", "compute_pass_descriptor: ComputePassDescriptor"]
+
+[[op]]
+code = 0x1007
+name = "BeginComputeWithDispatchTypeSubstreams"
+channel = "stream"
+methods = ["MTLCommandBufferSPI computeCommandEncoderWithDispatchType:substreamCount:"]
+result = "encoder"
+args = ["encoder: Encoder", "dispatch_type: u64", "substream_count: u32"]
+
+[[op]]
+code = 0x1008
+name = "BeginBlit"
+channel = "stream"
+methods = ["MTLCommandBuffer blitCommandEncoder"]
+result = "encoder"
+args = ["encoder: Encoder"]
+
+[[op]]
+code = 0x1009
+name = "BeginBlitWithDescriptor"
+channel = "stream"
+methods = ["MTLCommandBuffer blitCommandEncoderWithDescriptor:"]
+result = "encoder"
+args = ["encoder: Encoder", "blit_pass_descriptor: BlitPassDescriptor"]
+
+[[op]]
+code = 0x100a
+name = "EncodeSignalEvent"
+channel = "stream"
+methods = ["MTLCommandBuffer encodeSignalEvent:value:"]
+args = ["event: Event?", "value: u64"]
+
+[[op]]
+code = 0x100b
+name = "EncodeWaitForEvent"
+channel = "stream"
+methods = ["MTLCommandBuffer encodeWaitForEvent:value:"]
+args = ["event: Event?", "value: u64"]
+
+[[op]]
+code = 0x100c
+name = "EncodeSignalEventAgentMask"
+channel = "stream"
+methods = ["MTLCommandBufferSPI encodeSignalEvent:value:agentMask:"]
+args = ["event: Event?", "value: u64", "agent_mask: u64"]
+
+[[op]]
+code = 0x100d
+name = "EncodeWaitForEventTimeout"
+channel = "stream"
+methods = ["MTLCommandBufferSPI encodeWaitForEvent:value:timeout:"]
+args = ["event: Event?", "value: u64", "timeout: u32"]
+
+[[op]]
+code = 0x100e
+name = "EncodeSignalEventScheduled"
+channel = "stream"
+methods = ["MTLCommandBufferSPI encodeSignalEventScheduled:value:"]
+args = ["event: Event?", "value: u64"]
+
+[[op]]
+code = 0x100f
+name = "CommandBufferPushDebugGroup"
+channel = "stream"
+methods = ["MTLCommandBuffer pushDebugGroup:"]
+args = ["string: str?"]
+
+[[op]]
+code = 0x1010
+name = "CommandBufferPopDebugGroup"
+channel = "stream"
+methods = ["MTLCommandBuffer popDebugGroup"]
+args = []
+
+[[op]]
+code = 0x1011
+name = "EncodeCacheHintTag"
+channel = "stream"
+methods = ["MTLCommandBufferSPI encodeCacheHintTag:resourceGroups:count:"]
+args = ["tag: u64", "resource_groups: [Resource?] = count", "count: u64"]
+
+[[op]]
+code = 0x1012
+name = "EncodeCacheHintFinalize"
+channel = "stream"
+methods = ["MTLCommandBufferSPI encodeCacheHintFinalize:resourceGroups:count:"]
+args = ["tag: u64", "resource_groups: [Resource?] = count", "count: u64"]
+
+[[op]]
+code = 0x1013
+name = "SetResourceGroups"
+channel = "stream"
+methods = ["MTLCommandBufferSPI setResourceGroups:count:"]
+args = ["resource_groups: [Resource?] = count", "count: u64"]
+
+[[op]]
+code = 0x1014
+name = "DropResourceGroups"
+channel = "stream"
+methods = ["MTLCommandBufferSPI dropResourceGroups:count:"]
+args = ["resource_groups: [Resource?] = count", "count: u64"]
+
+[[op]]
+code = 0x1105
+name = "EncoderSetLabel"
+channel = "stream"
+methods = ["MTLCommandEncoder setLabel:"]
+args = ["label: str?"]
+
+# Encoder stream records --------------------------------------------------------------------------------------------
+
+[[op]]
+code = 0x1101
+name = "EncoderEndEncoding"
+channel = "stream"
+methods = ["MTLCommandEncoder endEncoding"]
+args = []
+
+[[op]]
+code = 0x1102
+name = "EncoderInsertDebugSignpost"
+channel = "stream"
+methods = ["MTLCommandEncoder insertDebugSignpost:"]
+args = ["string: str?"]
+
+[[op]]
+code = 0x1103
+name = "EncoderPopDebugGroup"
+channel = "stream"
+methods = ["MTLCommandEncoder popDebugGroup"]
+args = []
+
+[[op]]
+code = 0x1104
+name = "EncoderPushDebugGroup"
+channel = "stream"
+methods = ["MTLCommandEncoder pushDebugGroup:"]
+args = ["string: str?"]
+
+[[op]]
+code = 0x1201
+name = "RenderDispatchThreadsPerTile"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder dispatchThreadsPerTile:"]
+args = ["threads_per_tile: Size"]
+
+[[op]]
+code = 0x1202
+name = "RenderDrawIndexedPatchesIndirect"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawIndexedPatches:patchIndexBuffer:patchIndexBufferOffset:controlPointIndexBuffer:controlPointIndexBufferOffset:indirectBuffer:indirectBufferOffset:"]
+args = ["number_of_patch_control_points: u64", "patch_index_buffer: Buffer?", "patch_index_buffer_offset: u64", "control_point_index_buffer: Buffer?", "control_point_index_buffer_offset: u64", "indirect_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x1203
+name = "RenderDrawIndexedPatches"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawIndexedPatches:patchStart:patchCount:patchIndexBuffer:patchIndexBufferOffset:controlPointIndexBuffer:controlPointIndexBufferOffset:instanceCount:baseInstance:"]
+args = ["number_of_patch_control_points: u64", "patch_start: u64", "patch_count: u64", "patch_index_buffer: Buffer?", "patch_index_buffer_offset: u64", "control_point_index_buffer: Buffer?", "control_point_index_buffer_offset: u64", "instance_count: u64", "base_instance: u64"]
+
+[[op]]
+code = 0x1204
+name = "RenderDrawIndexedPrimitives"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "index_count: u64", "index_type: u64 (MTLIndexType)", "index_buffer: Buffer?", "index_buffer_offset: u64"]
+
+[[op]]
+code = 0x1205
+name = "RenderDrawIndexedPrimitivesInstanced"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "index_count: u64", "index_type: u64 (MTLIndexType)", "index_buffer: Buffer?", "index_buffer_offset: u64", "instance_count: u64"]
+
+[[op]]
+code = 0x1206
+name = "RenderDrawIndexedPrimitivesInstancedBaseVertexBaseInstance"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "index_count: u64", "index_type: u64 (MTLIndexType)", "index_buffer: Buffer?", "index_buffer_offset: u64", "instance_count: u64", "base_vertex: i64", "base_instance: u64"]
+
+[[op]]
+code = 0x1207
+name = "RenderDrawIndexedPrimitivesIndirect"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "index_type: u64 (MTLIndexType)", "index_buffer: Buffer?", "index_buffer_offset: u64", "indirect_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x1208
+name = "RenderDrawMeshThreadgroups"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawMeshThreadgroups:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:", "MTLRenderCommandEncoderSPI drawMeshThreadgroups:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:"]
+args = ["threadgroups_per_grid: Size", "threads_per_object_threadgroup: Size", "threads_per_mesh_threadgroup: Size"]
+
+[[op]]
+code = 0x1209
+name = "RenderDrawMeshThreadgroupsWithIndirectBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawMeshThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:", "MTLRenderCommandEncoderSPI drawMeshThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:"]
+args = ["indirect_buffer: Buffer?", "indirect_buffer_offset: u64", "threads_per_object_threadgroup: Size", "threads_per_mesh_threadgroup: Size"]
+
+[[op]]
+code = 0x120a
+name = "RenderDrawMeshThreads"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawMeshThreads:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:", "MTLRenderCommandEncoderSPI drawMeshThreads:threadsPerObjectThreadgroup:threadsPerMeshThreadgroup:"]
+args = ["threads_per_grid: Size", "threads_per_object_threadgroup: Size", "threads_per_mesh_threadgroup: Size"]
+
+[[op]]
+code = 0x120b
+name = "RenderDrawPatchesIndirect"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawPatches:patchIndexBuffer:patchIndexBufferOffset:indirectBuffer:indirectBufferOffset:"]
+args = ["number_of_patch_control_points: u64", "patch_index_buffer: Buffer?", "patch_index_buffer_offset: u64", "indirect_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x120c
+name = "RenderDrawPatches"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawPatches:patchStart:patchCount:patchIndexBuffer:patchIndexBufferOffset:instanceCount:baseInstance:"]
+args = ["number_of_patch_control_points: u64", "patch_start: u64", "patch_count: u64", "patch_index_buffer: Buffer?", "patch_index_buffer_offset: u64", "instance_count: u64", "base_instance: u64"]
+
+[[op]]
+code = 0x120d
+name = "RenderDrawPrimitivesIndirect"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawPrimitives:indirectBuffer:indirectBufferOffset:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "indirect_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x120e
+name = "RenderDrawPrimitives"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawPrimitives:vertexStart:vertexCount:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "vertex_start: u64", "vertex_count: u64"]
+
+[[op]]
+code = 0x120f
+name = "RenderDrawPrimitivesInstanced"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawPrimitives:vertexStart:vertexCount:instanceCount:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "vertex_start: u64", "vertex_count: u64", "instance_count: u64"]
+
+[[op]]
+code = 0x1210
+name = "RenderDrawPrimitivesInstancedBaseInstance"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:"]
+args = ["primitive_type: u64 (MTLPrimitiveType)", "vertex_start: u64", "vertex_count: u64", "instance_count: u64", "base_instance: u64"]
+
+[[op]]
+code = 0x1211
+name = "RenderExecuteCommandsInBufferIndirect"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder executeCommandsInBuffer:indirectBuffer:indirectBufferOffset:"]
+args = ["indirect_commandbuffer: IndirectCommandBuffer?", "indirect_range_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x1212
+name = "RenderExecuteCommandsInBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder executeCommandsInBuffer:withRange:"]
+args = ["indirect_command_buffer: IndirectCommandBuffer?", "execution_range: Range"]
+
+[[op]]
+code = 0x1213
+name = "RenderMemoryBarrierWithResources"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder memoryBarrierWithResources:count:afterStages:beforeStages:"]
+args = ["resources: [Resource?] = count", "count: u64", "after: u64 (MTLRenderStages)", "before: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x1214
+name = "RenderMemoryBarrierWithScope"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder memoryBarrierWithScope:afterStages:beforeStages:"]
+args = ["scope: u64 (MTLBarrierScope)", "after: u64 (MTLRenderStages)", "before: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x1215
+name = "RenderSampleCountersInBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder sampleCountersInBuffer:atSampleIndex:withBarrier:"]
+args = ["sample_buffer: CounterSampleBuffer?", "sample_index: u64", "barrier: bool"]
+
+[[op]]
+code = 0x1216
+name = "RenderSetBlendColor"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setBlendColorRed:green:blue:alpha:"]
+args = ["red: f32", "green: f32", "blue: f32", "alpha: f32"]
+
+[[op]]
+code = 0x1217
+name = "RenderSetColorStoreAction"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setColorStoreAction:atIndex:"]
+args = ["store_action: u64 (MTLStoreAction)", "color_attachment_index: u64"]
+
+[[op]]
+code = 0x1218
+name = "RenderSetColorStoreActionOptions"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setColorStoreActionOptions:atIndex:"]
+args = ["store_action_options: u64 (MTLStoreActionOptions)", "color_attachment_index: u64"]
+
+[[op]]
+code = 0x1219
+name = "RenderSetCullMode"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setCullMode:"]
+args = ["cull_mode: u64 (MTLCullMode)"]
+
+[[op]]
+code = 0x121a
+name = "RenderSetDepthBias"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setDepthBias:slopeScale:clamp:"]
+args = ["depth_bias: f32", "slope_scale: f32", "clamp: f32"]
+
+[[op]]
+code = 0x121b
+name = "RenderSetDepthClipMode"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setDepthClipMode:"]
+args = ["depth_clip_mode: u64 (MTLDepthClipMode)"]
+
+[[op]]
+code = 0x121c
+name = "RenderSetDepthStencilState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setDepthStencilState:"]
+args = ["depth_stencil_state: DepthStencilState?"]
+
+[[op]]
+code = 0x121d
+name = "RenderSetDepthStoreAction"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setDepthStoreAction:"]
+args = ["store_action: u64 (MTLStoreAction)"]
+
+[[op]]
+code = 0x121e
+name = "RenderSetDepthStoreActionOptions"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setDepthStoreActionOptions:"]
+args = ["store_action_options: u64 (MTLStoreActionOptions)"]
+
+[[op]]
+code = 0x121f
+name = "RenderSetFragmentAccelerationStructure"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentAccelerationStructure:atBufferIndex:"]
+args = ["acceleration_structure: AccelerationStructure?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1220
+name = "RenderSetFragmentBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentBuffer:offset:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1221
+name = "RenderSetFragmentBufferOffset"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentBufferOffset:atIndex:"]
+args = ["offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1222
+name = "RenderSetFragmentBuffers"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentBuffers:offsets:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1223
+name = "RenderSetFragmentBytes"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentBytes:length:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "index: u64"]
+
+[[op]]
+code = 0x1224
+name = "RenderSetFragmentIntersectionFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentIntersectionFunctionTable:atBufferIndex:"]
+args = ["intersection_function_table: IntersectionFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1225
+name = "RenderSetFragmentIntersectionFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentIntersectionFunctionTables:withBufferRange:"]
+args = ["intersection_function_tables: [IntersectionFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1226
+name = "RenderSetFragmentSamplerState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentSamplerState:atIndex:"]
+args = ["sampler: SamplerState?", "index: u64"]
+
+[[op]]
+code = 0x1227
+name = "RenderSetFragmentSamplerStateLodMinClampLodMaxClamp"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:"]
+args = ["sampler: SamplerState?", "lod_min_clamp: f32", "lod_max_clamp: f32", "index: u64"]
+
+[[op]]
+code = 0x1228
+name = "RenderSetFragmentSamplerStatesLodMinClampsLodMaxClamps"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentSamplerStates:lodMinClamps:lodMaxClamps:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "lod_min_clamps: [f32] = range.length", "lod_max_clamps: [f32] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1229
+name = "RenderSetFragmentSamplerStates"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentSamplerStates:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x122a
+name = "RenderSetFragmentTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentTexture:atIndex:"]
+args = ["texture: Texture?", "index: u64"]
+
+[[op]]
+code = 0x122b
+name = "RenderSetFragmentTextures"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentTextures:withRange:"]
+args = ["textures: [Texture?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x122c
+name = "RenderSetFragmentVisibleFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentVisibleFunctionTable:atBufferIndex:"]
+args = ["function_table: VisibleFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x122d
+name = "RenderSetFragmentVisibleFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFragmentVisibleFunctionTables:withBufferRange:"]
+args = ["function_tables: [VisibleFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x122e
+name = "RenderSetFrontFacingWinding"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setFrontFacingWinding:"]
+args = ["front_facing_winding: u64 (MTLWinding)"]
+
+[[op]]
+code = 0x122f
+name = "RenderSetMeshBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshBuffer:offset:atIndex:", "MTLRenderCommandEncoderSPI setMeshBuffer:offset:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1230
+name = "RenderSetMeshBufferOffset"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshBufferOffset:atIndex:", "MTLRenderCommandEncoderSPI setMeshBufferOffset:atIndex:"]
+args = ["offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1231
+name = "RenderSetMeshBuffers"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshBuffers:offsets:withRange:", "MTLRenderCommandEncoderSPI setMeshBuffers:offsets:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1232
+name = "RenderSetMeshBytes"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshBytes:length:atIndex:", "MTLRenderCommandEncoderSPI setMeshBytes:length:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "index: u64"]
+
+[[op]]
+code = 0x1233
+name = "RenderSetMeshSamplerState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshSamplerState:atIndex:", "MTLRenderCommandEncoderSPI setMeshSamplerState:atIndex:"]
+args = ["sampler: SamplerState?", "index: u64"]
+
+[[op]]
+code = 0x1234
+name = "RenderSetMeshSamplerStateLodMinClampLodMaxClamp"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshSamplerState:lodMinClamp:lodMaxClamp:atIndex:", "MTLRenderCommandEncoderSPI setMeshSamplerState:lodMinClamp:lodMaxClamp:atIndex:"]
+args = ["sampler: SamplerState?", "lod_min_clamp: f32", "lod_max_clamp: f32", "index: u64"]
+
+[[op]]
+code = 0x1235
+name = "RenderSetMeshSamplerStatesLodMinClampsLodMaxClamps"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshSamplerStates:lodMinClamps:lodMaxClamps:withRange:", "MTLRenderCommandEncoderSPI setMeshSamplerStates:lodMinClamps:lodMaxClamps:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "lod_min_clamps: [f32] = range.length", "lod_max_clamps: [f32] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1236
+name = "RenderSetMeshSamplerStates"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshSamplerStates:withRange:", "MTLRenderCommandEncoderSPI setMeshSamplerStates:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1237
+name = "RenderSetMeshTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshTexture:atIndex:", "MTLRenderCommandEncoderSPI setMeshTexture:atIndex:"]
+args = ["texture: Texture?", "index: u64"]
+
+[[op]]
+code = 0x1238
+name = "RenderSetMeshTextures"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setMeshTextures:withRange:", "MTLRenderCommandEncoderSPI setMeshTextures:withRange:"]
+args = ["textures: [Texture?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1239
+name = "RenderSetObjectBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectBuffer:offset:atIndex:", "MTLRenderCommandEncoderSPI setObjectBuffer:offset:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "index: u64"]
+
+[[op]]
+code = 0x123a
+name = "RenderSetObjectBufferOffset"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectBufferOffset:atIndex:", "MTLRenderCommandEncoderSPI setObjectBufferOffset:atIndex:"]
+args = ["offset: u64", "index: u64"]
+
+[[op]]
+code = 0x123b
+name = "RenderSetObjectBuffers"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectBuffers:offsets:withRange:", "MTLRenderCommandEncoderSPI setObjectBuffers:offsets:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x123c
+name = "RenderSetObjectBytes"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectBytes:length:atIndex:", "MTLRenderCommandEncoderSPI setObjectBytes:length:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "index: u64"]
+
+[[op]]
+code = 0x123d
+name = "RenderSetObjectSamplerState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectSamplerState:atIndex:", "MTLRenderCommandEncoderSPI setObjectSamplerState:atIndex:"]
+args = ["sampler: SamplerState?", "index: u64"]
+
+[[op]]
+code = 0x123e
+name = "RenderSetObjectSamplerStateLodMinClampLodMaxClamp"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectSamplerState:lodMinClamp:lodMaxClamp:atIndex:", "MTLRenderCommandEncoderSPI setObjectSamplerState:lodMinClamp:lodMaxClamp:atIndex:"]
+args = ["sampler: SamplerState?", "lod_min_clamp: f32", "lod_max_clamp: f32", "index: u64"]
+
+[[op]]
+code = 0x123f
+name = "RenderSetObjectSamplerStatesLodMinClampsLodMaxClamps"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectSamplerStates:lodMinClamps:lodMaxClamps:withRange:", "MTLRenderCommandEncoderSPI setObjectSamplerStates:lodMinClamps:lodMaxClamps:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "lod_min_clamps: [f32] = range.length", "lod_max_clamps: [f32] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1240
+name = "RenderSetObjectSamplerStates"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectSamplerStates:withRange:", "MTLRenderCommandEncoderSPI setObjectSamplerStates:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1241
+name = "RenderSetObjectTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectTexture:atIndex:", "MTLRenderCommandEncoderSPI setObjectTexture:atIndex:"]
+args = ["texture: Texture?", "index: u64"]
+
+[[op]]
+code = 0x1242
+name = "RenderSetObjectTextures"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectTextures:withRange:", "MTLRenderCommandEncoderSPI setObjectTextures:withRange:"]
+args = ["textures: [Texture?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1243
+name = "RenderSetObjectThreadgroupMemoryLength"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setObjectThreadgroupMemoryLength:atIndex:", "MTLRenderCommandEncoderSPI setObjectThreadgroupMemoryLength:atIndex:"]
+args = ["length: u64", "index: u64"]
+
+[[op]]
+code = 0x1244
+name = "RenderSetRenderPipelineState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setRenderPipelineState:"]
+args = ["pipeline_state: RenderPipelineState?"]
+
+[[op]]
+code = 0x1245
+name = "RenderSetScissorRect"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setScissorRect:"]
+args = ["rect: ScissorRect"]
+
+[[op]]
+code = 0x1246
+name = "RenderSetScissorRects"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setScissorRects:count:"]
+args = ["scissor_rects: [ScissorRect] = count", "count: u64"]
+
+[[op]]
+code = 0x1247
+name = "RenderSetStencilFrontBackReferenceValue"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setStencilFrontReferenceValue:backReferenceValue:"]
+args = ["front_reference_value: u32", "back_reference_value: u32"]
+
+[[op]]
+code = 0x1248
+name = "RenderSetStencilReferenceValue"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setStencilReferenceValue:"]
+args = ["reference_value: u32"]
+
+[[op]]
+code = 0x1249
+name = "RenderSetStencilStoreAction"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setStencilStoreAction:"]
+args = ["store_action: u64 (MTLStoreAction)"]
+
+[[op]]
+code = 0x124a
+name = "RenderSetStencilStoreActionOptions"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setStencilStoreActionOptions:"]
+args = ["store_action_options: u64 (MTLStoreActionOptions)"]
+
+[[op]]
+code = 0x124b
+name = "RenderSetTessellationFactorBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTessellationFactorBuffer:offset:instanceStride:"]
+args = ["buffer: Buffer?", "offset: u64", "instance_stride: u64"]
+
+[[op]]
+code = 0x124c
+name = "RenderSetTessellationFactorScale"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTessellationFactorScale:"]
+args = ["scale: f32"]
+
+[[op]]
+code = 0x124d
+name = "RenderSetThreadgroupMemoryLength"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setThreadgroupMemoryLength:offset:atIndex:"]
+args = ["length: u64", "offset: u64", "index: u64"]
+
+[[op]]
+code = 0x124e
+name = "RenderSetTileAccelerationStructure"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileAccelerationStructure:atBufferIndex:"]
+args = ["acceleration_structure: AccelerationStructure?", "buffer_index: u64"]
+
+[[op]]
+code = 0x124f
+name = "RenderSetTileBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileBuffer:offset:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1250
+name = "RenderSetTileBufferOffset"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileBufferOffset:atIndex:"]
+args = ["offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1251
+name = "RenderSetTileBuffers"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileBuffers:offsets:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1252
+name = "RenderSetTileBytes"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileBytes:length:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "index: u64"]
+
+[[op]]
+code = 0x1253
+name = "RenderSetTileIntersectionFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileIntersectionFunctionTable:atBufferIndex:"]
+args = ["intersection_function_table: IntersectionFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1254
+name = "RenderSetTileIntersectionFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileIntersectionFunctionTables:withBufferRange:"]
+args = ["intersection_function_tables: [IntersectionFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1255
+name = "RenderSetTileSamplerState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileSamplerState:atIndex:"]
+args = ["sampler: SamplerState?", "index: u64"]
+
+[[op]]
+code = 0x1256
+name = "RenderSetTileSamplerStateLodMinClampLodMaxClamp"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileSamplerState:lodMinClamp:lodMaxClamp:atIndex:"]
+args = ["sampler: SamplerState?", "lod_min_clamp: f32", "lod_max_clamp: f32", "index: u64"]
+
+[[op]]
+code = 0x1257
+name = "RenderSetTileSamplerStatesLodMinClampsLodMaxClamps"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileSamplerStates:lodMinClamps:lodMaxClamps:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "lod_min_clamps: [f32] = range.length", "lod_max_clamps: [f32] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1258
+name = "RenderSetTileSamplerStates"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileSamplerStates:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1259
+name = "RenderSetTileTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileTexture:atIndex:"]
+args = ["texture: Texture?", "index: u64"]
+
+[[op]]
+code = 0x125a
+name = "RenderSetTileTextures"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileTextures:withRange:"]
+args = ["textures: [Texture?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x125b
+name = "RenderSetTileVisibleFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileVisibleFunctionTable:atBufferIndex:"]
+args = ["function_table: VisibleFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x125c
+name = "RenderSetTileVisibleFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTileVisibleFunctionTables:withBufferRange:"]
+args = ["function_tables: [VisibleFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x125d
+name = "RenderSetTriangleFillMode"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setTriangleFillMode:"]
+args = ["fill_mode: u64 (MTLTriangleFillMode)"]
+
+[[op]]
+code = 0x125e
+name = "RenderSetVertexAccelerationStructure"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexAccelerationStructure:atBufferIndex:"]
+args = ["acceleration_structure: AccelerationStructure?", "buffer_index: u64"]
+
+[[op]]
+code = 0x125f
+name = "RenderSetVertexAmplificationCount"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexAmplificationCount:viewMappings:"]
+args = ["count: u64", "view_mappings: [VertexAmplificationViewMapping] = count"]
+
+[[op]]
+code = 0x1260
+name = "RenderSetVertexBuffer"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBuffer:offset:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1261
+name = "RenderSetVertexBufferAttributeStride"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBuffer:offset:attributeStride:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "stride: u64", "index: u64"]
+
+[[op]]
+code = 0x1262
+name = "RenderSetVertexBufferOffset"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBufferOffset:atIndex:"]
+args = ["offset: u64", "index: u64"]
+
+[[op]]
+code = 0x1263
+name = "RenderSetVertexBufferOffsetAttributeStride"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBufferOffset:attributeStride:atIndex:"]
+args = ["offset: u64", "stride: u64", "index: u64"]
+
+[[op]]
+code = 0x1264
+name = "RenderSetVertexBuffersAttributeStrides"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBuffers:offsets:attributeStrides:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "strides: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1265
+name = "RenderSetVertexBuffers"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBuffers:offsets:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1266
+name = "RenderSetVertexBytes"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBytes:length:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "index: u64"]
+
+[[op]]
+code = 0x1267
+name = "RenderSetVertexBytesAttributeStride"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexBytes:length:attributeStride:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "stride: u64", "index: u64"]
+
+[[op]]
+code = 0x1268
+name = "RenderSetVertexIntersectionFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexIntersectionFunctionTable:atBufferIndex:"]
+args = ["intersection_function_table: IntersectionFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1269
+name = "RenderSetVertexIntersectionFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexIntersectionFunctionTables:withBufferRange:"]
+args = ["intersection_function_tables: [IntersectionFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x126a
+name = "RenderSetVertexSamplerState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexSamplerState:atIndex:"]
+args = ["sampler: SamplerState?", "index: u64"]
+
+[[op]]
+code = 0x126b
+name = "RenderSetVertexSamplerStateLodMinClampLodMaxClamp"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexSamplerState:lodMinClamp:lodMaxClamp:atIndex:"]
+args = ["sampler: SamplerState?", "lod_min_clamp: f32", "lod_max_clamp: f32", "index: u64"]
+
+[[op]]
+code = 0x126c
+name = "RenderSetVertexSamplerStatesLodMinClampsLodMaxClamps"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexSamplerStates:lodMinClamps:lodMaxClamps:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "lod_min_clamps: [f32] = range.length", "lod_max_clamps: [f32] = range.length", "range: Range"]
+
+[[op]]
+code = 0x126d
+name = "RenderSetVertexSamplerStates"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexSamplerStates:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x126e
+name = "RenderSetVertexTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexTexture:atIndex:"]
+args = ["texture: Texture?", "index: u64"]
+
+[[op]]
+code = 0x126f
+name = "RenderSetVertexTextures"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexTextures:withRange:"]
+args = ["textures: [Texture?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1270
+name = "RenderSetVertexVisibleFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexVisibleFunctionTable:atBufferIndex:"]
+args = ["function_table: VisibleFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1271
+name = "RenderSetVertexVisibleFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVertexVisibleFunctionTables:withBufferRange:"]
+args = ["function_tables: [VisibleFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1272
+name = "RenderSetViewport"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setViewport:"]
+args = ["viewport: Viewport"]
+
+[[op]]
+code = 0x1273
+name = "RenderSetViewports"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setViewports:count:"]
+args = ["viewports: [Viewport] = count", "count: u64"]
+
+[[op]]
+code = 0x1274
+name = "RenderSetVisibilityResultMode"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder setVisibilityResultMode:offset:"]
+args = ["mode: u64 (MTLVisibilityResultMode)", "offset: u64"]
+
+[[op]]
+code = 0x1275
+name = "RenderTextureBarrier"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder textureBarrier"]
+args = []
+
+[[op]]
+code = 0x1276
+name = "RenderUpdateFence"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder updateFence:afterStages:"]
+args = ["fence: Fence?", "stages: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x1277
+name = "RenderUseHeap"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useHeap:"]
+args = ["heap: Heap?"]
+
+[[op]]
+code = 0x1278
+name = "RenderUseHeapStages"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useHeap:stages:"]
+args = ["heap: Heap?", "stages: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x1279
+name = "RenderUseHeaps"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useHeaps:count:"]
+args = ["heaps: [Heap?] = count", "count: u64"]
+
+[[op]]
+code = 0x127a
+name = "RenderUseHeapsStages"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useHeaps:count:stages:"]
+args = ["heaps: [Heap?] = count", "count: u64", "stages: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x127b
+name = "RenderUseResource"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useResource:usage:"]
+args = ["resource: Resource?", "usage: u64 (MTLResourceUsage)"]
+
+[[op]]
+code = 0x127c
+name = "RenderUseResourceStages"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useResource:usage:stages:"]
+args = ["resource: Resource?", "usage: u64 (MTLResourceUsage)", "stages: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x127d
+name = "RenderUseResources"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useResources:count:usage:"]
+args = ["resources: [Resource?] = count", "count: u64", "usage: u64 (MTLResourceUsage)"]
+
+[[op]]
+code = 0x127e
+name = "RenderUseResourcesStages"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder useResources:count:usage:stages:"]
+args = ["resources: [Resource?] = count", "count: u64", "usage: u64 (MTLResourceUsage)", "stages: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x127f
+name = "RenderWaitForFence"
+channel = "stream"
+methods = ["MTLRenderCommandEncoder waitForFence:beforeStages:"]
+args = ["fence: Fence?", "stages: u64 (MTLRenderStages)"]
+
+[[op]]
+code = 0x1280
+name = "RenderDispatchThreadsPerTileInRegion"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI dispatchThreadsPerTile:inRegion:"]
+args = ["threads_per_tile: Size", "region: Region"]
+
+[[op]]
+code = 0x1281
+name = "RenderDispatchThreadsPerTileInRegionRenderTargetArrayIndex"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI dispatchThreadsPerTile:inRegion:withRenderTargetArrayIndex:"]
+args = ["threads_per_tile: Size", "region: Region", "render_target_array_index: u32"]
+
+[[op]]
+code = 0x1282
+name = "RenderSetAlphaTestReferenceValue"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setAlphaTestReferenceValue:"]
+args = ["reference_value: f32"]
+
+[[op]]
+code = 0x1283
+name = "RenderSetColorResolveTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setColorResolveTexture:slice:depthPlane:level:atIndex:"]
+args = ["texture: Texture?", "slice: u64", "depth_plane: u64", "level: u64", "index: u64"]
+
+[[op]]
+code = 0x1284
+name = "RenderSetColorResolveTextureYInvert"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setColorResolveTexture:slice:depthPlane:level:yInvert:atIndex:"]
+args = ["texture: Texture?", "slice: u64", "depth_plane: u64", "level: u64", "y_invert: bool", "index: u64"]
+
+[[op]]
+code = 0x1285
+name = "RenderSetCommandDataCorruptModeSPI"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setCommandDataCorruptModeSPI:"]
+args = ["mode: u64"]
+
+[[op]]
+code = 0x1286
+name = "RenderSetDepthCleared"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setDepthCleared"]
+args = []
+
+[[op]]
+code = 0x1287
+name = "RenderSetDepthClipModeSPI"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setDepthClipModeSPI:"]
+args = ["mode: u64"]
+
+[[op]]
+code = 0x1288
+name = "RenderSetDepthResolveTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setDepthResolveTexture:slice:depthPlane:level:"]
+args = ["texture: Texture?", "slice: u64", "depth_plane: u64", "level: u64"]
+
+[[op]]
+code = 0x1289
+name = "RenderSetDepthResolveTextureYInvert"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setDepthResolveTexture:slice:depthPlane:level:yInvert:"]
+args = ["texture: Texture?", "slice: u64", "depth_plane: u64", "level: u64", "y_invert: bool"]
+
+[[op]]
+code = 0x128a
+name = "RenderSetFragmentTextureAndSamplerState"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setFragmentTexture:atTextureIndex:samplerState:atSamplerIndex:"]
+args = ["texture: Texture?", "texture_index: u64", "sampler: SamplerState?", "sampler_index: u64"]
+
+[[op]]
+code = 0x128b
+name = "RenderSetLineWidth"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setLineWidth:"]
+args = ["width: f32"]
+
+[[op]]
+code = 0x128c
+name = "RenderSetMeshAccelerationStructure"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setMeshAccelerationStructure:atBufferIndex:"]
+args = ["acceleration_structure: AccelerationStructure?", "buffer_index: u64"]
+
+[[op]]
+code = 0x128d
+name = "RenderSetMeshIntersectionFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setMeshIntersectionFunctionTable:atBufferIndex:"]
+args = ["table: IntersectionFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x128e
+name = "RenderSetMeshIntersectionFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setMeshIntersectionFunctionTables:withBufferRange:"]
+args = ["tables: [IntersectionFunctionTable?] = buffer_range.length", "buffer_range: Range"]
+
+[[op]]
+code = 0x128f
+name = "RenderSetMeshVisibleFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setMeshVisibleFunctionTable:atBufferIndex:"]
+args = ["table: VisibleFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1290
+name = "RenderSetMeshVisibleFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setMeshVisibleFunctionTables:withBufferRange:"]
+args = ["tables: [VisibleFunctionTable?] = buffer_range.length", "buffer_range: Range"]
+
+[[op]]
+code = 0x1291
+name = "RenderSetObjectAccelerationStructure"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setObjectAccelerationStructure:atBufferIndex:"]
+args = ["acceleration_structure: AccelerationStructure?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1292
+name = "RenderSetObjectIntersectionFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setObjectIntersectionFunctionTable:atBufferIndex:"]
+args = ["table: IntersectionFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1293
+name = "RenderSetObjectIntersectionFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setObjectIntersectionFunctionTables:withBufferRange:"]
+args = ["tables: [IntersectionFunctionTable?] = buffer_range.length", "buffer_range: Range"]
+
+[[op]]
+code = 0x1294
+name = "RenderSetObjectVisibleFunctionTable"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setObjectVisibleFunctionTable:atBufferIndex:"]
+args = ["table: VisibleFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1295
+name = "RenderSetObjectVisibleFunctionTables"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setObjectVisibleFunctionTables:withBufferRange:"]
+args = ["tables: [VisibleFunctionTable?] = buffer_range.length", "buffer_range: Range"]
+
+[[op]]
+code = 0x1296
+name = "RenderSetPointSize"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setPointSize:"]
+args = ["size: f32"]
+
+[[op]]
+code = 0x1297
+name = "RenderSetPrimitiveRestartEnabled"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setPrimitiveRestartEnabled:"]
+args = ["enabled: bool"]
+
+[[op]]
+code = 0x1298
+name = "RenderSetPrimitiveRestartEnabledIndex"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setPrimitiveRestartEnabled:index:"]
+args = ["enabled: bool", "index: u64"]
+
+[[op]]
+code = 0x1299
+name = "RenderSetProvokingVertexMode"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setProvokingVertexMode:"]
+args = ["mode: u64"]
+
+[[op]]
+code = 0x129a
+name = "RenderSetStencilCleared"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setStencilCleared"]
+args = []
+
+[[op]]
+code = 0x129b
+name = "RenderSetStencilResolveTexture"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setStencilResolveTexture:slice:depthPlane:level:"]
+args = ["texture: Texture?", "slice: u64", "depth_plane: u64", "level: u64"]
+
+[[op]]
+code = 0x129c
+name = "RenderSetStencilResolveTextureYInvert"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setStencilResolveTexture:slice:depthPlane:level:yInvert:"]
+args = ["texture: Texture?", "slice: u64", "depth_plane: u64", "level: u64", "y_invert: bool"]
+
+[[op]]
+code = 0x129d
+name = "RenderSetVertexAmplificationMode"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setVertexAmplificationMode:value:"]
+args = ["mode: u64", "value: u64"]
+
+[[op]]
+code = 0x129e
+name = "RenderSetViewportTransformEnabled"
+channel = "stream"
+methods = ["MTLRenderCommandEncoderSPI setViewportTransformEnabled:"]
+args = ["enabled: bool"]
+
+[[op]]
+code = 0x1401
+name = "ComputeDispatchThreadgroups"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder dispatchThreadgroups:threadsPerThreadgroup:"]
+args = ["threadgroups_per_grid: Size", "threads_per_threadgroup: Size"]
+
+[[op]]
+code = 0x1402
+name = "ComputeDispatchThreadgroupsWithIndirectBuffer"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:"]
+args = ["indirect_buffer: Buffer?", "indirect_buffer_offset: u64", "threads_per_threadgroup: Size"]
+
+[[op]]
+code = 0x1403
+name = "ComputeDispatchThreads"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder dispatchThreads:threadsPerThreadgroup:"]
+args = ["threads_per_grid: Size", "threads_per_threadgroup: Size"]
+
+[[op]]
+code = 0x1404
+name = "ComputeExecuteCommandsInBufferIndirect"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder executeCommandsInBuffer:indirectBuffer:indirectBufferOffset:"]
+args = ["indirect_commandbuffer: IndirectCommandBuffer?", "indirect_range_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x1405
+name = "ComputeExecuteCommandsInBuffer"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder executeCommandsInBuffer:withRange:"]
+args = ["indirect_command_buffer: IndirectCommandBuffer?", "execution_range: Range"]
+
+[[op]]
+code = 0x1406
+name = "ComputeMemoryBarrierWithResources"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder memoryBarrierWithResources:count:"]
+args = ["resources: [Resource?] = count", "count: u64"]
+
+[[op]]
+code = 0x1407
+name = "ComputeMemoryBarrierWithScope"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder memoryBarrierWithScope:"]
+args = ["scope: u64 (MTLBarrierScope)"]
+
+[[op]]
+code = 0x1408
+name = "ComputeSampleCountersInBuffer"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder sampleCountersInBuffer:atSampleIndex:withBarrier:"]
+args = ["sample_buffer: CounterSampleBuffer?", "sample_index: u64", "barrier: bool"]
+
+[[op]]
+code = 0x1409
+name = "ComputeSetAccelerationStructure"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setAccelerationStructure:atBufferIndex:"]
+args = ["acceleration_structure: AccelerationStructure?", "buffer_index: u64"]
+
+[[op]]
+code = 0x140a
+name = "ComputeSetBuffer"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBuffer:offset:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "index: u64"]
+
+[[op]]
+code = 0x140b
+name = "ComputeSetBufferAttributeStride"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBuffer:offset:attributeStride:atIndex:"]
+args = ["buffer: Buffer?", "offset: u64", "stride: u64", "index: u64"]
+
+[[op]]
+code = 0x140c
+name = "ComputeSetBufferOffset"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBufferOffset:atIndex:"]
+args = ["offset: u64", "index: u64"]
+
+[[op]]
+code = 0x140d
+name = "ComputeSetBufferOffsetAttributeStride"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBufferOffset:attributeStride:atIndex:"]
+args = ["offset: u64", "stride: u64", "index: u64"]
+
+[[op]]
+code = 0x140e
+name = "ComputeSetBuffersAttributeStrides"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBuffers:offsets:attributeStrides:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "strides: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x140f
+name = "ComputeSetBuffers"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBuffers:offsets:withRange:"]
+args = ["buffers: [Buffer?] = range.length", "offsets: [u64] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1410
+name = "ComputeSetBytes"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBytes:length:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "index: u64"]
+
+[[op]]
+code = 0x1411
+name = "ComputeSetBytesAttributeStride"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setBytes:length:attributeStride:atIndex:"]
+args = ["bytes: bytes = length", "length: u64", "stride: u64", "index: u64"]
+
+[[op]]
+code = 0x1412
+name = "ComputeSetComputePipelineState"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setComputePipelineState:"]
+args = ["state: ComputePipelineState?"]
+
+[[op]]
+code = 0x1413
+name = "ComputeSetImageblockWidth"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setImageblockWidth:height:"]
+args = ["width: u64", "height: u64"]
+
+[[op]]
+code = 0x1414
+name = "ComputeSetIntersectionFunctionTable"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setIntersectionFunctionTable:atBufferIndex:"]
+args = ["intersection_function_table: IntersectionFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1415
+name = "ComputeSetIntersectionFunctionTables"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setIntersectionFunctionTables:withBufferRange:"]
+args = ["intersection_function_tables: [IntersectionFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1416
+name = "ComputeSetSamplerState"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setSamplerState:atIndex:"]
+args = ["sampler: SamplerState?", "index: u64"]
+
+[[op]]
+code = 0x1417
+name = "ComputeSetSamplerStateLodMinClampLodMaxClamp"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setSamplerState:lodMinClamp:lodMaxClamp:atIndex:"]
+args = ["sampler: SamplerState?", "lod_min_clamp: f32", "lod_max_clamp: f32", "index: u64"]
+
+[[op]]
+code = 0x1418
+name = "ComputeSetSamplerStatesLodMinClampsLodMaxClamps"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setSamplerStates:lodMinClamps:lodMaxClamps:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "lod_min_clamps: [f32] = range.length", "lod_max_clamps: [f32] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1419
+name = "ComputeSetSamplerStates"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setSamplerStates:withRange:"]
+args = ["samplers: [SamplerState?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x141a
+name = "ComputeSetStageInRegion"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setStageInRegion:"]
+args = ["region: Region"]
+
+[[op]]
+code = 0x141b
+name = "ComputeSetStageInRegionWithIndirectBuffer"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setStageInRegionWithIndirectBuffer:indirectBufferOffset:"]
+args = ["indirect_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x141c
+name = "ComputeSetTexture"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setTexture:atIndex:"]
+args = ["texture: Texture?", "index: u64"]
+
+[[op]]
+code = 0x141d
+name = "ComputeSetTextures"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setTextures:withRange:"]
+args = ["textures: [Texture?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x141e
+name = "ComputeSetThreadgroupMemoryLength"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setThreadgroupMemoryLength:atIndex:"]
+args = ["length: u64", "index: u64"]
+
+[[op]]
+code = 0x141f
+name = "ComputeSetVisibleFunctionTable"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setVisibleFunctionTable:atBufferIndex:"]
+args = ["visible_function_table: VisibleFunctionTable?", "buffer_index: u64"]
+
+[[op]]
+code = 0x1420
+name = "ComputeSetVisibleFunctionTables"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder setVisibleFunctionTables:withBufferRange:"]
+args = ["visible_function_tables: [VisibleFunctionTable?] = range.length", "range: Range"]
+
+[[op]]
+code = 0x1421
+name = "ComputeUpdateFence"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder updateFence:"]
+args = ["fence: Fence?"]
+
+[[op]]
+code = 0x1422
+name = "ComputeUseHeap"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder useHeap:"]
+args = ["heap: Heap?"]
+
+[[op]]
+code = 0x1423
+name = "ComputeUseHeaps"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder useHeaps:count:"]
+args = ["heaps: [Heap?] = count", "count: u64"]
+
+[[op]]
+code = 0x1424
+name = "ComputeUseResource"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder useResource:usage:"]
+args = ["resource: Resource?", "usage: u64 (MTLResourceUsage)"]
+
+[[op]]
+code = 0x1425
+name = "ComputeUseResources"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder useResources:count:usage:"]
+args = ["resources: [Resource?] = count", "count: u64", "usage: u64 (MTLResourceUsage)"]
+
+[[op]]
+code = 0x1426
+name = "ComputeWaitForFence"
+channel = "stream"
+methods = ["MTLComputeCommandEncoder waitForFence:"]
+args = ["fence: Fence?"]
+
+[[op]]
+code = 0x1427
+name = "ComputeBeginVirtualSubstream"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI beginVirtualSubstream"]
+args = []
+
+[[op]]
+code = 0x1428
+name = "ComputeDispatchThreadsWithIndirectBuffer"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI dispatchThreadsWithIndirectBuffer:indirectBufferOffset:"]
+args = ["indirect_buffer: Buffer?", "indirect_buffer_offset: u64"]
+
+[[op]]
+code = 0x1429
+name = "ComputeEnableNullBufferBinds"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI enableNullBufferBinds:"]
+args = ["enabled: bool"]
+
+[[op]]
+code = 0x142a
+name = "ComputeEncodeStartDoWhile"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI encodeStartDoWhile"]
+args = []
+
+[[op]]
+code = 0x142b
+name = "ComputeEncodeStartElse"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI encodeStartElse"]
+args = []
+
+[[op]]
+code = 0x142c
+name = "ComputeEncodeStartIf"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI encodeStartIf:offset:comparison:referenceValue:"]
+args = ["buffer: Buffer?", "offset: u64", "comparison: u64", "reference_value: u32"]
+
+[[op]]
+code = 0x142d
+name = "ComputeEncodeStartWhile"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI encodeStartWhile:offset:comparison:referenceValue:"]
+args = ["buffer: Buffer?", "offset: u64", "comparison: u64", "reference_value: u32"]
+
+[[op]]
+code = 0x142e
+name = "ComputeEndVirtualSubstream"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI endVirtualSubstream"]
+args = []
+
+[[op]]
+code = 0x142f
+name = "ComputeInsertCompressedTextureReinterpretationFlush"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI insertCompressedTextureReinterpretationFlush"]
+args = []
+
+[[op]]
+code = 0x1430
+name = "ComputeSetSubstream"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI setSubstream:"]
+args = ["substream: u32"]
+
+[[op]]
+code = 0x1431
+name = "ComputeSetThreadgroupDistributionMode"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI setThreadgroupDistributionMode:"]
+args = ["mode: i64"]
+
+[[op]]
+code = 0x1432
+name = "ComputeSetThreadgroupDistributionModeWithClusterGroupIndex"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI setThreadgroupDistributionModeWithClusterGroupIndex:"]
+args = ["cluster_group_index: u32"]
+
+[[op]]
+code = 0x1433
+name = "ComputeSignalProgress"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI signalProgress:"]
+args = ["progress: u32"]
+
+[[op]]
+code = 0x1434
+name = "ComputeWaitForProgress"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI waitForProgress:"]
+args = ["progress: u32"]
+
+[[op]]
+code = 0x1435
+name = "ComputeWaitForVirtualSubstream"
+channel = "stream"
+methods = ["MTLComputeCommandEncoderSPI waitForVirtualSubstream:"]
+args = ["substream: u64"]
+
+[[op]]
+code = 0x1501
+name = "BlitCopyBufferToTexture"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"]
+args = ["source_buffer: Buffer?", "source_offset: u64", "source_bytes_per_row: u64", "source_bytes_per_image: u64", "source_size: Size", "destination_texture: Texture?", "destination_slice: u64", "destination_level: u64", "destination_origin: Origin"]
+
+[[op]]
+code = 0x1502
+name = "BlitCopyBufferToTextureOptions"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:options:"]
+args = ["source_buffer: Buffer?", "source_offset: u64", "source_bytes_per_row: u64", "source_bytes_per_image: u64", "source_size: Size", "destination_texture: Texture?", "destination_slice: u64", "destination_level: u64", "destination_origin: Origin", "options: u64 (MTLBlitOption)"]
+
+[[op]]
+code = 0x1503
+name = "BlitCopyBufferToBuffer"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:"]
+args = ["source_buffer: Buffer?", "source_offset: u64", "destination_buffer: Buffer?", "destination_offset: u64", "size: u64"]
+
+[[op]]
+code = 0x1504
+name = "BlitCopyTextureToBuffer"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:"]
+args = ["source_texture: Texture?", "source_slice: u64", "source_level: u64", "source_origin: Origin", "source_size: Size", "destination_buffer: Buffer?", "destination_offset: u64", "destination_bytes_per_row: u64", "destination_bytes_per_image: u64"]
+
+[[op]]
+code = 0x1505
+name = "BlitCopyTextureToBufferOptions"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:options:"]
+args = ["source_texture: Texture?", "source_slice: u64", "source_level: u64", "source_origin: Origin", "source_size: Size", "destination_buffer: Buffer?", "destination_offset: u64", "destination_bytes_per_row: u64", "destination_bytes_per_image: u64", "options: u64 (MTLBlitOption)"]
+
+[[op]]
+code = 0x1506
+name = "BlitCopyTextureToTexture"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"]
+args = ["source_texture: Texture?", "source_slice: u64", "source_level: u64", "source_origin: Origin", "source_size: Size", "destination_texture: Texture?", "destination_slice: u64", "destination_level: u64", "destination_origin: Origin"]
+
+[[op]]
+code = 0x1507
+name = "BlitCopyTextureToTextureSlicesLevels"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromTexture:sourceSlice:sourceLevel:toTexture:destinationSlice:destinationLevel:sliceCount:levelCount:"]
+args = ["source_texture: Texture?", "source_slice: u64", "source_level: u64", "destination_texture: Texture?", "destination_slice: u64", "destination_level: u64", "slice_count: u64", "level_count: u64"]
+
+[[op]]
+code = 0x1508
+name = "BlitCopyTextureToTextureAll"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyFromTexture:toTexture:"]
+args = ["source_texture: Texture?", "destination_texture: Texture?"]
+
+[[op]]
+code = 0x1509
+name = "BlitCopyIndirectCommandBuffer"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder copyIndirectCommandBuffer:sourceRange:destination:destinationIndex:"]
+args = ["source: IndirectCommandBuffer?", "source_range: Range", "destination: IndirectCommandBuffer?", "destination_index: u64"]
+
+[[op]]
+code = 0x150a
+name = "BlitFillBuffer"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder fillBuffer:range:value:"]
+args = ["buffer: Buffer?", "range: Range", "value: u8"]
+
+[[op]]
+code = 0x150b
+name = "BlitGenerateMipmapsForTexture"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder generateMipmapsForTexture:"]
+args = ["texture: Texture?"]
+
+[[op]]
+code = 0x150c
+name = "BlitGetTextureAccessCounters"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder getTextureAccessCounters:region:mipLevel:slice:resetCounters:countersBuffer:countersBufferOffset:"]
+args = ["texture: Texture?", "region: Region", "mip_level: u64", "slice: u64", "reset_counters: bool", "counters_buffer: Buffer?", "counters_buffer_offset: u64"]
+
+[[op]]
+code = 0x150d
+name = "BlitOptimizeContentsForCPUAccess"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder optimizeContentsForCPUAccess:"]
+args = ["texture: Texture?"]
+
+[[op]]
+code = 0x150e
+name = "BlitOptimizeContentsForCPUAccessSliceLevel"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder optimizeContentsForCPUAccess:slice:level:"]
+args = ["texture: Texture?", "slice: u64", "level: u64"]
+
+[[op]]
+code = 0x150f
+name = "BlitOptimizeContentsForGPUAccess"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder optimizeContentsForGPUAccess:"]
+args = ["texture: Texture?"]
+
+[[op]]
+code = 0x1510
+name = "BlitOptimizeContentsForGPUAccessSliceLevel"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder optimizeContentsForGPUAccess:slice:level:"]
+args = ["texture: Texture?", "slice: u64", "level: u64"]
+
+[[op]]
+code = 0x1511
+name = "BlitOptimizeIndirectCommandBuffer"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder optimizeIndirectCommandBuffer:withRange:"]
+args = ["indirect_command_buffer: IndirectCommandBuffer?", "range: Range"]
+
+[[op]]
+code = 0x1512
+name = "BlitResetCommandsInBuffer"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder resetCommandsInBuffer:withRange:"]
+args = ["buffer: IndirectCommandBuffer?", "range: Range"]
+
+[[op]]
+code = 0x1513
+name = "BlitResetTextureAccessCounters"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder resetTextureAccessCounters:region:mipLevel:slice:"]
+args = ["texture: Texture?", "region: Region", "mip_level: u64", "slice: u64"]
+
+[[op]]
+code = 0x1514
+name = "BlitResolveCounters"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder resolveCounters:inRange:destinationBuffer:destinationOffset:"]
+args = ["sample_buffer: CounterSampleBuffer?", "range: Range", "destination_buffer: Buffer?", "destination_offset: u64"]
+
+[[op]]
+code = 0x1515
+name = "BlitSampleCountersInBuffer"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder sampleCountersInBuffer:atSampleIndex:withBarrier:"]
+args = ["sample_buffer: CounterSampleBuffer?", "sample_index: u64", "barrier: bool"]
+
+[[op]]
+code = 0x1516
+name = "BlitSynchronizeResource"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder synchronizeResource:"]
+args = ["resource: Resource?"]
+
+[[op]]
+code = 0x1517
+name = "BlitSynchronizeTexture"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder synchronizeTexture:slice:level:"]
+args = ["texture: Texture?", "slice: u64", "level: u64"]
+
+[[op]]
+code = 0x1518
+name = "BlitUpdateFence"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder updateFence:"]
+args = ["fence: Fence?"]
+
+[[op]]
+code = 0x1519
+name = "BlitWaitForFence"
+channel = "stream"
+methods = ["MTLBlitCommandEncoder waitForFence:"]
+args = ["fence: Fence?"]
+
+[[op]]
+code = 0x151a
+name = "BlitCopyTextureToTextureOptions"
+channel = "stream"
+methods = ["MTLBlitCommandEncoderSPI copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:options:"]
+args = ["source_texture: Texture?", "source_slice: u64", "source_level: u64", "source_origin: Origin", "source_size: Size", "destination_texture: Texture?", "destination_slice: u64", "destination_level: u64", "destination_origin: Origin", "options: u64"]
+
+[[op]]
+code = 0x151b
+name = "BlitFillBufferPattern4"
+channel = "stream"
+methods = ["MTLBlitCommandEncoderSPI fillBuffer:range:pattern4:"]
+args = ["buffer: Buffer?", "range: Range", "pattern: u32"]
+
+[[op]]
+code = 0x151c
+name = "BlitFillTextureBytes"
+channel = "stream"
+methods = ["MTLBlitCommandEncoderSPI fillTexture:level:slice:region:bytes:length:"]
+args = ["texture: Texture?", "level: u64", "slice: u64", "region: Region", "bytes: bytes = length", "length: u64"]
+
+[[op]]
+code = 0x151d
+name = "BlitFillTextureColor"
+channel = "stream"
+methods = ["MTLBlitCommandEncoderSPI fillTexture:level:slice:region:color:"]
+args = ["texture: Texture?", "level: u64", "slice: u64", "region: Region", "color: ClearColor"]
+
+[[op]]
+code = 0x151e
+name = "BlitFillTextureColorPixelFormat"
+channel = "stream"
+methods = ["MTLBlitCommandEncoderSPI fillTexture:level:slice:region:color:pixelFormat:"]
+args = ["texture: Texture?", "level: u64", "slice: u64", "region: Region", "color: ClearColor", "pixel_format: u64"]
+
+[[op]]
+code = 0x151f
+name = "BlitInvalidateCompressedTexture"
+channel = "stream"
+methods = ["MTLBlitCommandEncoderSPI invalidateCompressedTexture:"]
+args = ["texture: Texture?"]
+
+[[op]]
+code = 0x1520
+name = "BlitInvalidateCompressedTextureSliceLevel"
+channel = "stream"
+methods = ["MTLBlitCommandEncoderSPI invalidateCompressedTexture:slice:level:"]
+args = ["texture: Texture?", "slice: u64", "level: u64"]
+
+[[op]]
+code = 0x1601
+name = "ParallelSetColorStoreAction"
+channel = "stream"
+methods = ["MTLParallelRenderCommandEncoder setColorStoreAction:atIndex:"]
+args = ["store_action: u64 (MTLStoreAction)", "color_attachment_index: u64"]
+
+[[op]]
+code = 0x1602
+name = "ParallelSetColorStoreActionOptions"
+channel = "stream"
+methods = ["MTLParallelRenderCommandEncoder setColorStoreActionOptions:atIndex:"]
+args = ["store_action_options: u64 (MTLStoreActionOptions)", "color_attachment_index: u64"]
+
+[[op]]
+code = 0x1603
+name = "ParallelSetDepthStoreAction"
+channel = "stream"
+methods = ["MTLParallelRenderCommandEncoder setDepthStoreAction:"]
+args = ["store_action: u64 (MTLStoreAction)"]
+
+[[op]]
+code = 0x1604
+name = "ParallelSetDepthStoreActionOptions"
+channel = "stream"
+methods = ["MTLParallelRenderCommandEncoder setDepthStoreActionOptions:"]
+args = ["store_action_options: u64 (MTLStoreActionOptions)"]
+
+[[op]]
+code = 0x1605
+name = "ParallelSetStencilStoreAction"
+channel = "stream"
+methods = ["MTLParallelRenderCommandEncoder setStencilStoreAction:"]
+args = ["store_action: u64 (MTLStoreAction)"]
+
+[[op]]
+code = 0x1606
+name = "ParallelSetStencilStoreActionOptions"
+channel = "stream"
+methods = ["MTLParallelRenderCommandEncoder setStencilStoreActionOptions:"]
+args = ["store_action_options: u64 (MTLStoreActionOptions)"]
+
+# Events: host to guest, collected with FetchEvents. Times are nanoseconds of the embedder's monotonic clock; they
+# are not hardware GPU times.
+[[op]]
+code = 0x7001
+name = "CommandBufferScheduled"
+channel = "event"
+args = ["command_buffer: CommandBuffer", "kernel_start_time: u64"]
+doc = "The command buffer's stream was accepted and all its work submitted to the host GPU queue."
+
+[[op]]
+code = 0x7002
+name = "CommandBufferCompleted"
+channel = "event"
+args = ["command_buffer: CommandBuffer", "status: u64 (MTLCommandBufferStatus)", "failure: Failure", "failed_offset: u64", "kernel_start_time: u64", "kernel_end_time: u64", "gpu_start_time: u64", "gpu_end_time: u64"]
+doc = "The command buffer finished: status is MTLCommandBufferStatusCompleted or MTLCommandBufferStatusError. failure.status is 0 on success; failed_offset is the stream byte offset of the record that failed, 0xffffffffffffffff when no single record did. All writes the command buffer made to CPU-visible memory are in guest memory before this event is posted."
+
+[[op]]
+code = 0x7003
+name = "SharedEventListener"
+channel = "event"
+args = ["event: Event", "token: u64", "value: u64"]
+doc = "A NotifyListener registration was reached; value is the event's signaled value at that time."
+
+[[op]]
+code = 0x7004
+name = "DeviceLost"
+channel = "event"
+args = ["failure: Failure"]
+doc = "The host GPU device was lost. Every in-flight and later command buffer completes with an error."
+
+# Guest-local methods: driver-protocol methods that have no record because the guest answers them without the host.
+# reason is one of the values target_surface.py defines (profile, object-state, framework, guest-runtime, guest-memory,
+# kernel-object, unreachable, absent, unavailable); framework, absent, unavailable and unreachable are verified against
+# the 21H461 implementation layers. protocols = ["*"] means every MTL* protocol that declares the selector.
+
+[[local]]
+reason = "object-state"
+protocols = ["*"]
+selectors = ["device", "label"]
+note = "The owning device and the label are guest object state. Labels the host uses travel in SetLabel, Commit and EncoderSetLabel."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLCommandBuffer"]
+selectors = ["setLabel:"]
+note = "Carried in Commit."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLCommandBufferSPI"]
+selectors = ["setProtectionOptions:", "protectionOptions"]
+note = "Carried in Commit."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLArgumentEncoder", "MTLDynamicLibrary"]
+selectors = ["setLabel:"]
+
+[[local]]
+reason = "framework"
+protocols = ["MTLBinaryArchive", "MTLFence"]
+selectors = ["setLabel:"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLCommandQueue"]
+selectors = ["commandBuffer", "commandBufferWithUnretainedReferences", "commandBufferWithDescriptor:"]
+note = "A command buffer is a guest object until Commit, which carries its queue, retained_references and error_options (the whole MTLCommandBufferDescriptor state on 21H461)."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLCommandQueue"]
+selectors = ["insertDebugCaptureBoundary"]
+
+[[local]]
+reason = "guest-runtime"
+protocols = ["MTLCommandQueueSPI"]
+selectors = ["setCompletionQueue:", "setSubmissionQueue:"]
+note = "Dispatch queues on which the guest submits and runs handlers."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLCommandBuffer"]
+selectors = ["addCompletedHandler:", "addScheduledHandler:", "enqueue", "error", "errorOptions", "GPUEndTime", "GPUStartTime",
+             "kernelEndTime", "kernelStartTime", "status", "waitUntilCompleted", "waitUntilScheduled", "retainedReferences",
+             "logs", "commandQueue", "presentDrawable:", "presentDrawable:atTime:", "presentDrawable:afterMinimumDuration:"]
+note = "_MTLCommandBuffer implements the status machine, handlers, waits and timing fields; the plugin feeds it from CommandBufferScheduled and CommandBufferCompleted. enqueue order is kept by the framework's queue, which hands buffers to the driver's commit in that order."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLCommandBufferSPI"]
+selectors = ["commitAndWaitUntilSubmitted"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLRenderCommandEncoder"]
+selectors = ["tileWidth", "tileHeight"]
+note = "Encoder state fixed by the render pass descriptor in BeginRenderPass."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLComputeCommandEncoder"]
+selectors = ["dispatchType"]
+note = "Fixed by the BeginCompute* record."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLComputeCommandEncoderSPI"]
+selectors = ["setThreadgroupPackingDisabled:"]
+
+[[local]]
+reason = "absent"
+protocols = ["MTLRenderCommandEncoderSPI"]
+selectors = ["setClipPlane:p2:p3:p4:atIndex:", "setFragmentSamplerState:lodMinClamp:lodMaxClamp:lodBias:atIndex:",
+             "setTransformFeedbackState:", "setTriangleFrontFillMode:backFillMode:",
+             "setVertexSamplerState:lodMinClamp:lodMaxClamp:lodBias:atIndex:", "useResourceGroup:usage:stages:"]
+
+[[local]]
+reason = "absent"
+protocols = ["MTLComputeCommandEncoderSPI"]
+selectors = ["insertUncompressedToCompressedFlush", "useResourceGroup:usage:"]
+
+[[local]]
+reason = "absent"
+protocols = ["MTLCommandBufferSPI"]
+selectors = ["debugCommandEncoder"]
+
+[[local]]
+reason = "unreachable"
+factory = "MTLCommandBufferSPI debugCommandEncoder"
+protocols = ["MTLDebugCommandEncoder"]
+selectors = ["stopCapture"]
+note = "QuartzCore's reference to this selector reaches MTLCaptureManager (a Metal.framework class that implements -stopCapture); the driver's debug encoder is never handed out on 21H461."
+
+# Device ---------------------------------------------------------------------------------------------------------------
+
+[[local]]
+reason = "profile"
+protocols = ["MTLDeviceSPI"]
+selectors = ["deviceLinearReadOnlyTextureAlignmentBytes", "iosurfaceReadOnlyTextureAlignmentBytes", "maxColorAttachments",
+             "maxFragmentSamplers", "maxFragmentTextures", "maxTextureHeight2D", "maxTextureWidth2D",
+             "minConstantBufferAlignmentBytes", "productName", "vendorName", "supportsExtendedXR10Formats",
+             "supportsMemorylessRenderTargets", "supportsNativeHardwareFP16", "supportsRasterOrderGroups", "supportsSIMDGroup",
+             "supportsSIMDShuffleAndFill", "supportsTileShaders", "supportsYCBCRFormats12", "supportsYCBCRPackedFormats12"]
+
+[[local]]
+reason = "profile"
+protocols = ["MTLDeviceSPI"]
+selectors = ["newTextureLayoutWithDescriptor:isHeapOrBufferBacked:"]
+note = "The layout object reports the A10X's sizes, alignments and copy granularity for the descriptor; its numbers come from the device profile; how clients use the object is not established yet."
+
+[[local]]
+reason = "profile"
+protocols = ["MTLDevice"]
+selectors = ["counterSets", "supportsCounterSampling:", "supportsRaytracing", "supportsShaderBarycentricCoordinates", "architecture",
+             "supportsBCTextureCompression", "supportsDynamicLibraries", "supportsQueryTextureLOD",
+             "supportsVertexAmplificationCount:", "areProgrammableSamplePositionsSupported", "recommendedMaxWorkingSetSize",
+             "maxBufferLength", "hasUnifiedMemory", "heapBufferSizeAndAlignWithLength:options:",
+             "heapTextureSizeAndAlignWithDescriptor:", "maxThreadgroupMemoryLength", "maxThreadsPerThreadgroup",
+             "minimumTextureBufferAlignmentForPixelFormat:", "sparseTileSizeWithTextureType:pixelFormat:sampleCount:",
+             "sparseTileSizeWithTextureType:pixelFormat:sampleCount:sparsePageSize:"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLDevice"]
+selectors = ["registryID", "currentAllocatedSize"]
+note = "registryID is the IORegistry entry id of the accelerator service the plugin opened; currentAllocatedSize is the guest's sum of its allocations under the device profile's size arithmetic."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLDevice"]
+selectors = ["supportsFunctionPointers", "supportsFunctionPointersFromRender", "newComputePipelineStateWithFunction:error:",
+             "newComputePipelineStateWithFunction:options:reflection:error:", "newComputePipelineStateWithFunction:completionHandler:",
+             "newComputePipelineStateWithFunction:options:completionHandler:", "minimumLinearTextureAlignmentForPixelFormat:",
+             "sparseTileSizeInBytes", "supportsRasterizationRateMapWithLayerCount:", "newArgumentEncoderWithArguments:",
+             "supportsPrimitiveMotionBlur", "supportsFeatureSet:", "supportsPullModelInterpolation", "newSharedTextureWithHandle:",
+             "newSharedEventWithHandle:", "supports32BitMSAA", "areBarycentricCoordsSupported", "newSharedEvent",
+             "argumentBuffersSupport", "newSharedTextureWithDescriptor:", "getDefaultSamplePositions:count:",
+             "newLibraryWithURL:error:", "supports32BitFloatFiltering", "newLibraryWithStitchedDescriptor:error:",
+             "newLibraryWithStitchedDescriptor:completionHandler:", "supportsTextureSampleCount:", "supportsRaytracingFromRender",
+             "newArgumentEncoderWithBufferBinding:", "readWriteTextureSupport", "supportsRenderDynamicLibraries",
+             "newCommandQueueWithMaxCommandBufferCount:", "newDefaultLibraryWithBundle:error:", "supportsFamily:",
+             "areRasterOrderGroupsSupported", "maxArgumentBufferSamplerCount", "sparseTileSizeInBytesForSparsePageSize:", "name",
+             "convertSparseTileRegions:toPixelRegions:withTileSize:numRegions:",
+             "convertSparsePixelRegions:toTileRegions:withTileSize:alignmentMode:numRegions:"]
+note = "_MTLDevice implements these on 21H461 and calls into driver hooks the plugin provides (the descriptor forms of pipeline creation, newCommandQueueWithDescriptor:, initLimits and the feature tables); a shared event is an IOSurfaceSharedEvent the framework creates."
+
+[[local]]
+reason = "unavailable"
+protocols = ["MTLDevice"]
+selectors = ["isLowPower", "isHeadless", "isRemovable", "isDepth24Stencil8PixelFormatSupported"]
+note = "API_UNAVAILABLE(ios) in the SDK headers."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLLibrary"]
+selectors = ["newFunctionWithDescriptor:error:"]
+
+[[local]]
+reason = "framework"
+protocols = ["MTLDrawable"]
+selectors = ["addPresentedHandler:", "drawableID", "present", "presentAfterMinimumDuration:", "presentAtTime:", "presentedTime"]
+note = "Drawables are QuartzCore objects (CAMetalDrawable); presentation reaches the GPU as IOSurface textures."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLDrawableSPI"]
+selectors = ["addPresentScheduledHandler:", "presentWithOptions:"]
+
+[[local]]
+reason = "framework"
+protocols = ["MTLCaptureScope"]
+selectors = ["beginScope", "endScope"]
+
+[[local]]
+reason = "framework"
+protocols = ["MTLArgumentCompat"]
+selectors = ["isActive"]
+
+# Resources ------------------------------------------------------------------------------------------------------------
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLResource"]
+selectors = ["hazardTrackingMode", "storageMode", "cpuCacheMode", "resourceOptions", "allocatedSize", "heap", "heapOffset"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLResourceSPI"]
+selectors = ["protectionOptions"]
+
+[[local]]
+reason = "guest-runtime"
+protocols = ["MTLResourceSPI"]
+selectors = ["waitUntilComplete"]
+note = "Waits until no committed command buffer that uses the resource is outstanding, from CommandBufferCompleted events."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLBuffer"]
+selectors = ["contents", "length"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLTexture"]
+selectors = ["depth", "mipmapLevelCount", "swizzle", "arrayLength", "allowGPUOptimizedContents", "buffer", "textureType", "usage",
+             "height", "pixelFormat", "iosurfacePlane", "rootResource", "sampleCount", "bufferOffset", "parentTexture", "iosurface",
+             "bufferBytesPerRow", "parentRelativeLevel", "width", "parentRelativeSlice", "compressionType"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLTextureSPI"]
+selectors = ["iosurface", "rotation"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLHeap"]
+selectors = ["hazardTrackingMode", "storageMode", "cpuCacheMode", "currentAllocatedSize", "resourceOptions", "usedSize", "type", "size"]
+note = "Heap accounting follows Metal's arithmetic with the device profile's sizes."
+
+[[local]]
+reason = "framework"
+protocols = ["MTLHeap"]
+selectors = ["newBufferWithLength:options:offset:", "newTextureWithDescriptor:offset:"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLHeapSPI"]
+selectors = ["protectionOptions"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLSamplerStateSPI"]
+selectors = ["pixelFormat"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLIndirectCommandBuffer"]
+selectors = ["size"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLAccelerationStructure"]
+selectors = ["size"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLAccelerationStructureSPI"]
+selectors = ["descriptor"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLBinaryArchiveSPI"]
+selectors = ["options"]
+
+[[local]]
+reason = "framework"
+protocols = ["MTLBinaryArchive"]
+selectors = ["serializeToURL:error:"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLComputePipelineState"]
+selectors = ["maxTotalThreadsPerThreadgroup", "threadExecutionWidth", "staticThreadgroupMemoryLength", "supportIndirectCommandBuffers"]
+note = "Fixed by the guest at pipeline creation; which value the A10X reports for a given pipeline is not established yet."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLRenderPipelineState"]
+selectors = ["maxTotalThreadsPerThreadgroup", "imageblockSampleLength", "supportIndirectCommandBuffers", "threadgroupSizeMatchesTileSize"]
+note = "Fixed by the guest at pipeline creation; which value the A10X reports for a given pipeline is not established yet."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLFunctionHandle"]
+selectors = ["name"]
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLArgumentEncoder"]
+selectors = ["alignment"]
+
+[[local]]
+reason = "guest-memory"
+protocols = ["MTLArgumentEncoder"]
+selectors = ["setBuffer:offset:atIndex:", "setTexture:atIndex:"]
+note = "Writes handle words (the object's wire handle; 0 for nil) into the argument buffer at the layout's offsets."
+
+[[local]]
+reason = "guest-memory"
+protocols = ["MTLIndirectRenderCommand"]
+selectors = ["setFragmentBuffer:offset:atIndex:", "setRenderPipelineState:", "setVertexBuffer:offset:atIndex:"]
+note = "Writes the indirect command buffer's guest memory, in a layout this schema does not define yet."
+
+[[local]]
+reason = "guest-memory"
+protocols = ["MTLIndirectComputeCommand"]
+selectors = ["setComputePipelineState:", "setThreadgroupMemoryLength:atIndex:"]
+note = "Writes the indirect command buffer's guest memory, in a layout this schema does not define yet."
+
+[[local]]
+reason = "guest-memory"
+protocols = ["MTLIndirectRenderCommandEncoder", "MTLIndirectComputeCommandEncoder"]
+selectors = ["objectAtIndexedSubscript:"]
+note = "Returns the guest view of one command of an indirect command buffer."
+
+[[local]]
+reason = "object-state"
+protocols = ["MTLTextureLayout"]
+selectors = ["alignment", "size"]
+note = "Device-profile values of the layout object (see newTextureLayoutWithDescriptor:isHeapOrBufferBacked:)."
+
+[[local]]
+reason = "guest-memory"
+protocols = ["MTLTextureLayout"]
+selectors = ["copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:",
+             "initializeTextureMemory:", "finalizeTextureMemory:"]
+note = "CPU copies between two guest memory blocks; the texture-memory layout is the one the layout object reports."
+
+[[local]]
+reason = "kernel-object"
+protocols = ["MTLSharedEvent"]
+selectors = ["notifyListener:atValue:block:", "setSignaledValue:", "signaledValue", "waitUntilSignaledValue:timeoutMS:"]
+note = "On 21H461 _MTLSharedEvent derives from IOSurfaceSharedEvent: IOSurface.framework serves these against the kernel's shared event. Command streams refer to the event through RegisterSharedEvent."
