@@ -5,8 +5,8 @@
 // the texture out in its private memory format (AGX::Texture, the AGX layout), and creates the kernel resource. The
 // plugin calls the same validation, and the host executor holds the texture's contents (CreateTexture and the other
 // creation requests). The AGX layout's sizes, alignment and row pitch come from the port of AGX::TextureGen2
-// (WebMetalTextureLayout.h) for device and heap textures; textures over IOSurfaces, buffers and caller memory have no
-// layout here, and what depends on it is LOUD for them.
+// (WebMetalTextureLayout.h) for device and heap textures and their views; textures over IOSurfaces, buffers and caller
+// memory have no layout here, and what depends on it is LOUD for them.
 
 #import "WebMetalTexture.h"
 #import "WebMetalBuffer.h"
@@ -17,7 +17,9 @@
 
 #include <IOSurface/IOSurfaceRef.h>
 
+#include <algorithm>
 #include <cstring>
+#include <unistd.h>
 
 // The class adopts the protocols AGXA10FamilyTexture adopts and implements only what the 21H461 driver layers
 // implement; the protocols' other methods are LOUD stubs added at run time (guest/Plugin/WebMetalStubs.mm).
@@ -35,7 +37,21 @@ uint32_t MTLTextureSwizzleChannelsToKey(MTLTextureSwizzleChannels channels);
 uint32_t IOSurfaceGetCompressionTypeOfPlane(IOSurfaceRef surface, size_t plane);
 Boolean IOSurfaceIsTiled(IOSurfaceRef surface);
 size_t IOSurfaceGetSliceCount(IOSurfaceRef surface);
+// Metal.framework's texture-view checks, which -[IOGPUMetalTexture initWithTextureInternal:...] calls. They report
+// through MTLReportFailure.
+void _mtlValidateMTLTextureSwizzleKey(uint32_t key);
+void _mtlValidateArgumentsForTextureViewOnDevice(id<MTLDevice> device, id<MTLTexture> texture, MTLPixelFormat pixelFormat,
+                                                 MTLTextureType textureType, NSUInteger levelLocation,
+                                                 NSUInteger levelLength, NSUInteger sliceLocation,
+                                                 NSUInteger sliceLength, BOOL compressedView);
+MTLTextureUsage MTLGetDisallowedTextureUsagesWhenSwizzling(id<MTLDevice> device, BOOL writeSwizzleEnabled);
+void _mtlValidateTextureUsage(MTLTextureUsage usage);
 }
+
+// -[_MTLDevice supportsTextureSwizzle] (Metal.framework), which the plugin's device inherits.
+@protocol WMTextureSwizzleSupport
+- (BOOL)supportsTextureSwizzle;
+@end
 
 namespace {
 
@@ -79,15 +95,20 @@ constexpr uint64_t kKernelPageSize = 0x4000;
     void *_pointer;                      // _pointer: caller memory of a no-copy texture
     void (^_deallocator)(void *pointer, NSUInteger length);  // _deallocator
     NSUInteger _noCopyLength;
-    // AGXTexture's layout answers, for device and heap textures (_hasLayout).
+    // AGXTexture's layout answers and AGXA10FamilyTexture's layout object (_impl), for device, heap and view textures
+    // (_hasLayout).
     bool _hasLayout;
     uint64_t _alignment;     // _alignment
     uint64_t _cpuSizeBytes;  // _cpuSizeBytes
     uint64_t _bytesPerRow;   // _bytesPerRow
+    webmetal::agx::TextureGen2 _layout;  // _impl
     // The driver sub-allocates the texture (-[AGXTexture initWithDevice:desc:isSuballocDisabled:]): its allocated size
     // is its CPU size, which it adds to the device total (_accounted).
     bool _suballocated;
     int64_t _accounted;
+    // _res.info.resourceSize has no source: the kernel resource of a sub-allocated texture (a texture over the
+    // sub-allocator's buffer), which the texture's views share.
+    bool _resourceSizeUnknown;
 }
 @end
 
@@ -241,6 +262,7 @@ static void setLayout(WebMetalTexture *texture, const agx::TextureAllocation &la
     texture->_alignment = layout.alignment;
     texture->_cpuSizeBytes = layout.cpuSizeBytes;
     texture->_bytesPerRow = layout.bytesPerRow;
+    texture->_layout = layout.layout;
 }
 
 // -[AGXTexture initWithDevice:desc:isSuballocDisabled:] (AGXMetalA10 0x21c9d48a8): Metal's descriptor validation, then
@@ -267,6 +289,7 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
                              layout.cpuSizeBytes < PageSize() && !(layout.textureData58 & 1) &&
                              !SuballocationDisabled() && SuballocatorServes(layout.cpuSizeBytes, options) &&
                              layout.alignment <= 0x20000;
+    texture->_resourceSizeUnknown = texture->_suballocated;
     // Otherwise -[IOGPUMetalTexture initWithDevice:descriptor:sysMemSize:...] creates the kernel resource with the CPU
     // size as its system memory (IOGPU 0x1fcb2c870), whose resident size is that size rounded up to the kernel page;
     // a memoryless texture has no kernel resource and a resident size of 0 (IOGPU 0x1fcb2bbe8).
@@ -421,24 +444,192 @@ WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescript
     return texture;
 }
 
+// What a view is made of. The pixel-format forms take the parent's type, all its levels and all its slices
+// (-[AGXTexture initWithTexture:pixelFormat:resourceIndex:], AGXMetalA10 0x21c9d56a4: levels (0, _mipmapLevelCount),
+// slices (0, _arrayLength * _numFaces)); the forms without a swizzle keep the parent's. The resource index (0 where it
+// is not given) reaches initImpl, which does not read it; the host receives it with the request.
+struct ViewArguments {
+    MTLPixelFormat pixelFormat;
+    MTLTextureType textureType;
+    NSRange levels;
+    NSRange slices;
+    bool hasSwizzle;
+    MTLTextureSwizzleChannels swizzle;
+};
+
+static ViewArguments wholeView(WebMetalTexture *parent, MTLPixelFormat pixelFormat)
+{
+    return ViewArguments{pixelFormat,
+                         parent->_textureType,
+                         NSMakeRange(0, parent->_mipmapLevelCount),
+                         NSMakeRange(0, parent->_arrayLength * parent->_numFaces),
+                         false,
+                         MTLTextureSwizzleChannels{}};
+}
+
+// -[AGXTexture initWithTexture:pixelFormat:textureType:levels:slices:swizzle:resourceIndex:] (AGXMetalA10 0x21c9d57f4)
+// and its form without a swizzle (0x21c9d5714): the AGX layout of the view first, which is nil when the parent is
+// memoryless or the view's layout is not valid; then -[IOGPUMetalTexture initWithTextureInternal:pixelFormat:
+// textureType:levels:slices:swizzle:compressedView:NO] (IOGPU 0x1fcb2762c), reached through initWithTexture:pixelFormat:
+// textureType:levels:slices:swizzle: (0x1fcb3aa04) or, without a swizzle, initWithTexture:pixelFormat:textureType:
+// levels:slices: (0x1fcb27594), which passes the parent's -swizzle. (updateBindDataWithTexture:... and
+// finalizeTextureCreation then fill the GPU descriptors, which nothing the plugin answers reads.)
+static WebMetalTexture *newView(WebMetalTexture *parent, SEL _cmd, const ViewArguments &a)
+{
+    // -[AGXA10FamilyTexture initImplWithTexture:...] (0x21c98172c, 0x21c981074) builds the view's layout from the
+    // parent's layout object, with the swizzle the method was given (its channels, as the u32 they pack into) or the
+    // parent's layout swizzle (+0xbc).
+    if (!parent->_hasLayout)
+        WMLoudMethod(parent, _cmd, "a view of a texture over an IOSurface, a buffer or caller memory: the A10X layout "
+                                   "(AGX::TextureGen2) of its parent is not ported");
+    uint32_t layoutSwizzle = parent->_layout.swizzle;
+    if (a.hasSwizzle)
+        std::memcpy(&layoutSwizzle, &a.swizzle, sizeof layoutSwizzle);
+    const agx::TextureAllocation layout =
+        agx::initImplView(parent->_layout, a.pixelFormat, a.textureType, a.levels.location, a.levels.length,
+                          a.slices.length, layoutSwizzle, LayoutSystemValues());
+    if (!layout.initialized)
+        return nil;
+
+    // -[IOGPUMetalTexture initWithTextureInternal:...]: Metal's checks of the swizzle and of the view's arguments.
+    WebMetalDevice *device = parent->_state.device;
+    const uint32_t key = MTLTextureSwizzleChannelsToKey(a.hasSwizzle ? a.swizzle : parent.swizzle);
+    _mtlValidateMTLTextureSwizzleKey(key);
+    _mtlValidateArgumentsForTextureViewOnDevice(device, parent, a.pixelFormat, a.textureType, a.levels.location,
+                                                a.levels.length, a.slices.location, a.slices.length, NO);
+    WebMetalTexture *view = [WebMetalTexture new];
+    setLayout(view, layout);
+    view->_resourceSizeUnknown = parent->_resourceSizeUnknown;
+
+    // -[IOGPUMetalResource initWithResource:] (IOGPU 0x1fcb2acc8) takes the parent's device and shares its kernel
+    // resource (_res.resourceRef, retained), whose info it copies (the IOSurface and the resource size; the kernel
+    // resource's protection options are then the parent's); it copies the options, storage and CPU cache modes and the
+    // purgeable state, takes getpid() as the responsible process, and makes the view not purgeable. The view has no
+    // label of its own.
+    ResourceState &state = view->_state;
+    const ResourceState &from = parent->_state;
+    state.device = device;
+    state.iosurface = from.iosurface ? (IOSurfaceRef)CFRetain(from.iosurface) : nullptr;
+    state.residentSize = from.residentSize;
+    state.protectionOptions = from.protectionOptions;
+    state.options = from.options;
+    state.storageMode = from.storageMode;
+    state.cpuCacheMode = from.cpuCacheMode;
+    state.responsibleProcess = getpid();
+    state.purgeableState = from.purgeableState;
+    state.purgeableAllowed = false;
+
+    view->_parentTexture = parent;
+    view->_buffer = parent->_buffer;
+    view->_parentRelativeLevel = a.levels.location;
+    view->_parentRelativeSlice = a.slices.location;
+    if (view->_buffer && a.levels.length != 1)
+        WMLoudMethod(parent, _cmd, "21H461 IOGPU asserts levelRange.length == 1 for a view of a buffer's texture");
+    if (view->_buffer && a.slices.length != 1)
+        WMLoudMethod(parent, _cmd, "21H461 IOGPU asserts sliceRange.length == 1 for a view of a buffer's texture");
+    view->_bufferOffset = parent->_bufferOffset;
+    view->_bufferBytesPerRow = parent->_bufferBytesPerRow;
+    view->_textureType = a.textureType;
+    // The parent's size at the view's first level (a 64-bit shift, by the level modulo 64), at least 1.
+    const unsigned shift = a.levels.location & 63;
+    view->_width = std::max<NSUInteger>(parent->_width >> shift, 1);
+    view->_height = std::max<NSUInteger>(parent->_height >> shift, 1);
+    view->_depth = std::max<NSUInteger>(parent->_depth >> shift, 1);
+    view->_pixelFormat = a.pixelFormat;
+    view->_usage = parent->_usage;
+    view->_numFaces = a.textureType - MTLTextureTypeCube < 2 ? 6 : 1;
+    view->_arrayLength = a.slices.length / view->_numFaces;
+    view->_mipmapLevelCount = a.levels.length;
+    view->_sampleCount = parent->_sampleCount;
+    view->_rotation = parent->_rotation;
+    view->_swizzle = key;
+    view->_writeSwizzleEnabled = parent->_writeSwizzleEnabled;
+    // A swizzled view on a device that supports swizzling loses the usages swizzling disallows
+    // (MTLGetDisallowedTextureUsagesWhenSwizzling: write and render target unless write swizzle is enabled).
+    if ([(id<WMTextureSwizzleSupport>)device supportsTextureSwizzle] && key != 0x05040302) {
+        if (view->_usage == MTLTextureUsageUnknown)
+            WMLoudMethod(parent, _cmd, "21H461 IOGPU asserts _usage != MTLTextureUsageUnknown for a swizzled view");
+        view->_usage &= ~MTLGetDisallowedTextureUsagesWhenSwizzling(device, view->_writeSwizzleEnabled);
+        _mtlValidateTextureUsage(view->_usage);
+    }
+    view->_shareable = false;
+    view->_framebufferOnly = parent->_framebufferOnly;
+    view->_iosurfacePlane = parent->_iosurfacePlane;
+    view->_isDrawable = parent->_isDrawable;
+    view->_allowGPUOptimizedContents = parent->_allowGPUOptimizedContents;
+    // The parent's heap (retained), its range in it and whether it is pinned. (IOGPU asserts that the view's
+    // _iosurface, copied from the parent, is the surface of the shared kernel resource: the plugin keeps one field for
+    // both.)
+    state.heap = from.heap;
+    state.heapOffset = from.heapOffset;
+    state.heapLength = from.heapLength;
+    state.pinned = from.pinned;
+    // The host holds the view as its own object over the parent's contents.
+    state.handle = DeviceConnection(device)->NewHandle();
+    return view;
+}
+
+// -[AGXTexture newTextureViewWithPixelFormat:...] (AGXMetalA10 0x21c9d59a4 and the five that follow):
+// [[[self class] alloc] initWithTexture:self ...]. The host creates the view (CreateTextureView and the other view
+// requests).
+template <class ReplyFields, class Request>
+static WebMetalTexture *NewTextureView(WebMetalTexture *parent, SEL _cmd, const ViewArguments &a, Request request)
+{
+    WebMetalTexture *view = newView(parent, _cmd, a);
+    if (!view)
+        return nil;
+    request.texture = parent->_state.handle;
+    request.view = view->_state.handle;
+    wire::Reply<ReplyFields> reply;
+    DeviceConnection(view->_state.device)->Call(parent, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(parent, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+    view->_state.created = true;
+    return view;
+}
+
+static wire::Range wireRange(NSRange range)
+{
+    wire::Range r;
+    r.location = range.location;
+    r.length = range.length;
+    return r;
+}
+
+static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzle)
+{
+    wire::TextureSwizzleChannels s;
+    s.red = swizzle.red;
+    s.green = swizzle.green;
+    s.blue = swizzle.blue;
+    s.alpha = swizzle.alpha;
+    return s;
+}
+
 }  // namespace webmetal
 
 @implementation WebMetalTexture
 
-// -[IOGPUMetalTexture dealloc] releases the parent, buffer and surface and runs a no-copy deallocator after the kernel
-// resource is gone; here Release goes first so that the host has stopped using caller memory when it is handed back.
+// -[IOGPUMetalTexture dealloc] (IOGPU 0x1fcb2b634) releases the parent, buffer and surface and runs a no-copy
+// deallocator after the kernel resource is gone; here Release goes first so that the host has stopped using caller
+// memory when it is handed back. A heap resource that is not memoryless makes itself aliasable, and gives its range back
+// to the heap unless it is a view or a buffer's texture: a view's range is its parent's, which the view's
+// makeAliasable unpins. A view the host never created was never handed out and leaves its parent's range alone. A view
+// shares its parent's kernel resource and adds nothing to the device's total.
 - (void)dealloc
 {
     using namespace webmetal;
-    if (_state.created && !_state.heap) {
+    if (_state.created && !_state.heap && !_parentTexture) {
         if (_hasLayout)
             DeviceAddAllocation(_state.device, -_accounted);
         else
             DeviceAddUnsized(_state.device, -1);
     }
-    if (_state.heap) {
+    if (_state.heap && (_state.options & kStorageModeMask) != (uint64_t(MTLStorageModeMemoryless) << kStorageModeShift) &&
+        (_state.created || !_parentTexture)) {
         MakeAliasable(self, _cmd, _state, true);
-        [(WebMetalHeap *)_state.heap deallocHeapSubResource];
+        if (!_buffer && !_parentTexture)
+            [(WebMetalHeap *)_state.heap deallocHeapSubResource];
     }
     ReleaseObject(_state, "-[WebMetalTexture dealloc]");
     if (_deallocator) {
@@ -515,13 +706,18 @@ WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescript
 }
 
 // -[IOGPUMetalTexture allocatedSize] (0x1fcb3a7bc): a sub-allocated texture's length (its CPU size); otherwise
-// -[IOGPUMetalResource allocatedSize] (0x1fcb3a10c): a heap texture's range length, or the kernel resource's size.
+// -[IOGPUMetalResource allocatedSize] (0x1fcb3a10c): a heap texture's range length, or the kernel resource's size
+// (-resourceSize, 0x1fcb2e758: _res.info.resourceSize). A view has no sub-allocation of its own (_primaryBuffer is not
+// copied) and answers with its parent's heap range or the parent's kernel resource size, which it copied.
 - (NSUInteger)allocatedSize
 {
     if (_suballocated)
         return _cpuSizeBytes;
     if (_state.heap)
         return _state.heapLength;
+    if (_parentTexture && _resourceSizeUnknown)
+        WMLoudMethod(self, _cmd, "the kernel resource size of a sub-allocated texture (a texture over the sub-allocator's "
+                                 "buffer), which its views report, is not established for 21H461");
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
     return _state.residentSize;
@@ -772,6 +968,100 @@ WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescript
 - (void *)virtualAddress
 {
     WMLoudMethod(self, _cmd, "a texture's memory in the AGX layout has no guest mapping");
+}
+
+// Views ----------------------------------------------------------------------------------------------------------------
+
+// -[AGXTexture newTextureViewWithPixelFormat:] (AGXMetalA10 0x21c9d59a4).
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat
+{
+    using namespace webmetal;
+    wire::CreateTextureView request;
+    request.pixelFormat = pixelFormat;
+    return NewTextureView<wire::CreateTextureViewReply>(self, _cmd, wholeView(self, pixelFormat), request);
+}
+
+// -[AGXTexture newTextureViewWithPixelFormat:textureType:levels:slices:] (AGXMetalA10 0x21c9d59d4).
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat
+                                    textureType:(MTLTextureType)textureType
+                                         levels:(NSRange)levels
+                                         slices:(NSRange)slices
+{
+    using namespace webmetal;
+    wire::CreateTextureViewLevelsSlices request;
+    request.pixelFormat = pixelFormat;
+    request.textureType = textureType;
+    request.levelRange = wireRange(levels);
+    request.sliceRange = wireRange(slices);
+    const ViewArguments a{pixelFormat, textureType, levels, slices, false, MTLTextureSwizzleChannels{}};
+    return NewTextureView<wire::CreateTextureViewLevelsSlicesReply>(self, _cmd, a, request);
+}
+
+// -[AGXTexture newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:] (AGXMetalA10 0x21c9d5a4c).
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat
+                                    textureType:(MTLTextureType)textureType
+                                         levels:(NSRange)levels
+                                         slices:(NSRange)slices
+                                        swizzle:(MTLTextureSwizzleChannels)swizzle
+{
+    using namespace webmetal;
+    wire::CreateTextureViewLevelsSlicesSwizzle request;
+    request.pixelFormat = pixelFormat;
+    request.textureType = textureType;
+    request.levelRange = wireRange(levels);
+    request.sliceRange = wireRange(slices);
+    request.swizzle = wireSwizzle(swizzle);
+    const ViewArguments a{pixelFormat, textureType, levels, slices, true, swizzle};
+    return NewTextureView<wire::CreateTextureViewLevelsSlicesSwizzleReply>(self, _cmd, a, request);
+}
+
+// -[AGXTexture newTextureViewWithPixelFormat:resourceIndex:] (AGXMetalA10 0x21c9d5acc).
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat resourceIndex:(NSUInteger)resourceIndex
+{
+    using namespace webmetal;
+    wire::CreateTextureViewResourceIndex request;
+    request.pixelFormat = pixelFormat;
+    request.resourceIndex = resourceIndex;
+    return NewTextureView<wire::CreateTextureViewResourceIndexReply>(self, _cmd, wholeView(self, pixelFormat), request);
+}
+
+// -[AGXTexture newTextureViewWithPixelFormat:textureType:levels:slices:resourceIndex:] (AGXMetalA10 0x21c9d5b0c).
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat
+                                    textureType:(MTLTextureType)textureType
+                                         levels:(NSRange)levels
+                                         slices:(NSRange)slices
+                                  resourceIndex:(NSUInteger)resourceIndex
+{
+    using namespace webmetal;
+    wire::CreateTextureViewLevelsSlicesResourceIndex request;
+    request.pixelFormat = pixelFormat;
+    request.textureType = textureType;
+    request.levels = wireRange(levels);
+    request.slices = wireRange(slices);
+    request.resourceIndex = resourceIndex;
+    const ViewArguments a{pixelFormat, textureType, levels, slices, false, MTLTextureSwizzleChannels{}};
+    return NewTextureView<wire::CreateTextureViewLevelsSlicesResourceIndexReply>(self, _cmd, a, request);
+}
+
+// -[AGXTexture newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:resourceIndex:] (AGXMetalA10
+// 0x21c9d5b8c).
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)pixelFormat
+                                    textureType:(MTLTextureType)textureType
+                                         levels:(NSRange)levels
+                                         slices:(NSRange)slices
+                                        swizzle:(MTLTextureSwizzleChannels)swizzle
+                                  resourceIndex:(NSUInteger)resourceIndex
+{
+    using namespace webmetal;
+    wire::CreateTextureViewLevelsSlicesSwizzleResourceIndex request;
+    request.pixelFormat = pixelFormat;
+    request.textureType = textureType;
+    request.levels = wireRange(levels);
+    request.slices = wireRange(slices);
+    request.swizzle = wireSwizzle(swizzle);
+    request.resourceIndex = resourceIndex;
+    const ViewArguments a{pixelFormat, textureType, levels, slices, true, swizzle};
+    return NewTextureView<wire::CreateTextureViewLevelsSlicesSwizzleResourceIndexReply>(self, _cmd, a, request);
 }
 
 // CPU access -----------------------------------------------------------------------------------------------------------
