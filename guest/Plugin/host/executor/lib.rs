@@ -10,9 +10,9 @@
 //! The executor and its WebGPU device belong to one thread, started by [`webmetal_shim_executor_start`]. Requests from
 //! any thread queue to it and wait for their replies. Between requests the thread keeps the executor's GPU work moving.
 //!
-//! The executor serves the memory module's requests and coherence, the state service's sampler states, the render
-//! path's depth-stencil states, and records render, compute and blit encoders with the render, compute and blit
-//! services.
+//! The executor serves the memory module's requests and coherence, the state service's sampler states, the pipeline
+//! service's functions, pipelines and binary archives, the render path's depth-stencil states, and records render,
+//! compute and blit encoders with the render, compute and blit services.
 //!
 //! Shared events are this process's IOSurface shared events, which the shim reaches through the callbacks it registers
 //! with [`webmetal_shim_executor_set_shared_events`]; a CPU-side signal it observes reaches the executor through
@@ -40,7 +40,9 @@ use webmetal_host::gpu::scope::{Granularity, Policy};
 use webmetal_host::gpu::{Adapter as _, Device as _, Gpu as _, negotiate};
 use webmetal_host::blit::BlitService;
 use webmetal_host::compute::ComputeService;
+use webmetal_host::gpu::ExceptionKind;
 use webmetal_host::mem::service::MemoryServices;
+use webmetal_host::pipeline::{self, PipelineServices};
 use webmetal_host::render::RenderServices;
 use webmetal_host::state::StateServices;
 use webmetal_wire::{Event, Handle, Request, SurfaceId};
@@ -424,12 +426,21 @@ fn set_up() -> Result<(NativeGpu, Exec, Rc<InProcess>), String> {
         .block_on(MemoryServices::new(&device, features, embedder.clone()), STALL)
         .map_err(|s| format!("memory set-up stalled: {s:?}"))?
         .map_err(|e| format!("memory set-up: {e}"))?;
+    // wgpu-native does not implement wgslLanguageFeatures; an implementation that does not report its extensions is
+    // taken to offer none, so a pipeline that needs one is refused rather than assumed to work.
+    let wgsl = match gpu.wgsl_language_features() {
+        Ok(f) => f,
+        Err(e) if e.kind == ExceptionKind::Unsupported => Default::default(),
+        Err(e) => return Err(format!("wgslLanguageFeatures: {e}")),
+    };
+    let pipelines = PipelineServices::<Native>::new(&device, wgsl, pipeline::Config::default());
     // The memory module's buffers and textures are the ones the encoder services record their passes over.
     let render = RenderServices::new(memory.memory());
     let services = Services {
         control: vec![
             memory.control() as Box<dyn ControlService<Native, InProcess>>,
             Box::new(StateServices::new()),
+            pipelines.control(),
             render.control(),
         ],
         render: Some(render.encoder()),
