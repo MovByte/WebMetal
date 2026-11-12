@@ -8,6 +8,7 @@
 // requests (sysMemSize: the length rounded up to the page size, or the length for caller memory).
 
 #import "WebMetalBuffer.h"
+#import "WebMetalTexture.h"
 
 #include <mach/mach.h>
 
@@ -91,11 +92,25 @@ void reportInitFailures(MTLResourceOptions options, bool callerMemory)
 
 namespace webmetal {
 
+ResourceState *TextureState(WebMetalTexture *texture);
+
 ResourceState *StateOf(id resource)
 {
     if ([resource isKindOfClass:[WebMetalBuffer class]])
         return &static_cast<WebMetalBuffer *>(resource)->_state;
+    if ([resource isKindOfClass:[WebMetalTexture class]])
+        return TextureState(static_cast<WebMetalTexture *>(resource));
     return nullptr;
+}
+
+uint64_t BufferHandle(WebMetalBuffer *buffer)
+{
+    return buffer->_state.handle;
+}
+
+void *BufferContents(WebMetalBuffer *buffer)
+{
+    return buffer->_contents;
 }
 
 // The steps the driver's dedicated and sub-allocated paths share once the kernel resource exists: the buffer joins the
@@ -437,6 +452,23 @@ WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer,
     DeviceConnection(_state.device)->Call(self, _cmd, request, &reply);
     if (!reply.ok)
         WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+}
+
+// -[AGXA10FamilyBuffer newTextureWithDescriptor:offset:bytesPerRow:] (AGXMetalA10 0x21c8c6374).
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
+                                    offset:(NSUInteger)offset
+                               bytesPerRow:(NSUInteger)bytesPerRow
+{
+    return webmetal::NewBufferTexture(self, _cmd, descriptor, offset, bytesPerRow, false, 0);
+}
+
+// -[IOGPUMetalBuffer newLinearTextureWithDescriptor:offset:bytesPerRow:bytesPerImage:] (IOGPU 0x1fcb2dfd8).
+- (id<MTLTexture>)newLinearTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
+                                          offset:(NSUInteger)offset
+                                     bytesPerRow:(NSUInteger)bytesPerRow
+                                   bytesPerImage:(NSUInteger)bytesPerImage
+{
+    return webmetal::NewBufferTexture(self, _cmd, descriptor, offset, bytesPerRow, true, bytesPerImage);
 }
 
 // -[IOGPUMetalBuffer iosurface] (0x1fcb2df38).

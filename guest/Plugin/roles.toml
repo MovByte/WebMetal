@@ -11,3 +11,7 @@ target = "AGXA10XDevice"
 [[class]]
 name = "WebMetalBuffer"
 target = "AGXA10FamilyBuffer"
+
+[[class]]
+name = "WebMetalTexture"
+target = "AGXA10FamilyTexture"

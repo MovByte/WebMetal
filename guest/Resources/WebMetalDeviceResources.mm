@@ -2,6 +2,7 @@
 // of WebMetalDevice.
 
 #import "WebMetalBuffer.h"
+#import "WebMetalTexture.h"
 
 // The class adopts the protocols that declare these methods; this category, not the class, implements them.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
@@ -33,10 +34,44 @@
 
 // -[IOGPUMetalDevice currentAllocatedSize] (IOGPU 0x1fcb2be10) asks the kernel for the device's allocation total; the
 // WebMetal service's total is the sum of the allocated sizes of the device's live resources (wire schema, guest-local
-// methods).
+// methods). A live texture's size depends on the AGX layout, which has no source yet.
 - (NSUInteger)currentAllocatedSize
 {
+    if (webmetal::DeviceUnsizedCount(self))
+        WMLoudMethod(self, _cmd, "a live texture's allocated size depends on the A10X texture layout, not established");
     return static_cast<NSUInteger>(webmetal::DeviceAllocatedSize(self));
+}
+
+// -[AGXA10FamilyDevice newTextureWithDescriptor:] (AGXMetalA10 0x21c8d64a4).
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
+{
+    return webmetal::NewDeviceTexture(self, _cmd, descriptor);
+}
+
+// -[AGXA10FamilyDevice newTextureWithDescriptor:iosurface:plane:] (AGXMetalA10 0x21c8d64e8).
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
+                                 iosurface:(IOSurfaceRef)iosurface
+                                     plane:(NSUInteger)plane
+{
+    return webmetal::NewSurfaceTexture(self, _cmd, descriptor, iosurface, plane, 0);
+}
+
+// -[AGXA10FamilyDevice newTextureWithDescriptor:iosurface:plane:slice:] (AGXMetalA10 0x21c8d65bc).
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
+                                 iosurface:(IOSurfaceRef)iosurface
+                                     plane:(NSUInteger)plane
+                                     slice:(NSUInteger)slice
+{
+    return webmetal::NewSurfaceTexture(self, _cmd, descriptor, iosurface, plane, slice);
+}
+
+// -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] (AGXMetalA10 0x21c8d62cc).
+- (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes
+                                     length:(NSUInteger)length
+                                 descriptor:(MTLTextureDescriptor *)descriptor
+                                deallocator:(void (^)(void *pointer, NSUInteger length))deallocator
+{
+    return webmetal::NewNoCopyTexture(self, _cmd, bytes, length, descriptor, deallocator);
 }
 
 @end

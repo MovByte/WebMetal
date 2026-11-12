@@ -54,6 +54,8 @@ bool prepareClasses()
     std::unique_ptr<webmetal::Connection> _connection;
     // The allocated sizes of the device's live resources (currentAllocatedSize).
     std::atomic<int64_t> _allocated;
+    // Live resources whose allocated size has no source yet (guest/Resources/WebMetalResources.h).
+    std::atomic<int64_t> _unsized;
     // IOGPUMetalDevice._deviceWrapper: the object Metal.framework wraps the device in (its debug layer), held weakly.
     __weak id _deviceWrapper;
 }
@@ -74,6 +76,16 @@ void DeviceAddAllocation(WebMetalDevice *device, int64_t bytes)
 int64_t DeviceAllocatedSize(WebMetalDevice *device)
 {
     return device->_allocated.load(std::memory_order_relaxed);
+}
+
+void DeviceAddUnsized(WebMetalDevice *device, int64_t count)
+{
+    device->_unsized.fetch_add(count, std::memory_order_relaxed);
+}
+
+int64_t DeviceUnsizedCount(WebMetalDevice *device)
+{
+    return device->_unsized.load(std::memory_order_relaxed);
 }
 
 }  // namespace webmetal

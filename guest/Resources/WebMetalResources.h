@@ -39,6 +39,12 @@
 @protocol MTLTextureLayout <NSObject>
 @end
 
+// Metal.framework's descriptor validation (-[MTLTextureDescriptorInternal validateWithDevice:] and the heap
+// descriptor's), which the driver calls before it creates an object.
+@protocol WMDescriptorValidation
+- (BOOL)validateWithDevice:(id<MTLDevice>)device;
+@end
+
 @interface WebMetalBuffer : _MTLResource <MTLBuffer, MTLResourceSPI>
 @end
 
@@ -68,6 +74,10 @@ uint64_t PageSize();
 Connection *DeviceConnection(WebMetalDevice *device);
 void DeviceAddAllocation(WebMetalDevice *device, int64_t bytes);
 int64_t DeviceAllocatedSize(WebMetalDevice *device);
+// Live resources whose allocated size has no source yet (it depends on the AGX texture layout); while any lives, the
+// device total is not answered.
+void DeviceAddUnsized(WebMetalDevice *device, int64_t count);
+int64_t DeviceUnsizedCount(WebMetalDevice *device);
 
 // IOGPUMetalResource._res, as far as the plugin's answers depend on it. The comments name the field of
 // _IOGPUMetalResource each member reproduces.
