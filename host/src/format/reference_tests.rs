@@ -1,10 +1,10 @@
 //! The decoders against real Metal: the Metal reference outputs recorded on an Apple M4 (`tests/reference/goldens`)
 //! and the PVRTC measurement of `tables/measure/pvrtc_mac.toml`.
 //!
-//! The reference outputs record the input blocks, `getBytes` and blit readbacks under exact rules, and the decoded values a compute
-//! `read()` returns under rule `none` (Metal does not state the precision of compressed-format decoding for shader
-//! reads). The exact records are asserted as such. The decoded reads are compared with the specification decode under
-//! the conversion each comparison names; they describe the M4, not the A10X.
+//! The reference outputs record the input blocks, `getBytes` and blit readbacks under exact rules, and the decoded
+//! values a compute `read()` returns under rule `none` (Metal does not state the precision of compressed-format
+//! decoding for shader reads). The exact records are asserted as such. The decoded reads are compared with the
+//! specification decode under the conversion each comparison names; they describe the M4, not the A10X.
 
 use super::decode::{Scheme, Texels, decode, scheme};
 use super::pvrtc::{self, Bpp};
@@ -162,7 +162,8 @@ fn astc_matches_real_metal() {
             _ => panic!(),
         }
     }
-    // The reference cases' pseudo-random blocks are mostly illegal; the comparison is only meaningful if some decode to colors.
+    // The reference cases' pseudo-random blocks are mostly illegal; the comparison is only meaningful if some decode
+    // to colors.
     assert!(valid_texels > 0);
 }
 
@@ -184,7 +185,8 @@ fn pvrtc_matches_real_metal() {
     }
 }
 
-/// `tables/measure/pvrtc_mac.toml`: 8×8 images (one 2 bpp word wide) filled with block `i` byte `j` = `(i * 37 + j * 11) & 0xff`.
+/// `tables/measure/pvrtc_mac.toml`: 8×8 images (one 2 bpp word wide) filled with block `i` byte `j` equal to
+/// `(i * 37 + j * 11) & 0xff`.
 #[test]
 fn pvrtc_matches_the_mac_measurement() {
     for (id, bpp, alpha) in [

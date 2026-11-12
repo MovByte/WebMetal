@@ -82,8 +82,8 @@ pub fn scheme(value: u32) -> Option<Scheme> {
         181 => Scheme::Etc2Rgb8 { srgb: true },
         182 => Scheme::Etc2Rgb8A1 { srgb: false },
         183 => Scheme::Etc2Rgb8A1 { srgb: true },
-        // ASTC_4x4_sRGB = 186 ... ASTC_12x12_sRGB = 200 and ASTC_4x4_LDR = 204 ... ASTC_12x12_LDR = 218, in the order of
-        // Table 155, skipping the values the SDK does not assign (191, 209).
+        // ASTC_4x4_sRGB = 186 ... ASTC_12x12_sRGB = 200 and ASTC_4x4_LDR = 204 ... ASTC_12x12_LDR = 218, in the order
+        // of Table 155, skipping the values the SDK does not assign (191, 209).
         186..=200 | 204..=218 => {
             let srgb = value <= 200;
             let index = if srgb { value - 186 } else { value - 204 };

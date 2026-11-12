@@ -162,7 +162,8 @@ const ASTC_HDR: Refusal = Refusal {
     reason: "The A10X answers supportsASTCHDRTextureCompression NO while MTLPixelFormatGetInfoForDevice marks the HDR \
              formats supported. Whether its texture unit returns the LDR profile's error color for HDR endpoint modes \
              or an HDR decode is hardware behavior with no reference here.",
-    source: "profile/ipados-17.7.11-21H461-a10x.toml, getters.supportsASTCHDRTextureCompression and pixel_formats.222-236",
+    source: "profile/ipados-17.7.11-21H461-a10x.toml, getters.supportsASTCHDRTextureCompression and \
+             pixel_formats.222-236",
 };
 
 const ASTC_PRIVATE_FOOTPRINT: Refusal = Refusal {
@@ -188,8 +189,8 @@ const UNORM16_WITHOUT_TIER1: Refusal = Refusal {
 
 const DEPTH32_STENCIL8_WITHOUT_FEATURE: Refusal = Refusal {
     id: "depth32float-stencil8-without-feature",
-    reason: "Depth32Float_Stencil8 needs the depth32float-stencil8 feature; depth24plus-stencil8 does not hold a 32-bit \
-             float depth and a render pass takes one depth-stencil texture.",
+    reason: "Depth32Float_Stencil8 needs the depth32float-stencil8 feature; depth24plus-stencil8 does not hold a \
+             32-bit float depth and a render pass takes one depth-stencil texture.",
     source: "tables/formats.toml, webgpu_texture_format depth32float-stencil8 and depth24plus-stencil8",
 };
 

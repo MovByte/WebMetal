@@ -4,9 +4,10 @@
 //! reference outputs `format.PVRTC_*.blocks`).
 //!
 //! PVRTC is not a block format in the usual sense: a texel depends on up to four adjacent 64-bit words, which wrap
-//! around the image. Decoding therefore works on a whole image (one mipmap level of one slice). Metal stores the words in
-//! the reflected Morton order of section 24.2.2 (`replaceRegion` takes them in that order; the reference outputs record the same blocks in
-//! row-linear order through `MTLBlitOptionRowLinearPVRTC`, and [`morton_offset`] maps one to the other exactly).
+//! around the image. Decoding therefore works on a whole image (one mipmap level of one slice). Metal stores the words
+//! in the reflected Morton order of section 24.2.2: `replaceRegion` takes them in that order, the reference outputs
+//! record the same blocks in row-linear order through `MTLBlitOptionRowLinearPVRTC`, and [`morton_offset`] maps one to
+//! the other exactly.
 //!
 //! The result is 8-bit RGBA per texel in raster order. For the sRGB formats the R, G and B codes are sRGB-encoded
 //! (section 24.1: the EOTF applies to `R'/255` at the end of the decode); alpha is linear.
