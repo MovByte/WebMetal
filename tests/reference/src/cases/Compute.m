@@ -126,6 +126,60 @@ WMREF_CASE(computeIntegerOps, "compute.integer-ops", "compute.integer-math",
     [c data:@"a" elem:WMElemU32 bytes:a length:sizeof a rule:WMExact()];
     [c data:@"b" elem:WMElemU32 bytes:b length:sizeof b rule:WMExact()];
     [c data:@"results" elem:WMElemU32 bytes:out.contents length:out.length rule:WMExact()];
+
+    // The same operations evaluated on the CPU from their definitions in MSL
+    // 4.1 section 4.4 (shift operators) and table 6.2 (integer functions).
+    const uint32_t *measured = out.contents;
+    NSMutableArray<NSString *> *mismatches = [NSMutableArray array];
+    for (NSUInteger i = 0; i < n; i++) {
+        uint32_t x = a[i], y = b[i];
+        int32_t sx = (int32_t)x, sy = (int32_t)y;
+        uint32_t ny = y | 1u;
+        int32_t sny = sy | 1;
+        if (sny == -1) sny = 3;
+        uint32_t s = y & 31u, o = s & 15u;
+        uint32_t e[32];
+        e[0] = x + y;
+        e[1] = x - y;
+        e[2] = x * y;
+        e[3] = (uint32_t)(((uint64_t)x * y) >> 32);
+        e[4] = (uint32_t)(((int64_t)sx * sy) >> 32);
+        e[5] = x / ny;
+        e[6] = x % ny;
+        e[7] = (uint32_t)(sx / sny);
+        e[8] = (uint32_t)(sx % sny);
+        e[9] = x << s;
+        e[10] = x >> s;
+        e[11] = (uint32_t)(sx < 0 ? ~(~sx >> s) : sx >> s);
+        e[12] = x ? (uint32_t)__builtin_clz(x) : 32;
+        e[13] = x ? (uint32_t)__builtin_ctz(x) : 32;
+        e[14] = (uint32_t)__builtin_popcount(x);
+        e[15] = s ? (x << s) | (x >> (32 - s)) : x;
+        e[16] = (uint32_t)(sx == INT32_MIN ? 0 : (sx < 0 ? -sx : sx));
+        e[17] = x > y ? x - y : y - x;
+        e[18] = (uint32_t)(sx > sy ? (int64_t)sx - sy : (int64_t)sy - sx);
+        e[19] = x < y ? x : y;
+        e[20] = (uint32_t)(sx > sy ? sx : sy);
+        e[21] = (uint64_t)x + y > UINT32_MAX ? UINT32_MAX : x + y;
+        e[22] = x > y ? x - y : 0;
+        int64_t ssum = (int64_t)sx + sy, sdiff = (int64_t)sx - sy;
+        e[23] = (uint32_t)(int32_t)(ssum > INT32_MAX ? INT32_MAX : ssum < INT32_MIN ? INT32_MIN : ssum);
+        e[24] = (uint32_t)(int32_t)(sdiff > INT32_MAX ? INT32_MAX : sdiff < INT32_MIN ? INT32_MIN : sdiff);
+        e[25] = (uint32_t)(((uint64_t)x + y) >> 1);
+        e[26] = (uint32_t)(((uint64_t)x + y + 1) >> 1);
+        int64_t half = ssum >= 0 ? ssum / 2 : -((-ssum + 1) / 2);
+        e[27] = (uint32_t)(int32_t)half;
+        e[28] = (x >> o) & 0xffu;
+        e[29] = (x & ~(0xffu << o)) | ((y & 0xffu) << o);
+        uint32_t reversed = 0;
+        for (int bit = 0; bit < 32; bit++) reversed |= ((x >> bit) & 1u) << (31 - bit);
+        e[30] = reversed;
+        e[31] = (uint32_t)(sx < -1000 ? -1000 : sx > 1000 ? 1000 : sx);
+        for (int k = 0; k < 32; k++)
+            if (e[k] != measured[i * 32 + k])
+                [mismatches addObject:[NSString stringWithFormat:@"input %lu operation %d", (unsigned long)i, k]];
+    }
+    [c value:@"specification-mismatches" strings:mismatches rule:WMExact()];
 }
 
 WMREF_CASE(computeConversions, "compute.conversions", "compute.conversions",
