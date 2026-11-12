@@ -13,6 +13,14 @@ web = ["dep:wasm-bindgen", "dep:js-sys", "dep:wasm-bindgen-futures"]
 
 [dependencies]
 webmetal-wire = { path = "../wire" }
+# The AIR to WGSL compiler (UniXNU `kits/AirWgsl`), pinned to a commit of its public repository so that every checkout
+# of this crate (a clone of its own, the UniXNU submodule, a vendored copy) builds with the same compiler. It has no
+# dependencies and builds for the native and the wasm32 targets alike. To build against a local AirWgsl checkout,
+# patch the source in an untracked `.cargo/config.toml`:
+#
+#     [patch."https://github.com/MovByte/AirWgsl"]
+#     airwgsl = { path = "/path/to/AirWgsl" }
+airwgsl = { git = "https://github.com/MovByte/AirWgsl", rev = "a675c0f75c5c336b62e40285fa3419fcf3c2894f" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # The wasm-bindgen crate and the wasm-bindgen CLI that post-processes the module must be the same version.
