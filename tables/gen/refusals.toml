@@ -1,0 +1,184 @@
+# The public refusal list: Metal behavior that has no exact WebGPU or WGSL form on some or
+# all hosts and is therefore LOUD (plan section 9 row 5). gen_refusals.py renders it as
+# tables/refusals.md. Each row names the blocking clause; scope says whether the refusal
+# applies on every host or only on hosts without an optional feature.
+
+[[refusal]]
+id = "msaa-2x"
+area = "render targets"
+metal = "Textures and pipelines with sample count 2"
+scope = "all hosts"
+blocking = "WebGPU multisample count must be 1 or 4."
+cite = [
+  { src = "webgpu", ref = "#multisample-state", quote = "descriptor.count must be either 1 or 4." },
+]
+
+[[refusal]]
+id = "custom-sample-positions"
+area = "rasterization"
+metal = "Programmable sample positions (setSamplePositions:count:)"
+scope = "all hosts"
+blocking = "WebGPU mandates the standard sample pattern."
+cite = [
+  { src = "webgpu", ref = "#rasterization", quote = "Implementations must use the standard sample pattern for the given multisample.count when performing rasterization." },
+]
+
+[[refusal]]
+id = "alpha-to-one"
+area = "blending"
+metal = "alphaToOneEnabled in a render pipeline"
+scope = "all hosts"
+blocking = "GPUMultisampleState has count, mask and alphaToCoverageEnabled only."
+cite = [
+  { src = "webgpu", ref = "#multisample-state", quote = "dictionary GPUMultisampleState { GPUSize32 count = 1; GPUSampleMask mask = 0xFFFFFFFF; boolean alphaToCoverageEnabled = false; };" },
+]
+
+[[refusal]]
+id = "counting-occlusion"
+area = "queries"
+metal = "MTLVisibilityResultModeCounting"
+scope = "all hosts"
+blocking = "A WebGPU occlusion result is only defined as zero or non-zero."
+cite = [
+  { src = "webgpu", ref = "#occlusion", quote = "Any non-zero result value for the query indicates that at least one sample passed the tests and reached the output merging stage of the render pipeline, 0 indicates that no samples passed the tests." },
+]
+
+[[refusal]]
+id = "fill-mode-lines"
+area = "rasterization"
+metal = "setTriangleFillMode:MTLTriangleFillModeLines"
+scope = "all hosts"
+blocking = "GPUPrimitiveState has no fill mode."
+cite = [
+  { src = "webgpu", ref = "#primitive-state", quote = "dictionary GPUPrimitiveState { GPUPrimitiveTopology topology = \"triangle-list\"; GPUIndexFormat stripIndexFormat; GPUFrontFace frontFace = \"ccw\"; GPUCullMode cullMode = \"none\"; // Requires \"depth-clip-control\" feature. boolean unclippedDepth = false; };" },
+]
+
+[[refusal]]
+id = "depth-clamp"
+area = "rasterization"
+metal = "setDepthClipMode:MTLDepthClipModeClamp"
+scope = "hosts without depth-clip-control"
+blocking = "unclippedDepth requires the depth-clip-control feature."
+cite = [
+  { src = "webgpu", ref = "#primitive-state", quote = "// Requires \"depth-clip-control\" feature. boolean unclippedDepth = false;" },
+]
+
+[[refusal]]
+id = "vertex-stage-writes"
+area = "shaders"
+metal = "Vertex functions that write device buffers or textures"
+scope = "all hosts"
+blocking = "Bindings visible to the vertex stage must be uniform or read-only."
+cite = [
+  { src = "webgpu", ref = "#bind-group-layout-creation", quote = "If entry.visibility includes VERTEX: If entry.buffer is provided, entry.buffer.type must be \"uniform\" or \"read-only-storage\"." },
+]
+
+[[refusal]]
+id = "clip-distances"
+area = "shaders"
+metal = "[[clip_distance]] outputs"
+scope = "hosts without clip-distances"
+blocking = "The WGSL clip_distances built-in needs the clip_distances enable-extension, gated by the clip-distances feature."
+cite = [
+  { src = "wgsl", ref = "#enable-extensions-sec", quote = "clip_distances | \"clip-distances\"" },
+]
+
+[[refusal]]
+id = "dual-source-blending"
+area = "blending"
+metal = "Fragment outputs with [[color(0), index(1)]]"
+scope = "hosts without dual-source-blending"
+blocking = "The WGSL blend_src attribute needs the dual_source_blending extension, gated by the dual-source-blending feature."
+cite = [
+  { src = "wgsl", ref = "#enable-extensions-sec", quote = "dual_source_blending | \"dual-source-blending\"" },
+]
+
+[[refusal]]
+id = "stencil-export"
+area = "shaders"
+metal = "[[stencil]] fragment output"
+scope = "all hosts"
+blocking = "WGSL has no built-in output for a stencil reference."
+cite = [
+  { src = "wgsl", ref = "#built-in-values", absent = '\bstencil\b' },
+]
+
+[[refusal]]
+id = "unorm16-filtering"
+area = "formats"
+metal = "Linear filtering of R16/RG16/RGBA16 Unorm and Snorm textures"
+scope = "all hosts, unless the manual-filter path of plan 5.7 is used"
+blocking = "These formats need texture-formats-tier1 and are only unfilterable-float."
+cite = [
+  { src = "webgpu", ref = "#plain-color-formats", quote = "r16unorm | \"texture-formats-tier1\" | \"unfilterable-float\"" },
+]
+
+[[refusal]]
+id = "float-view-reinterpretation"
+area = "formats"
+metal = "Bit reinterpretation of float, snorm or packed texture data through views or buffer-backed textures"
+scope = "all hosts, until a path that never routes the bits through a float-typed texel copy exists"
+blocking = "WebGPU texel copies preserve only finite, non-subnormal values and may change snorm and packed representations."
+cite = [
+  { src = "webgpu", ref = "#texel-copies", quote = "Texel copies only guarantee that valid, finite, non-subnormal numeric values in the source have the same numeric value in the destination." },
+]
+
+[[refusal]]
+id = "address-modes-with-mips-or-anisotropy"
+area = "samplers"
+metal = "clampToZero, clampToBorderColor or mirrorClampToEdge combined with mipmap filtering or anisotropy; min-LOD clamp combined with anisotropy"
+scope = "all hosts"
+blocking = "WebGPU has only clamp-to-edge, repeat and mirror-repeat, and WGSL sampling functions take no min-LOD clamp; the exact shader emulation covers nearest and bilinear filtering only (plan 5.7)."
+cite = [
+  { src = "webgpu", ref = "#GPUSamplerDescriptor", quote = "enum GPUAddressMode { \"clamp-to-edge\", \"repeat\", \"mirror-repeat\", };" },
+]
+
+[[refusal]]
+id = "pull-model-interpolation"
+area = "shaders"
+metal = "interpolant<T, P> with interpolate_at_center/centroid/sample/offset"
+scope = "all hosts"
+blocking = "WGSL interpolates inputs only through their declared @interpolate attribute (AirWgsl family pull-model-interpolation)."
+cite = [
+  { src = "wgsl", ref = "#builtin-functions", absent = '\binterpolateAt' },
+]
+
+[[refusal]]
+id = "float-and-64-bit-atomics"
+area = "shaders"
+metal = "atomic_float and 64-bit atomics"
+scope = "all hosts (not on the A10X's family; refused if a module reaches them)"
+blocking = "WGSL atomics are 32-bit integer only (and the vec2u min/max extension)."
+cite = [
+  { src = "wgsl", ref = "#atomic-builtin-functions", absent = '\batomic<f32>|\batomic<f16>' },
+]
+
+[[refusal]]
+id = "ray-tracing"
+area = "shaders"
+metal = "Ray tracing and intersection functions"
+scope = "all hosts (not on the A10X's family)"
+blocking = "WebGPU has no ray tracing."
+cite = [
+  { src = "webgpu", ref = "#gpufeaturename", absent = '\bray' },
+]
+
+[[refusal]]
+id = "eac-r11-software-path"
+area = "formats"
+metal = "Sampling EAC R11/RG11 textures on hosts without texture-compression-etc2"
+scope = "hosts without texture-compression-etc2, until the device's decoded value is measured"
+blocking = "Khronos allows either the 11-bit value or its bit-replicated extension; the A10X's choice is unknown (formats.toml question 6.3-eac-r11-decode)."
+cite = [
+  { src = "kdfs", ref = "#Section-r11eac", quote = "In this case, the 11-bit value should be extended using bit replication." },
+]
+
+[[refusal]]
+id = "device-removed"
+area = "command buffers"
+metal = "Command-buffer error after WebGPU device loss"
+scope = "all hosts, until the iOS error code is measured"
+blocking = "MTLCommandBufferErrorDeviceRemoved is unavailable on iOS and no other code is specified for device loss (limits.toml question 6.1-device-removed-code)."
+cite = [
+  { sdk = "Metal.framework/Headers/MTLCommandBuffer.h", quote = "API_UNAVAILABLE(ios) = 11," },
+]

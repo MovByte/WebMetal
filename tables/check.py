@@ -25,6 +25,7 @@ import specdoc  # noqa: E402
 GENERATED = [
     ("limits.toml", "gen_limits.py"),
     ("formats.toml", "gen_formats.py"),
+    ("refusals.md", "gen_refusals.py"),
 ]
 
 ROW_ARRAYS = {
