@@ -6,6 +6,7 @@
 #include <mach/mach.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -17,10 +18,15 @@ namespace {
 constexpr uint32_t kUserClientType = 0;
 constexpr uint32_t kSelectorControl = 0;
 constexpr uint32_t kSelectorFetchReply = 1;
+constexpr uint32_t kSelectorRegisterEventPort = 2;
 constexpr size_t kInitialReplyCapacity = 4096;
 
 Transport gOverride;
 void *gOverrideContext;
+
+// The open connections, for Connection::Ring.
+std::mutex gConnectionsLock;
+std::vector<Connection *> gConnections;
 
 std::string opcodeName(uint16_t opcode)
 {
@@ -40,12 +46,93 @@ void SetTransportOverride(Transport transport, void *context)
 Connection::Connection(io_connect_t connect, Transport transport, void *context)
     : connect_(connect), transport_(transport), context_(context), replyBuffer_(kInitialReplyCapacity)
 {
+    std::lock_guard<std::mutex> guard(gConnectionsLock);
+    gConnections.push_back(this);
 }
 
 Connection::~Connection()
 {
+    {
+        std::lock_guard<std::mutex> guard(gConnectionsLock);
+        gConnections.erase(std::find(gConnections.begin(), gConnections.end(), this));
+    }
+    {
+        std::lock_guard<std::mutex> guard(doorbellsLock_);
+        for (auto &entry : doorbells_)
+            if (entry.second->port)
+                IONotificationPortDestroy(entry.second->port);
+        doorbells_.clear();
+    }
     if (connect_)
         IOServiceClose(connect_);
+}
+
+bool Connection::Watch(uint64_t queueHandle, dispatch_queue_t queue, dispatch_block_t doorbell, std::string *problem)
+{
+    auto entry = std::make_unique<Doorbell>(Doorbell{queue, doorbell, nullptr});
+    if (!transport_) {
+        entry->port = IONotificationPortCreate(kIOMainPortDefault);
+        if (!entry->port) {
+            *problem = "IONotificationPortCreate failed";
+            return false;
+        }
+        IONotificationPortSetDispatchQueue(entry->port, queue);
+        uint64_t reference[kOSAsyncRef64Count] = {};
+        reference[kIOAsyncCalloutFuncIndex] = reinterpret_cast<uint64_t>(&Rang);
+        reference[kIOAsyncCalloutRefconIndex] = reinterpret_cast<uint64_t>(entry.get());
+        uint64_t in[1] = {queueHandle};
+        const kern_return_t status =
+            IOConnectCallAsyncScalarMethod(connect_, kSelectorRegisterEventPort, IONotificationPortGetMachPort(entry->port),
+                                           reference, kOSAsyncRef64Count, in, 1, nullptr, nullptr);
+        if (status != KERN_SUCCESS) {
+            IONotificationPortDestroy(entry->port);
+            char text[80];
+            snprintf(text, sizeof text, "register_event_port failed (status 0x%x)", status);
+            *problem = text;
+            return false;
+        }
+    }
+    std::lock_guard<std::mutex> guard(doorbellsLock_);
+    auto &slot = doorbells_[queueHandle];
+    if (slot && slot->port)
+        IONotificationPortDestroy(slot->port);
+    slot = std::move(entry);
+    return true;
+}
+
+void Connection::Unwatch(uint64_t queueHandle)
+{
+    std::lock_guard<std::mutex> guard(doorbellsLock_);
+    auto found = doorbells_.find(queueHandle);
+    if (found == doorbells_.end())
+        return;
+    if (found->second->port)
+        IONotificationPortDestroy(found->second->port);
+    doorbells_.erase(found);
+}
+
+void Connection::Ring(uint64_t queueHandle)
+{
+    std::lock_guard<std::mutex> guard(gConnectionsLock);
+    for (Connection *connection : gConnections) {
+        std::lock_guard<std::mutex> doorbells(connection->doorbellsLock_);
+        auto found = connection->doorbells_.find(queueHandle);
+        if (found != connection->doorbells_.end())
+            dispatch_async(found->second->queue, found->second->block);
+    }
+}
+
+// IOAsyncCallback of register_event_port: runs on the doorbell's queue.
+void Connection::Rang(void *refcon, IOReturn result, void **, uint32_t)
+{
+    Doorbell *entry = static_cast<Doorbell *>(refcon);
+    if (result != kIOReturnSuccess) {
+        char text[96];
+        snprintf(text, sizeof text, "the service completed the event port with status 0x%x", result);
+        WMReport("register_event_port", text);
+        return;
+    }
+    entry->block();
 }
 
 std::unique_ptr<Connection> Connection::Open(io_service_t service, std::string *problem)

@@ -32,6 +32,7 @@ extern "C" bool webmetal_shim_executor_start(char *error, size_t capacity);
 extern "C" bool webmetal_shim_executor_control(const uint8_t *request, size_t length, uint8_t **reply,
                                                size_t *replyLength, char *error, size_t capacity);
 extern "C" void webmetal_shim_executor_free(uint8_t *reply, size_t length);
+extern "C" void webmetal_shim_executor_set_doorbell(void (*ring)(void *context, uint64_t queue), void *context);
 
 // The connection's transport in this process: one control request to the executor.
 static bool executorTransport(void *, const uint8_t *request, size_t length, std::vector<uint8_t> *reply,
@@ -47,6 +48,13 @@ static bool executorTransport(void *, const uint8_t *request, size_t length, std
     reply->assign(bytes, bytes + count);
     webmetal_shim_executor_free(bytes, count);
     return true;
+}
+
+// The executor rings this on its thread when it posts events for a command queue (0: device-level); in place of the
+// accelerator service's async completion, the connection's doorbell for that queue runs on its dispatch queue.
+static void executorDoorbell(void *, uint64_t queue)
+{
+    webmetal::Connection::Ring(queue);
 }
 
 // The sentinel -WMRefProvideDevice gives the device for maxBufferLength (the first one the device profile's
@@ -80,6 +88,7 @@ extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShim
             return nil;
         }
         webmetal::SetTransportOverride(executorTransport, nullptr);
+        webmetal_shim_executor_set_doorbell(executorDoorbell, nullptr);
         // Metal.framework's device array, which MTLAddDevice requires, exists once the system's devices are listed.
         (void)MTLCopyAllDevices();
         io_registry_entry_t root = IORegistryGetRootEntry(kIOMainPortDefault);

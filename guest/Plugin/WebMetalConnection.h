@@ -16,9 +16,11 @@
 #include "../../wire/generated/WebMetalWire.h"
 
 #include <IOKit/IOKitLib.h>
+#include <dispatch/dispatch.h>
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -69,6 +71,39 @@ public:
         return true;
     }
 
+    // Runs `request` and decodes its reply into `reply` without reporting or raising: returns false, with the reason,
+    // when the request cannot be encoded or delivered or the reply does not decode. A reply with a failure status
+    // returns true with reply->ok false. For callers that report and fail in their own way (a dispatch queue's block).
+    template <class Request, class ReplyFields>
+    bool TryCall(const Request &request, wire::Reply<ReplyFields> *reply, std::string *problem)
+    {
+        wire::Writer writer;
+        if (!wire::encode(writer, request)) {
+            *problem = "the request breaks a rule of the wire format";
+            return false;
+        }
+        std::vector<uint8_t> bytes;
+        if (!Exchange(writer.out, &bytes, problem))
+            return false;
+        wire::DecodeError error;
+        if (!wire::decodeReply(bytes.data(), bytes.size(), *reply, &error)) {
+            *problem = "the reply does not decode";
+            return false;
+        }
+        return true;
+    }
+
+    // Events (wire/README.md, "Events"). Asks the host to ring `doorbell` on `queue` whenever events for the command
+    // queue `queueHandle` (0: device-level events) become pending; the doorbell collects them with FetchEvents. On the
+    // target the user client's register_event_port selector delivers an async completion to a notification port that
+    // dispatches on `queue`. Returns false, with the reason, when the host refuses.
+    bool Watch(uint64_t queueHandle, dispatch_queue_t queue, dispatch_block_t doorbell, std::string *problem);
+    // Stops the doorbell of `queueHandle`; none runs once this returns, except one already queued on its queue.
+    void Unwatch(uint64_t queueHandle);
+    // Rings the doorbell of `queueHandle` on every open connection (the macOS test shim's executor calls this when it
+    // posts events, in place of the async completion). It only queues work and may be called from any thread.
+    static void Ring(uint64_t queueHandle);
+
     // As Call, for a request sent where nothing can be raised (a -dealloc): failures are reported only. Returns whether
     // the request succeeded.
     template <class Request, class ReplyFields>
@@ -98,6 +133,13 @@ private:
 
     bool Exchange(const std::vector<uint8_t> &request, std::vector<uint8_t> *reply, std::string *problem);
     static std::string Describe(const wire::Failure &failure);
+
+    struct Doorbell {
+        dispatch_queue_t queue;
+        dispatch_block_t block;
+        IONotificationPortRef port;  // the async completion's port (none when a transport override is set)
+    };
+    static void Rang(void *refcon, IOReturn result, void **args, uint32_t count);
     [[noreturn]] static void Fail(id self, SEL _cmd, uint16_t opcode, const char *problem);
     [[noreturn]] static void Refused(id self, SEL _cmd, uint16_t opcode, const wire::Failure &failure);
     static void ReportOnly(const char *what, uint16_t opcode, const std::string &problem);
@@ -108,6 +150,8 @@ private:
     std::atomic<uint64_t> next_{1};
     std::mutex lock_;                // one control call and its fetch_reply at a time
     std::vector<uint8_t> replyBuffer_;
+    std::mutex doorbellsLock_;
+    std::map<uint64_t, std::unique_ptr<Doorbell>> doorbells_;
 };
 
 }  // namespace webmetal
