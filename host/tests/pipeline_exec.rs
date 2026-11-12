@@ -514,9 +514,10 @@ fn every_reference_stage_function_creates_or_fails_loudly() {
 
 // The generated corpus ------------------------------------------------------------------------------------------------
 
-/// `WEBMETAL_CORPUS`: AirWgsl's generated corpus build. Every kernel of the language-version-3.1 modules (or of the
-/// version `WEBMETAL_CORPUS_VERSION` names) is created twice through the executor; every `WEBMETAL_CORPUS_STRIDE`-th
-/// kernel that compiles (default 16) is also run, once through each pipeline, with equal inputs.
+/// `WEBMETAL_CORPUS`: AirWgsl's generated corpus build. Every `WEBMETAL_CORPUS_SAMPLE`-th kernel (default every one)
+/// of the language-version-3.1 modules (or of the version `WEBMETAL_CORPUS_VERSION` names) is created twice through the
+/// executor; every `WEBMETAL_CORPUS_STRIDE`-th of those that compile (default 16) is also run, once through each
+/// pipeline, with equal inputs. Progress goes to standard error every 100 kernels.
 #[test]
 fn generated_corpus_kernels_create_as_the_compiler_decides_and_cached_runs_equal_fresh_ones() {
     use airwgsl::air::{Role, Slot};
@@ -526,6 +527,9 @@ fn generated_corpus_kernels_create_as_the_compiler_decides_and_cached_runs_equal
     };
     let version = std::env::var("WEBMETAL_CORPUS_VERSION").unwrap_or_else(|_| "3.1".into());
     let stride: usize = std::env::var("WEBMETAL_CORPUS_STRIDE").ok().and_then(|s| s.parse().ok()).unwrap_or(16).max(1);
+    let sample: usize = std::env::var("WEBMETAL_CORPUS_SAMPLE").ok().and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
+    let start = std::time::Instant::now();
+    let (mut kernels, mut sampled_out) = (0usize, 0usize);
     let tsv = std::fs::read_to_string(root.join("modules.tsv")).expect("modules.tsv");
     let mut modules: std::collections::BTreeMap<String, Vec<String>> = Default::default();
     for line in tsv.lines().filter(|l| !l.starts_with('#')) {
@@ -543,6 +547,14 @@ fn generated_corpus_kernels_create_as_the_compiler_decides_and_cached_runs_equal
             let Some(entry) = decoded.entry_point(name) else { continue };
             if entry.stage != airwgsl::air::Stage::Kernel {
                 continue;
+            }
+            kernels += 1;
+            if !(kernels - 1).is_multiple_of(sample) {
+                sampled_out += 1;
+                continue;
+            }
+            if (kernels - 1).is_multiple_of(100 * sample) {
+                eprintln!("{:?}: {path} {name}: {created} created, {refused} refused", start.elapsed());
             }
             let lf = LibraryFunction { bitcode: bitcode.clone(), function_type: 3 };
             let expect = predicted(&h, &lf, name);
@@ -624,8 +636,10 @@ fn generated_corpus_kernels_create_as_the_compiler_decides_and_cached_runs_equal
     h.assert_no_errors();
     eprintln!(
         "{}: corpus {version}: {created} kernels created and recreated from the caches with equal WGSL, {refused} \
-         refused as the compiler refuses them; {ran} run through both pipelines with equal results (stride {stride})",
-        h.name()
+         refused as the compiler refuses them; {ran} run through both pipelines with equal results (stride {stride}); \
+         {sampled_out} of {kernels} kernels not sampled (every {sample}th created); {:?}",
+        h.name(),
+        start.elapsed()
     );
 }
 
