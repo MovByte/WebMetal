@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "webmetal-host"
+version = "0.1.0"
+dependencies = [
+ "webmetal-wire",
+]
+
+[[package]]
 name = "webmetal-wire"
 version = "0.1.0"

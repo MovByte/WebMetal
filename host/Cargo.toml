@@ -1,0 +1,9 @@
+[package]
+name = "webmetal-host"
+version = "0.1.0"
+description = "WebMetal host executor: replays the wire protocol on WebGPU"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+webmetal-wire = { path = "../wire" }
