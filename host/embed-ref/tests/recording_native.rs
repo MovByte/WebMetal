@@ -99,6 +99,9 @@ fn drawable_render_present_matches_metal_through_a_recording_file() {
     // Record the recording to a file and replay the file.
     let (steps, contents) = render_present();
     let file = recording::encode(&steps);
+    // Left for the webmetal-embed-ref program: `webmetal-embed-ref <tmpdir>/drawable.render-present.wmrec`.
+    let kept = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("drawable.render-present.wmrec");
+    std::fs::write(&kept, &file).unwrap();
     let steps = recording::decode(&file).unwrap();
     let (gpu, host) = new_host();
     let outcomes = gpu.block_on(recording::run(&host, &steps, true), WAIT).unwrap();
