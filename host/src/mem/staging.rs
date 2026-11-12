@@ -51,8 +51,7 @@ impl<A: Api> StagingArena<A> {
         let pooled: u64 = free.iter().map(|b| b.size()).sum();
         if pooled + buffer.size() <= MAX_POOLED {
             free.push(buffer);
-        } else {
-            buffer.destroy();
         }
+        // Otherwise the buffer is dropped, which releases it.
     }
 }

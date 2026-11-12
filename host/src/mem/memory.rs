@@ -1,8 +1,9 @@
 //! [`Memory`]: the executor's memory services on its one WebGPU device.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
-use crate::format::webgpu::HostFeatures;
+use crate::format::webgpu::{HostFeatures, WebGpuFormat};
 use crate::gpu::idl::SupportedLimits;
 use crate::gpu::{Api, Device as _, Queue as _};
 
@@ -19,6 +20,8 @@ pub struct Memory<A: Api> {
     pub(crate) staging: StagingArena<A>,
     /// The next queue position (see [`super::shadow`]).
     seq: Cell<u64>,
+    /// Formats whose texel copies were tested on this device (see [`super::proof`]).
+    proofs: RefCell<HashMap<WebGpuFormat, Result<(), String>>>,
 }
 
 impl<A: Api> Memory<A> {
@@ -27,7 +30,15 @@ impl<A: Api> Memory<A> {
     pub fn new(device: A::Device, features: HostFeatures) -> Memory<A> {
         let queue = device.queue();
         let limits = device.limits();
-        Memory { device, queue, features, limits, staging: StagingArena::default(), seq: Cell::new(1) }
+        Memory {
+            device,
+            queue,
+            features,
+            limits,
+            staging: StagingArena::default(),
+            seq: Cell::new(1),
+            proofs: RefCell::new(HashMap::new()),
+        }
     }
 
     pub fn device(&self) -> &A::Device {
@@ -44,6 +55,16 @@ impl<A: Api> Memory<A> {
         let s = self.seq.get();
         self.seq.set(s + 1);
         s
+    }
+
+    /// The outcome of the texel copy test of `format` on this device, if it ran.
+    pub fn proof(&self, format: WebGpuFormat) -> Option<Result<(), String>> {
+        self.proofs.borrow().get(&format).cloned()
+    }
+
+    /// Record the outcome of a texel copy test ([`super::proof::TexelCopyTest`]).
+    pub fn record_proof(&self, format: WebGpuFormat, outcome: Result<(), String>) {
+        self.proofs.borrow_mut().insert(format, outcome);
     }
 
     /// `queue.submit(command_buffers)` for work whose readbacks are in `readbacks`: the readbacks take their queue
