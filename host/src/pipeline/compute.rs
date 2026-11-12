@@ -66,12 +66,55 @@ pub const THREAD_EXECUTION_WIDTH: u64 = 32;
 /// the device's `maxThreadsPerThreadgroup` is 512 in each dimension (device profile).
 pub const MAX_THREADS_BOUND: u64 = 512;
 
-/// `MTLPipelineOption` (iPhoneOS SDK, `MTLDevice.h`).
+/// `MTLPipelineOption` (iPhoneOS SDK, `MTLDevice.h`), and the bits beyond it that the 21H461 frameworks pass.
 pub mod option {
+    use webmetal_wire::Failure;
+
+    use crate::exec::failure;
+
     pub const BINDING_INFO: u64 = 1 << 0;
     pub const BUFFER_TYPE_INFO: u64 = 1 << 1;
     pub const FAIL_ON_BINARY_ARCHIVE_MISS: u64 = 1 << 2;
+    /// The options this service implements.
     pub const ALL: u64 = BINDING_INFO | BUFFER_TYPE_INFO | FAIL_ON_BINARY_ARCHIVE_MISS;
+
+    /// The debug layer's options: `-[MTLToolsDevice debugPipelineOptions:includePipelinePerfStats:]` (MetalTools
+    /// 21H461, 0x216e6644c) ORs 0x810003 (bits 0, 1, 16 and 23) into the caller's options, and 0x40000 as well when
+    /// the caller did not pass FailOnBinaryArchiveMiss and asked for performance statistics.
+    pub const DEBUG_16: u64 = 1 << 16;
+    pub const DEBUG_23: u64 = 1 << 23;
+    /// Set by `-[MTLDebugDevice newRenderPipelineStateWithDescriptor:error:]` (MetalTools 21H461, 0x216ec2c60) and
+    /// cleared by the debug layer's forwarding methods (0x216ec2c58 and 0x216ec3148: `and x3, x3, #~0x20000`) before
+    /// the options reach the driver.
+    pub const DEBUG_17: u64 = 1 << 17;
+    /// The pipeline's performance statistics: the A10X driver reads the bit at creation (AGXMetalA10 21H461
+    /// 0x21c8df82c), asks its compiler for the pipeline's statistics (`getComputePipelinePerformanceStatistics`,
+    /// 0x21c8df834) and keeps them with `setPerformanceStatistics:`; `createComputeProgramVariant` masks the options
+    /// with 0xc0040000 (0x21c8a6508).
+    pub const PERFORMANCE_STATISTICS: u64 = 1 << 18;
+
+    /// Check `options` bit by bit: every bit outside [`ALL`] is a loud failure naming the bit and what is known of it.
+    pub fn check(call: &str, options: u64) -> Result<(), Failure> {
+        let Some(bit) = (0..64).map(|b| 1u64 << b).find(|b| options & b != 0 && ALL & b == 0) else {
+            return Ok(());
+        };
+        let why = match bit {
+            PERFORMANCE_STATISTICS => {
+                "the A10X driver then gathers its GPU compiler's performance statistics for the pipeline (AGXMetalA10 \
+                 21H461 0x21c8df82c-0x21c8df834), which this host's compiler, AirWgsl over WebGPU, does not produce"
+            }
+            DEBUG_16 | DEBUG_23 | DEBUG_17 => {
+                "the A10X driver hands the options to its back-end compile request (createComputeProgramVariant, \
+                 AGXMetalA10 21H461: setPipelineOptions: at 0x21c8a66b4 with options | 3), and bits 16 and 17 are \
+                 among the bits (0x330003, tested at 0x21c8a66c0) that take creation down its reflection path; what \
+                 the back end (AGXCompilerCore, in MTLCompilerService) does with the bit is not established. \
+                 MetalTools' debug layer sets bits 16 and 23 (debugPipelineOptions:includePipelinePerfStats:, \
+                 0x216e6644c) and bit 17 (MTLDebugDevice, 0x216ec2c60)"
+            }
+            _ => "it is not an MTLPipelineOption of the iPhoneOS SDK, nor a bit the 21H461 frameworks pass",
+        };
+        Err(failure::unimplemented(format!("{call}: pipeline option {bit:#x} (of options {options:#x}): {why}")))
+    }
 }
 
 /// `MTLMutability` values (iPhoneOS SDK, `MTLPipeline.h`): Default, Mutable, Immutable.

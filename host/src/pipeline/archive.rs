@@ -60,19 +60,17 @@ pub const COMPUTE: u8 = 1;
 
 /// `CreateBinaryArchive`: an empty archive for a descriptor without a URL.
 pub fn create(call: &str, d: &BinaryArchiveDescriptor) -> Result<Archive, Failure> {
-    let BinaryArchiveDescriptor { options, url, writing_options } = d;
+    // The options belong to Metal.framework, which runs in the guest. On 21H461 options and writingOptions are one
+    // field (both accessors read offset 0x10: 0x187ad1f24, 0x187b0fb20), which `-[MTLBinaryArchiveDescriptor init]`
+    // sets to 2 (0x187ad2408); `-[_MTLBinaryArchive initWithDevice:descriptor:error:]` (0x187ad1e8c) hands it to
+    // `initWithOptions:device:url:error:` (0x187ad2940). The A10X driver's `newBinaryArchiveWithDescriptor:error:`
+    // (AGXMetalA10 21H461 0x21c8d8f90) reads neither, so they change nothing the driver does.
+    let BinaryArchiveDescriptor { options: _, url, writing_options: _ } = d;
     if let Some(u) = url {
         return Err(failure::unimplemented(format!(
             "{call}: loading the binary archive at {u}: the driver reads the file in the calling task, and the wire \
              protocol carries the URL, not the archive's bytes"
         )));
-    }
-    let unknown = "the behavior of a value other than 0 (measured on macOS 27.0.1) is not established";
-    if *options != 0 {
-        return Err(errors::field(call, "options", options, unknown));
-    }
-    if *writing_options != 0 {
-        return Err(errors::field(call, "writingOptions", writing_options, unknown));
     }
     Ok(Archive::default())
 }

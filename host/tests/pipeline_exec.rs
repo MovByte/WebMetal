@@ -178,6 +178,17 @@ fn creation_errors_metal_defines_fail_loudly() {
         reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 1 << 3)).status,
         status::UNIMPLEMENTED
     );
+    // The debug layer's options (0x870003 with performance statistics) fail on the first bit outside
+    // MTLPipelineOption, by name; the options this service implements create.
+    let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x870003));
+    assert_eq!(f.status, status::UNIMPLEMENTED);
+    assert!(f.message.contains("pipeline option 0x10000") && f.message.contains("0x216e6644c"), "{f:?}");
+    let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x40003));
+    assert!(f.message.contains("pipeline option 0x40000") && f.message.contains("performance statistics"), "{f:?}");
+    let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x20000));
+    assert!(f.message.contains("pipeline option 0x20000"), "{f:?}");
+    let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x800000));
+    assert!(f.message.contains("pipeline option 0x800000"), "{f:?}");
     // Descriptor state whose behavior is not established is named.
     let mut d = compute_descriptor(marker);
     d.open_gl_mode_enabled = true;
@@ -229,9 +240,10 @@ fn binary_archives_hold_what_was_added() {
     let lib = reference_library();
     let marker = h.function(&lib["pip_marker"].bitcode, "pip_marker", 3);
     let archive = h.handle();
+    // The descriptor's default options (2 on 21H461, one field with writingOptions) are Metal.framework's own.
     h.ok(Request::CreateBinaryArchive(CreateBinaryArchive {
         archive,
-        descriptor: BinaryArchiveDescriptor { options: 0, url: None, writing_options: 0 },
+        descriptor: BinaryArchiveDescriptor { options: 2, url: None, writing_options: 2 },
         error: true,
     }));
     h.ok(Request::BinaryArchiveAddComputePipelineFunctions(BinaryArchiveAddComputePipelineFunctions {

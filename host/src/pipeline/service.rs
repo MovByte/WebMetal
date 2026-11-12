@@ -97,14 +97,7 @@ impl<A: Api, E: Embedder + 'static> PipelineService<A, E> {
         options: u64,
         reflect: bool,
     ) -> Result<GpuFuture<Result<Option<webmetal_wire::Reflection>, Failure>>, Failure> {
-        if options & !option::ALL != 0 {
-            return Err(errors::field(
-                call,
-                "options",
-                format!("{options:#x}"),
-                "not an MTLPipelineOption combination",
-            ));
-        }
+        option::check(call, options)?;
         let c = self.compute_creation(cx, call, d)?;
         if options & option::FAIL_ON_BINARY_ARCHIVE_MISS != 0 {
             archive::lookup(call, cx.objects(), &d.binary_archives, &c.record)?;
@@ -180,14 +173,7 @@ impl<A: Api, E: Embedder + 'static> PipelineService<A, E> {
         options: u64,
         reflect: bool,
     ) -> Result<Option<webmetal_wire::Reflection>, Failure> {
-        if options & !option::ALL != 0 {
-            return Err(errors::field(
-                call,
-                "options",
-                format!("{options:#x}"),
-                "not an MTLPipelineOption combination",
-            ));
-        }
+        option::check(call, options)?;
         let c = self.render_creation(cx, call, d)?;
         if options & option::FAIL_ON_BINARY_ARCHIVE_MISS != 0 {
             archive::lookup(call, cx.objects(), &d.binary_archives, &c.record)?;
