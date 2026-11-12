@@ -25,10 +25,8 @@ WMREF_CASE(computeThreadPositions, "compute.thread-positions", "compute.dispatch
 WMREF_CASE(computeDispatchThreads, "compute.dispatch-threads-nonuniform", "compute.dispatch-threads",
            "dispatchThreads with a grid that is not a multiple of the threadgroup size")
 {
-    // Non-uniform threadgroup sizes: Metal feature set tables list them for
-    // Apple4 and later and for Mac2.
-    [c require:@"family.apple4-or-mac2"
-         value:[c.device supportsFamily:MTLGPUFamilyApple4] || [c.device supportsFamily:(MTLGPUFamily)2002]];
+    // "Nonuniform threadgroup size": Apple4 and later (Metal Feature Set Tables, 2026-10-23).
+    [c require:@"family.apple4" value:[c.device supportsFamily:MTLGPUFamilyApple4]];
     const uint32_t grid[4] = {7, 5, 3, 0};
     const uint32_t *gridWords = grid;
     NSUInteger slots = 8 * 6 * 4;
