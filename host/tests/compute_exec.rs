@@ -1,14 +1,15 @@
 //! The compute rows of the Metal reference harness (tests/reference/COVERAGE.md, "Compute and blit encoders") replayed
 //! through the executor on a native WebGPU implementation, as tests/reference/src/cases/Compute.m dispatches them, with
-//! every `exact` record of the reference output compared byte for byte. The kernels come from the pipeline stand-in of
-//! `h6_common` (hand-translated WGSL of tests/reference/shaders/compute.metal) until the AIR to WGSL compiler produces
-//! them; what these tests check is the encoder: dispatch forms, bindings and offsets, inline bytes, threadgroup
-//! memory, stage-in regions, indirect arguments, barriers and coherence with guest memory.
+//! every `exact` record of the reference output compared byte for byte. The kernels are compiled from
+//! tests/reference/shaders/compute.metal by the pipeline service, or hand-translated in `h6_common` where the compiler
+//! refuses them so far; what these tests check is the encoder: dispatch forms, bindings and offsets, inline bytes,
+//! threadgroup memory, stage-in regions, indirect arguments, barriers and coherence with guest memory.
 
 #![cfg(feature = "native")]
 
 mod h6_common;
 mod mem_common;
+mod pipeline_common;
 
 use h6_common::*;
 use mem_common::Golden;

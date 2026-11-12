@@ -1,15 +1,14 @@
 //! The executor with the memory, blit and compute services on a native WebGPU implementation (`WEBGPU_NATIVE`, see
 //! `host/build.rs`), and the requests a guest sends for the Metal reference programs.
 //!
-//! Two services are stand-ins for packages that do not exist yet, and say so:
+//! Pipelines come from the pipeline service (`webmetal_host::pipeline`), which compiles the reference kernels of
+//! `tests/reference/shaders` from their AIR through AirWgsl; [`Pipelines`] forwards every shader record to it. For a
+//! kernel the compiler refuses so far (texture and stage-input arguments), the creation falls back to a hand
+//! translation to WGSL (each next to its kernel below), so that the encoder's dispatch, binding and coherence paths
+//! still run on those kernels; [`Harness::compiled`] says which kernels came from the compiler.
 //!
-//! - [`Pipelines`] serves `RegisterAir`, `RegisterFunction` and `CreateComputePipeline` for the reference kernels the
-//!   compute and blit cases use, with WGSL translated by hand from `tests/reference/shaders/*.metal` (each translation
-//!   is next to its kernel below). The AIR to WGSL compiler (AirWgsl) refuses every module so far, and the pipeline
-//!   service that will call it is package H7; this stand-in fills the seam H7 fills ([`ComputeVariants`]) so that the
-//!   encoder's dispatch, binding and coherence paths run on real kernels.
-//! - [`ClearPass`] records render passes that only clear their color attachments (the one render pass the blit cases
-//!   use, in `blit.texture-to-texture-multisample`); the render encoder is package H5.
+//! [`ClearPass`] stands in for the render encoder (package H5): it records render passes that only clear their color
+//! attachments (the one render pass the blit cases use, in `blit.texture-to-texture-multisample`).
 
 #![allow(dead_code)]
 
@@ -19,6 +18,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use super::mem_common::{Api, Gpu, Guest, TASK};
+use super::pipeline_common::{LibraryFunction, reference_library};
 use webmetal_host::blit::BlitService;
 use webmetal_host::compute::ComputeService;
 use webmetal_host::compute::pipeline::{
@@ -41,10 +41,12 @@ use webmetal_host::gpu::idl::{
 };
 use webmetal_host::gpu::num::Float64;
 use webmetal_host::gpu::scope::{Granularity, Policy};
-use webmetal_host::gpu::{CommandEncoder as _, Device as _, RenderPassEncoder as _, Size64, Texture as _};
+use webmetal_host::gpu::{CommandEncoder as _, Device as _, Gpu as _, RenderPassEncoder as _, Size64, Texture as _};
 use webmetal_host::mem::Memory;
 use webmetal_host::mem::service::MemoryServices;
 use webmetal_host::mem::texture::Texture;
+use webmetal_host::pipeline::sha256::sha256;
+use webmetal_host::pipeline::{self, PipelineServices};
 use webmetal_wire::*;
 
 pub type A = Api;
@@ -530,74 +532,79 @@ impl ComputeVariants<A> for StandIn {
     }
 }
 
-/// The stand-in pipeline service.
+/// The pipeline service, with the hand translations for the kernels its compiler refuses.
 pub struct Pipelines {
+    service: Box<dyn ControlService<A, E>>,
     functions: HashMap<(TaskId, Handle), String>,
+    compiled: Rc<RefCell<BTreeSet<String>>>,
 }
 
 impl ControlService<A, E> for Pipelines {
     fn opcodes(&self) -> Vec<u16> {
-        vec![opcode::REGISTER_AIR, opcode::REGISTER_FUNCTION, opcode::CREATE_COMPUTE_PIPELINE]
+        self.service.opcodes()
     }
 
     fn serve(&mut self, cx: &mut ServiceCx<'_, A, E>, request: &Request) -> Served {
-        let reply = match request {
-            Request::RegisterAir(_) => Reply::RegisterAir(Ok(RegisterAirReply {})),
-            Request::RegisterFunction(r) => {
+        let Request::CreateComputePipeline(r) = request else {
+            if let Request::RegisterFunction(r) = request {
                 self.functions.insert((cx.task(), r.function), r.name.clone());
-                cx.attach(Rc::new(r.name.clone()));
-                Reply::RegisterFunction(Ok(RegisterFunctionReply {}))
             }
-            Request::CreateComputePipeline(r) => {
-                let name = r
-                    .descriptor
-                    .compute_function
-                    .and_then(|f| self.functions.get(&(cx.task(), f)).cloned())
-                    .unwrap_or_default();
-                let Some(k) = kernel(&name) else {
-                    return Served::Ready(Reply::CreateComputePipeline(Err(failure::unimplemented(format!(
-                        "the pipeline stand-in has no WGSL for {name}"
-                    )))));
-                };
-                let stage_input = r.descriptor.stage_input_descriptor.is_some();
-                if name == "compute_stage_in" {
-                    // The fetch the WGSL hard-codes: the case's descriptor.
-                    let s = r.descriptor.stage_input_descriptor.as_ref().expect("a stage input descriptor");
-                    let attrs: Vec<(u64, u64, u64)> =
-                        s.attributes.iter().map(|a| (a.format, a.offset, a.buffer_index)).collect();
-                    // MTLAttributeFormatUShort2 13, MTLAttributeFormatFloat 28.
-                    assert_eq!(&attrs[..2], &[(13, 0, 1), (28, 4, 1)]);
-                    // MTLStepFunctionThreadPositionInGridX 5.
-                    let l = &s.layouts[1];
-                    assert_eq!((l.stride, l.step_function, l.step_rate), (8, 5, 1));
-                }
-                let max = match r.descriptor.max_total_threads_per_threadgroup {
-                    0 => 512,
-                    m => m.min(512),
-                };
-                cx.attach(Rc::new(ComputePipelineState::<A> {
-                    max_total_threads_per_threadgroup: max,
-                    thread_execution_width: 32,
-                    threadgroup_size_is_multiple_of_execution_width: r
-                        .descriptor
-                        .thread_group_size_is_multiple_of_thread_execution_width,
-                    static_threadgroup_memory_length: k.static_memory,
-                    stage_input,
-                    variants: Rc::new(StandIn { name, cache: RefCell::new(HashMap::new()) }),
-                }));
-                Reply::CreateComputePipeline(Ok(CreateComputePipelineReply { reflection: None }))
-            }
-            other => unreachable!("opcode {:#06x} is not claimed", other.opcode()),
+            return self.service.serve(cx, request);
         };
-        Served::Ready(reply)
+        let name = r.descriptor.compute_function.and_then(|f| self.functions.get(&(cx.task(), f)).cloned());
+        let served = self.service.serve(cx, request);
+        let refused = match &served {
+            Served::Ready(reply) => webmetal_host::exec::schema::reply_failure(reply)
+                .is_some_and(|f| f.status == status::UNIMPLEMENTED && f.message.contains("shader compiler refuses")),
+            Served::Later(_) => false,
+        };
+        let name = name.unwrap_or_default();
+        if !refused {
+            let failed = matches!(&served, Served::Ready(reply)
+                if webmetal_host::exec::schema::reply_failure(reply).is_some());
+            if !failed {
+                self.compiled.borrow_mut().insert(name);
+            }
+            return served;
+        }
+        let Some(k) = kernel(&name) else { return served };
+        let stage_input = r.descriptor.stage_input_descriptor.is_some();
+        if name == "compute_stage_in" {
+            // The fetch the WGSL hard-codes: the case's descriptor.
+            let s = r.descriptor.stage_input_descriptor.as_ref().expect("a stage input descriptor");
+            let attrs: Vec<(u64, u64, u64)> =
+                s.attributes.iter().map(|a| (a.format, a.offset, a.buffer_index)).collect();
+            // MTLAttributeFormatUShort2 13, MTLAttributeFormatFloat 28.
+            assert_eq!(&attrs[..2], &[(13, 0, 1), (28, 4, 1)]);
+            // MTLStepFunctionThreadPositionInGridX 5.
+            let l = &s.layouts[1];
+            assert_eq!((l.stride, l.step_function, l.step_rate), (8, 5, 1));
+        }
+        let max = match r.descriptor.max_total_threads_per_threadgroup {
+            0 => 512,
+            m => m.min(512),
+        };
+        cx.attach(Rc::new(ComputePipelineState::<A> {
+            max_total_threads_per_threadgroup: max,
+            thread_execution_width: 32,
+            threadgroup_size_is_multiple_of_execution_width: r
+                .descriptor
+                .thread_group_size_is_multiple_of_thread_execution_width,
+            static_threadgroup_memory_length: k.static_memory,
+            stage_input,
+            variants: Rc::new(StandIn { name, cache: RefCell::new(HashMap::new()) }),
+        }));
+        Served::Ready(Reply::CreateComputePipeline(Ok(CreateComputePipelineReply { reflection: None })))
     }
 
-    fn release(&mut self, task: TaskId, handle: Handle, _: &Entry) {
+    fn release(&mut self, task: TaskId, handle: Handle, entry: &Entry) {
         self.functions.remove(&(task, handle));
+        self.service.release(task, handle, entry);
     }
 
     fn task_exited(&mut self, task: TaskId) {
         self.functions.retain(|(t, _), _| *t != task);
+        self.service.task_exited(task);
     }
 }
 
@@ -644,6 +651,9 @@ impl EncoderService<A, E> for ClearPass {
 // The harness -----------------------------------------------------------------------------------------------------------
 
 pub struct Harness {
+    /// The kernels the pipeline service compiled (the others came from the hand translations).
+    pub compiled: Rc<RefCell<BTreeSet<String>>>,
+    library: HashMap<String, LibraryFunction>,
     pub g: Gpu,
     pub guest: Rc<Guest>,
     pub exec: Executor<A, E>,
@@ -663,11 +673,16 @@ impl Harness {
             .expect("setup stalled")
             .expect("memory services");
         let memory = svc.memory();
+        // wgpu-native does not report its WGSL language extensions; it is taken to offer none.
+        let wgsl = g.gpu.wgsl_language_features().unwrap_or_default();
+        let compiled = Rc::new(RefCell::new(BTreeSet::new()));
+        let pipelines = Pipelines {
+            service: PipelineServices::<A>::new(&g.device, wgsl, pipeline::Config::default()).control(),
+            functions: HashMap::new(),
+            compiled: compiled.clone(),
+        };
         let services = Services {
-            control: vec![
-                svc.control() as Box<dyn ControlService<A, E>>,
-                Box::new(Pipelines { functions: HashMap::new() }),
-            ],
+            control: vec![svc.control() as Box<dyn ControlService<A, E>>, Box::new(pipelines)],
             render: Some(Box::new(ClearPass { memory: memory.clone() })),
             compute: Some(Box::new(ComputeService::new(memory.clone()))),
             blit: Some(Box::new(BlitService::new(memory.clone()))),
@@ -677,6 +692,8 @@ impl Harness {
         let exec = Executor::new(g.device.clone(), guest.clone(), services, config);
         let base = guest.base;
         let h = Harness {
+            compiled,
+            library: reference_library(),
             g,
             guest,
             exec,
@@ -754,14 +771,16 @@ impl Harness {
 
     /// A compute pipeline of a reference kernel (`[c computePipeline:]`), with an optional stage input descriptor.
     pub fn pipeline(&self, name: &str, stage: Option<StageInputOutputDescriptor>, max_threads: u64) -> Handle {
-        self.ok(Request::RegisterAir(RegisterAir {
-            hash: Hash { bytes: [7; 32] },
-            bitcode: vec![0xde, 0xc0, 0x17, 0x0b],
-        }));
+        let bitcode =
+            &self.library.get(name).unwrap_or_else(|| panic!("{name} is not in the reference library")).bitcode;
+        let hash = sha256(bitcode);
+        // RegisterAir is sent once per digest on a connection.
+        let s = self.status(Request::RegisterAir(RegisterAir { hash: Hash { bytes: hash }, bitcode: bitcode.clone() }));
+        assert!(s.status == status::OK || s.message.contains("already registered"), "{s:?}");
         let f = self.handle();
         self.ok(Request::RegisterFunction(RegisterFunction {
             function: f,
-            air: Hash { bytes: [7; 32] },
+            air: Hash { bytes: hash },
             name: name.into(),
             function_type: 3,
             constants: Vec::new(),
@@ -911,6 +930,7 @@ impl Harness {
 
     /// Fails if WebGPU reported an error outside every scope.
     pub fn assert_no_errors(&self) {
+        eprintln!("{}: kernels compiled by the pipeline service: {:?}", self.name(), self.compiled.borrow());
         self.g.assert_no_errors();
     }
 }

@@ -8,6 +8,7 @@
 
 mod h6_common;
 mod mem_common;
+mod pipeline_common;
 
 use h6_common::*;
 use mem_common::Golden;
