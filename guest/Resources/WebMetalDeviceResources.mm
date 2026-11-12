@@ -5,6 +5,10 @@
 #import "WebMetalTexture.h"
 #import "WebMetalHeapPrivate.h"
 
+namespace webmetal {
+id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSamplerDescriptor *descriptor);
+}
+
 // The class adopts the protocols that declare these methods; this category, not the class, implements them.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
@@ -82,6 +86,21 @@
     if (descriptor.type == 2)
         WMLoudMethod(self, _cmd, "a sparse heap (AGXA10FamilySparseHeap) is not implemented");
     return webmetal::NewHeap(self, _cmd, descriptor);
+}
+
+// -[AGXA10FamilyDevice newSamplerStateWithDescriptor:] (AGXMetalA10 0x21c8d7dc0).
+- (id<MTLSamplerState>)newSamplerStateWithDescriptor:(MTLSamplerDescriptor *)descriptor
+{
+    return webmetal::NewSamplerState(self, _cmd, descriptor);
+}
+
+// -[AGXA10FamilyDevice newResourceGroupFromResources:count:] (AGXMetalA10 0x21c8db1f8) answers nil: with the
+// disable_drop_hints boot argument set to 1 directly, and otherwise because -[AGXA10FamilyResourceGroup
+// initWithDevice:resources:count:] (0x21c8dc920) fails for a count of 0 and, for any other count, its block
+// (0x21c8dcbe4) clears _initedResourceGroup before testing it, so the initializer releases the group and returns nil.
+- (id)newResourceGroupFromResources:(const id<MTLResource> *)resources count:(NSUInteger)count
+{
+    return nil;
 }
 
 @end

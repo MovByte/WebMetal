@@ -43,3 +43,7 @@ target = "AGXA10FamilyThreadedRenderPass"
 [[class]]
 name = "WebMetalHeap"
 target = "AGXA10FamilyHeap"
+
+[[class]]
+name = "WebMetalSamplerState"
+target = "AGXA10FamilySampler"

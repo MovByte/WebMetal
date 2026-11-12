@@ -35,6 +35,7 @@ use webmetal_host::gpu::native::{Native, NativeGpu};
 use webmetal_host::gpu::scope::{Granularity, Policy};
 use webmetal_host::gpu::{Adapter as _, Device as _, Gpu as _, negotiate};
 use webmetal_host::mem::service::MemoryServices;
+use webmetal_host::state::StateServices;
 use webmetal_wire::{Event, Handle, Request, SurfaceId};
 
 /// How long a request may wait on the GPU without any progress before the shim stops the process.
@@ -188,9 +189,7 @@ impl InProcess {
         let mut byte = 0u8;
         while at < end {
             let mut got = 0u64;
-            let kr = unsafe {
-                mach_vm_read_overwrite(mach_task_self_, at, 1, &mut byte as *mut u8 as u64, &mut got)
-            };
+            let kr = unsafe { mach_vm_read_overwrite(mach_task_self_, at, 1, &mut byte as *mut u8 as u64, &mut got) };
             let kr = if kr == KERN_SUCCESS && write {
                 unsafe { mach_vm_write(mach_task_self_, at, &byte as *const u8 as usize, 1) }
             } else {
@@ -419,7 +418,7 @@ fn set_up() -> Result<(NativeGpu, Exec, Rc<InProcess>), String> {
         .map_err(|s| format!("memory set-up stalled: {s:?}"))?
         .map_err(|e| format!("memory set-up: {e}"))?;
     let services = Services {
-        control: vec![memory.control() as Box<dyn ControlService<Native, InProcess>>],
+        control: vec![memory.control() as Box<dyn ControlService<Native, InProcess>>, Box::new(StateServices::new())],
         render: None,
         compute: None,
         blit: None,
@@ -491,15 +490,13 @@ pub extern "C" fn webmetal_shim_executor_start(error: *mut c_char, capacity: usi
     if started.is_none() {
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
         let (job_tx, job_rx) = mpsc::channel::<Job>();
-        let spawned = std::thread::Builder::new().name("WebMetal shim executor".into()).spawn(move || {
-            match set_up() {
-                Ok((gpu, exec, embedder)) => {
-                    let _ = ready_tx.send(Ok(()));
-                    run(gpu, exec, embedder, job_rx);
-                }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e));
-                }
+        let spawned = std::thread::Builder::new().name("WebMetal shim executor".into()).spawn(move || match set_up() {
+            Ok((gpu, exec, embedder)) => {
+                let _ = ready_tx.send(Ok(()));
+                run(gpu, exec, embedder, job_rx);
+            }
+            Err(e) => {
+                let _ = ready_tx.send(Err(e));
             }
         });
         let outcome = match spawned {

@@ -1024,6 +1024,13 @@ inline constexpr DriverSelector kAGXA10FamilyHeapDriver[] = {
     {SelectorKind::Instance, "usedSize", "Q16@0:8", "iogpu", ""},
 };
 
+// Driver-layer selectors of AGXA10FamilySampler -> _MTLSamplerState.
+inline constexpr DriverSelector kAGXA10FamilySamplerDriver[] = {
+    {SelectorKind::Instance, "initWithDevice:samplerDescriptor:driverDescriptor:initialQOSOverride:", "@44@0:8@16@24r^v32I40", "agx", ""},
+    {SelectorKind::Instance, "resourceIndex", "Q16@0:8", "agx", ""},
+    {SelectorKind::Instance, "uniqueIdentifier", "Q16@0:8", "agx", ""},
+};
+
 inline constexpr Role kRoles[] = {
     {"WebMetalDevice", "AGXA10XDevice", "_MTLDevice", kAGXA10XDeviceDriver, 264},
     {"WebMetalBuffer", "AGXA10FamilyBuffer", "_MTLResource", kAGXA10FamilyBufferDriver, 75},
@@ -1035,6 +1042,7 @@ inline constexpr Role kRoles[] = {
     {"WebMetalBlitCommandEncoder", "AGXA10FamilyBlitContext", "_MTLCommandEncoder", kAGXA10FamilyBlitContextDriver, 50},
     {"WebMetalParallelRenderCommandEncoder", "AGXA10FamilyThreadedRenderPass", "_MTLParallelRenderCommandEncoder", kAGXA10FamilyThreadedRenderPassDriver, 14},
     {"WebMetalHeap", "AGXA10FamilyHeap", "_MTLHeap", kAGXA10FamilyHeapDriver, 26},
+    {"WebMetalSamplerState", "AGXA10FamilySampler", "_MTLSamplerState", kAGXA10FamilySamplerDriver, 3},
 };
 
 inline constexpr BaseIvar k_MTLAccelerationStructureCommandEncoderIvars[] = {
@@ -2726,7 +2734,15 @@ inline constexpr BaseIvar k_MTLSamplerStateIvars[] = {
     {"_gpuAddress", 40, "Q"},
 };
 inline constexpr BaseSelector k_MTLSamplerStateSelectors[] = {
-    {SelectorKind::Instance, nullptr, nullptr},  // none; the count below is 0
+    {SelectorKind::Instance, "device", "@16@0:8"},
+    {SelectorKind::Instance, "gpuAddress", "Q16@0:8"},
+    {SelectorKind::Instance, "gpuHandle", "Q16@0:8"},
+    {SelectorKind::Instance, "gpuResourceID", "{MTLResourceID=Q}16@0:8"},
+    {SelectorKind::Instance, "initWithDevice:samplerDescriptor:driverDescriptor:initialQOSOverride:", nullptr},
+    {SelectorKind::Instance, "label", "@16@0:8"},
+    {SelectorKind::Instance, "pixelFormat", "Q16@0:8"},
+    {SelectorKind::Instance, "resourceIndex", "Q16@0:8"},
+    {SelectorKind::Instance, "uniqueIdentifier", "Q16@0:8"},
 };
 
 // Metal.framework base classes on 21H461, as guest/Private declares them.
@@ -2752,7 +2768,7 @@ inline constexpr BaseLayout kBases[] = {
     {"_MTLRasterizationRateMap", "NSObject", 60, k_MTLRasterizationRateMapIvars, 5, k_MTLRasterizationRateMapSelectors, 0},
     {"_MTLRenderPipelineState", "NSObject", 160, k_MTLRenderPipelineStateIvars, 19, k_MTLRenderPipelineStateSelectors, 0},
     {"_MTLResource", "_MTLObjectWithLabel", 20, k_MTLResourceIvars, 0, k_MTLResourceSelectors, 184},
-    {"_MTLSamplerState", "NSObject", 48, k_MTLSamplerStateIvars, 5, k_MTLSamplerStateSelectors, 0},
+    {"_MTLSamplerState", "NSObject", 48, k_MTLSamplerStateIvars, 5, k_MTLSamplerStateSelectors, 9},
 };
 
 }  // namespace webmetal::target
