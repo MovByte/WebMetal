@@ -12,9 +12,10 @@
 //!   such as a wait that times out): `IOGPUCommandQueueErrorDomain` with the status as the code ([`kernel`]). The
 //!   guest makes of it the `NSError` IOGPU makes (`-[NSError(IOGPUMetalErrors) initWithIOGPUError:]`), in
 //!   `MTLCommandBufferErrorDomain` with this one as its underlying error.
-//! - A `GPUOutOfMemoryError` while a command buffer executes: `MTLCommandBufferErrorDomain`,
-//!   `MTLCommandBufferErrorOutOfMemory` (8); `MTLCommandBuffer.h`: "Insufficient memory was available to execute this
-//!   command buffer."
+//! - A `GPUOutOfMemoryError` while a command buffer executes: the kernel status
+//!   `kIOGPUCommandBufferCallbackErrorOutOfMemory` (8), of which IOGPU makes `MTLCommandBufferErrorOutOfMemory` (8,
+//!   "Insufficient Memory"; it is the only status IOGPU maps to that code); `MTLCommandBuffer.h`: "Insufficient memory
+//!   was available to execute this command buffer."
 //! - A `GPUValidationError`, a `GPUInternalError` or an error that escaped every scope: status 2. The executor checks
 //!   Metal's rules and WebGPU's before it calls WebGPU, so such an error is an executor defect; it is reported, never
 //!   passed off as a Metal result.
@@ -44,6 +45,8 @@ pub const IOGPU_COMMAND_QUEUE_ERROR_DOMAIN: &str = "IOGPUCommandQueueErrorDomain
 pub mod kernel_status {
     /// `kIOGPUCommandBufferCallbackErrorTimeout`.
     pub const TIMEOUT: i64 = 2;
+    /// `kIOGPUCommandBufferCallbackErrorOutOfMemory`.
+    pub const OUT_OF_MEMORY: i64 = 8;
 }
 
 /// `MTLCommandBufferStatus` (iPhoneOS SDK, `MTLCommandBuffer.h`).
@@ -178,9 +181,7 @@ impl GpuCause {
     pub fn command_buffer_failure(&self) -> Failure {
         match self {
             GpuCause::DeviceLost(info) => device_removed(info),
-            GpuCause::OutOfMemory(m) => {
-                metal(COMMAND_BUFFER_ERROR_DOMAIN, command_buffer_error::OUT_OF_MEMORY, format!("out of memory: {m}"))
-            }
+            GpuCause::OutOfMemory(m) => kernel(kernel_status::OUT_OF_MEMORY, format!("out of memory: {m}")),
             GpuCause::Defect(m) => unimplemented(m.clone()),
         }
     }
@@ -232,14 +233,14 @@ mod tests {
     }
 
     #[test]
-    fn out_of_memory_maps_to_the_metal_code() {
+    fn out_of_memory_maps_to_the_kernel_status() {
         let c = Captured::Error {
             error: GpuError { filter: ErrorFilter::OutOfMemory, message: "no".into() },
             at: Attribution::Batch(Vec::new()),
         };
         let f = GpuCause::of(&c).command_buffer_failure();
         assert_eq!(f.status, status::METAL_ERROR);
-        assert_eq!(f.domain.as_deref(), Some("MTLCommandBufferErrorDomain"));
+        assert_eq!(f.domain.as_deref(), Some("IOGPUCommandQueueErrorDomain"));
         assert_eq!(f.code, 8);
         assert_eq!(GpuCause::of(&c).request_failure().status, status::UNIMPLEMENTED);
     }

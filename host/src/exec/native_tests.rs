@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use webmetal_wire::*;
 
-use super::failure::{COMMAND_BUFFER_ERROR_DOMAIN, NO_RECORD, command_buffer_error, command_buffer_status};
+use super::failure::{NO_RECORD, command_buffer_status};
 use super::*;
 use crate::embed::*;
 use crate::gpu::idl::{
@@ -1633,8 +1633,8 @@ fn out_of_memory() {
         assert!(c.failure.message.contains("Not enough memory left"), "{}", c.failure.message);
     } else {
         assert_eq!(c.failure.status, status::METAL_ERROR, "{:?}", c.failure);
-        assert_eq!(c.failure.domain.as_deref(), Some(COMMAND_BUFFER_ERROR_DOMAIN));
-        assert_eq!(c.failure.code, command_buffer_error::OUT_OF_MEMORY);
+        assert_eq!(c.failure.domain.as_deref(), Some(failure::IOGPU_COMMAND_QUEUE_ERROR_DOMAIN));
+        assert_eq!(c.failure.code, failure::kernel_status::OUT_OF_MEMORY);
     }
     assert_completed(&completion(&posted, next));
     assert_eq!(x.guest(T1, addr, 256), vec![6; 256]);
