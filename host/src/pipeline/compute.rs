@@ -323,13 +323,6 @@ pub fn creation_desc(settings: &ComputeSettings, info: &KernelInfo) -> PipelineD
 
 /// The variant description of a dispatch the encoder names.
 pub fn variant_desc(stage_input: &Option<StageInputDescriptor>, key: &VariantKey) -> Result<PipelineDesc, Failure> {
-    if !key.samplers.is_empty() {
-        return Err(failure::unimplemented(format!(
-            "a compute variant with samplers bound at indices {:?}: the variant key carries no sampler state, which \
-             decides the generated code",
-            key.samplers
-        )));
-    }
     let bindings = StageBindings {
         stage: MetalStage::Kernel,
         // The encoder's key does not say which bound ranges overlap; slots are compiled as distinct buffers.
@@ -350,7 +343,24 @@ pub fn variant_desc(stage_input: &Option<StageInputDescriptor>, key: &VariantKey
                 swizzle: IDENTITY_SWIZZLE,
             })
             .collect(),
-        samplers: Vec::new(),
+        samplers: key
+            .samplers
+            .iter()
+            .map(|s| airwgsl::SamplerSlot {
+                index: s.index,
+                min_filter: s.min_filter,
+                mag_filter: s.mag_filter,
+                mip_filter: s.mip_filter,
+                address_modes: s.address_modes,
+                border_color: s.border_color,
+                normalized_coordinates: s.normalized_coordinates,
+                compare_function: s.compare_function,
+                max_anisotropy: s.max_anisotropy,
+                lod_min_clamp: f32::from_bits(s.lod_min_clamp),
+                lod_max_clamp: f32::from_bits(s.lod_max_clamp),
+                lod_average: s.lod_average,
+            })
+            .collect(),
         argument_buffers: Vec::new(),
     };
     let t = key.threads_per_threadgroup;

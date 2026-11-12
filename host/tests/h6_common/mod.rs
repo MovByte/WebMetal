@@ -36,8 +36,8 @@ use webmetal_host::gpu::idl::{
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferBindingLayout, BufferBindingType, Color, ColorDict,
     ComputePipelineDescriptor as GpuComputePipelineDescriptor, LoadOp, PipelineLayoutDescriptor, PipelineLayoutOrAuto,
     ProgrammableStage, RenderPassColorAttachment as GpuColorAttachment, RenderPassDescriptor as GpuRenderPass,
-    ShaderModuleDescriptor, ShaderStage, StorageTextureBindingLayout, StoreOp, TextureBindingLayout, TextureOrView,
-    TextureSampleType, TextureViewDescriptor, TextureViewDimension,
+    SamplerBindingLayout, SamplerBindingType, ShaderModuleDescriptor, ShaderStage, StorageTextureBindingLayout,
+    StoreOp, TextureBindingLayout, TextureOrView, TextureSampleType, TextureViewDescriptor, TextureViewDimension,
 };
 use webmetal_host::gpu::num::Float64;
 use webmetal_host::gpu::scope::{Granularity, Policy};
@@ -230,6 +230,10 @@ fn sampled(binding: u32, index: u64, sample_type: TextureSampleType, multisample
     }
 }
 
+fn sampler(binding: u32, index: u64, ty: SamplerBindingType) -> Binding {
+    Binding { binding, resource: Resource::Sampler { ty }, source: Source::Sampler { index } }
+}
+
 fn workgroup(key: &VariantKey) -> String {
     let [x, y, z] = key.threads_per_threadgroup;
     format!("@compute @workgroup_size({x}, {y}, {z})")
@@ -308,6 +312,29 @@ fn main(@builtin(local_invocation_index) tiitg: u32, @builtin(workgroup_id) tgpi
 fn main(@builtin(global_invocation_id) id: vec3u) {{
     let i = id.x;
     out[i] = input[i / 4u][i % 4u];
+}}",
+                    wg = workgroup(k)
+                ))
+            },
+        },
+        // samplers.metal: smp_sample_2d, over the RGBA32Float texture of the sampler cases, which WebGPU does not filter.
+        "smp_sample_2d" => Kernel {
+            bindings: vec![
+                sampled(0, 0, TextureSampleType::UnfilterableFloat, false),
+                sampler(1, 0, SamplerBindingType::NonFiltering),
+                storage_of(2, 0, false, 8),
+                storage_of(3, 1, true, 16),
+            ],
+            static_memory: 0,
+            wgsl: |k| {
+                Ok(format!(
+                    "@group(0) @binding(0) var t: texture_2d<f32>;
+@group(0) @binding(1) var s: sampler;
+@group(0) @binding(2) var<storage, read> coords: array<vec2f>;
+@group(0) @binding(3) var<storage, read_write> out: array<vec4f>;
+{wg}
+fn main(@builtin(global_invocation_id) id: vec3u) {{
+    out[id.x] = textureSampleLevel(t, s, coords[id.x], 0.0);
 }}",
                     wg = workgroup(k)
                 ))
@@ -508,7 +535,11 @@ impl ComputeVariants<A> for StandIn {
                         l.view_dimension = *view_dimension;
                         e.storage_texture = Some(l);
                     }
-                    Resource::Sampler { .. } => unreachable!("the stand-in kernels take no samplers"),
+                    Resource::Sampler { ty } => {
+                        let mut l = SamplerBindingLayout::new();
+                        l.r#type = *ty;
+                        e.sampler = Some(l);
+                    }
                 }
                 e
             })
@@ -682,7 +713,11 @@ impl Harness {
             compiled: compiled.clone(),
         };
         let services = Services {
-            control: vec![svc.control() as Box<dyn ControlService<A, E>>, Box::new(pipelines)],
+            control: vec![
+                svc.control() as Box<dyn ControlService<A, E>>,
+                Box::new(pipelines),
+                Box::new(webmetal_host::state::StateServices::new()),
+            ],
             render: Some(Box::new(ClearPass { memory: memory.clone() })),
             compute: Some(Box::new(ComputeService::new(memory.clone()))),
             blit: Some(Box::new(BlitService::new(memory.clone()))),

@@ -45,7 +45,9 @@ use crate::mem::texture::{Prepare, Texture, usage};
 use crate::mem::{MemError, Memory};
 use crate::state::SamplerObject;
 
-use pipeline::{ComputePipelineState, ComputeVariant, Resource, Source, TextureSlot, UniformValue, VariantKey};
+use pipeline::{
+    ComputePipelineState, ComputeVariant, Resource, SamplerSlot, Source, TextureSlot, UniformValue, VariantKey,
+};
 
 /// Buffer argument table entries of a compute encoder on the A10X (`maxComputeBuffers` of the device profile).
 pub const MAX_BUFFERS: u64 = 31;
@@ -615,7 +617,27 @@ impl<A: Api> ComputeService<A> {
             threadgroup_memory_lengths: lengths,
             buffers: st.buffers.keys().copied().collect(),
             textures,
-            samplers: st.samplers.keys().copied().collect(),
+            samplers: st
+                .samplers
+                .iter()
+                .map(|(&index, s)| {
+                    let d = &s.descriptor;
+                    SamplerSlot {
+                        index,
+                        min_filter: d.min_filter,
+                        mag_filter: d.mag_filter,
+                        mip_filter: d.mip_filter,
+                        address_modes: [d.s_address_mode, d.t_address_mode, d.r_address_mode],
+                        border_color: d.border_color,
+                        normalized_coordinates: d.normalized_coordinates,
+                        compare_function: d.compare_function,
+                        max_anisotropy: d.max_anisotropy,
+                        lod_min_clamp: d.lod_min_clamp.to_bits(),
+                        lod_max_clamp: d.lod_max_clamp.to_bits(),
+                        lod_average: d.lod_average,
+                    }
+                })
+                .collect(),
         })
     }
 

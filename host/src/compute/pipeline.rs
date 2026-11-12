@@ -57,8 +57,28 @@ pub struct VariantKey {
     pub buffers: Vec<u64>,
     /// The bound textures.
     pub textures: Vec<TextureSlot>,
-    /// Sampler argument table indices that hold a sampler.
-    pub samplers: Vec<u64>,
+    /// The bound sampler states.
+    pub samplers: Vec<SamplerSlot>,
+}
+
+/// A bound sampler state: the fields of its `MTLSamplerDescriptor` the compiler takes (AirWgsl's `SamplerSlot`), the
+/// LOD clamps as their bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SamplerSlot {
+    /// Sampler argument table index.
+    pub index: u64,
+    pub min_filter: u64,
+    pub mag_filter: u64,
+    pub mip_filter: u64,
+    /// s, t and r.
+    pub address_modes: [u64; 3],
+    pub border_color: u64,
+    pub normalized_coordinates: bool,
+    pub compare_function: u64,
+    pub max_anisotropy: u64,
+    pub lod_min_clamp: u32,
+    pub lod_max_clamp: u32,
+    pub lod_average: bool,
 }
 
 /// A bound texture: what of it changes the generated code.

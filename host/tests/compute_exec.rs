@@ -298,3 +298,129 @@ fn compute_refusals() {
     );
     h.assert_no_errors();
 }
+
+/// sampler.address-modes (tests/reference/src/cases/Samplers.m): `smp_sample_2d` samples an 8x8 RGBA32Float texture
+/// through sampler states bound with `setSamplerState:atIndex:`, at texel centres inside the texture and one and two
+/// periods outside it. Every address mode WebGPU has gives the texel the mode selects (MTLSampler.h); the modes it
+/// lacks make sampler states the encoder refuses when a dispatch uses them.
+#[test]
+fn sampler_address_modes() {
+    let h = Harness::new();
+    let p = h.pipeline("smp_sample_2d", None, 0);
+    const N: i64 = 8;
+    let d = texture_descriptor(2, fmt("RGBA32Float"), (8, 8, 1), 1, 1, 2, 1, 1);
+    let t = h.texture(d.clone());
+    let texel = |x: i64, y: i64| [(x + 1) as f32, (y + 1) as f32, (100 + x + 8 * y) as f32, 0.5];
+    let mut texels = Vec::new();
+    for y in 0..N {
+        for x in 0..N {
+            texels.extend(texel(x, y).iter().flat_map(|v| v.to_le_bytes()));
+        }
+    }
+    let (src, _) = h.buffer_with(&texels);
+    h.blit(vec![Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+        source_buffer: Some(src),
+        source_offset: 0,
+        source_bytes_per_row: 8 * 16,
+        source_bytes_per_image: 0,
+        source_size: size(8, 8, 1),
+        destination_texture: Some(t),
+        destination_slice: 0,
+        destination_level: 0,
+        destination_origin: origin(0, 0, 0),
+    })]);
+    let us = [-17i64, -9, -8, -1, 0, 3, 7, 8, 12, 15, 16, 23];
+    let vs = [-6i64, 2, 9];
+    let mut coords = Vec::new();
+    for v in vs {
+        for u in us {
+            coords.extend(((u as f32 + 0.5) / N as f32).to_le_bytes());
+            coords.extend(((v as f32 + 0.5) / N as f32).to_le_bytes());
+        }
+    }
+    let count = (us.len() * vs.len()) as u64;
+    // MTLSampler.h: clamp-to-edge 0, repeat 2, mirror-repeat 3.
+    let address = |mode: u64, k: i64| match mode {
+        0 => k.clamp(0, N - 1),
+        2 => k.rem_euclid(N),
+        3 => {
+            let m = k.rem_euclid(2 * N);
+            if m < N { m } else { 2 * N - 1 - m }
+        }
+        _ => unreachable!(),
+    };
+    for (s_mode, t_mode) in [(0u64, 0u64), (2, 2), (3, 3), (2, 0), (3, 2)] {
+        let sampler = h.handle();
+        let mut desc = sampler_descriptor();
+        (desc.s_address_mode, desc.t_address_mode, desc.r_address_mode) = (s_mode, t_mode, s_mode);
+        h.ok(Request::CreateSamplerState(CreateSamplerState { sampler, descriptor: desc }));
+        let (input, _) = h.buffer_with(&coords);
+        let (out, out_addr) = h.buffer((count * 16) as usize);
+        h.compute(vec![
+            set_pipeline(p),
+            Command::ComputeSetTexture(ComputeSetTexture { texture: Some(t), index: 0 }),
+            Command::ComputeSetSamplerState(ComputeSetSamplerState { sampler: Some(sampler), index: 0 }),
+            set_buffer(input, 0, 0),
+            set_buffer(out, 0, 1),
+            dispatch(size(count, 1, 1), size(1, 1, 1)),
+        ]);
+        let got = h.read(out_addr, (count * 16) as usize);
+        let mut expected = Vec::new();
+        for v in vs {
+            for u in us {
+                expected.extend(texel(address(s_mode, u), address(t_mode, v)).iter().flat_map(|x| x.to_le_bytes()));
+            }
+        }
+        assert_eq!(got, expected, "{}: address modes s {s_mode} t {t_mode}", h.name());
+    }
+    // Clamp-to-zero has no WebGPU sampler: the dispatch that uses the state is refused with the reason.
+    let sampler = h.handle();
+    let mut desc = sampler_descriptor();
+    desc.s_address_mode = 4;
+    h.ok(Request::CreateSamplerState(CreateSamplerState { sampler, descriptor: desc }));
+    let (input, _) = h.buffer_with(&coords);
+    let (out, _) = h.buffer((count * 16) as usize);
+    let f = h.compute_failure(vec![
+        set_pipeline(p),
+        Command::ComputeSetTexture(ComputeSetTexture { texture: Some(t), index: 0 }),
+        Command::ComputeSetSamplerState(ComputeSetSamplerState { sampler: Some(sampler), index: 0 }),
+        set_buffer(input, 0, 0),
+        set_buffer(out, 0, 1),
+        dispatch(size(count, 1, 1), size(1, 1, 1)),
+    ]);
+    assert_eq!(f.status, status::HOST_UNSUPPORTED, "{f:?}");
+    assert!(f.message.contains("ClampToZero"), "{f:?}");
+    h.assert_no_errors();
+}
+
+/// MTLSamplerDescriptor's defaults (MTLSampler.h): nearest filters, not mipmapped, clamp to edge, normalized
+/// coordinates, LOD clamps [0, FLT_MAX], anisotropy 1, compare never.
+fn sampler_descriptor() -> SamplerDescriptor {
+    SamplerDescriptor {
+        border_color: 0,
+        border_color_spi: 0,
+        compare_function: 0,
+        custom_border_color_value_0: 0,
+        custom_border_color_value_1: 0,
+        custom_border_color_value_2: 0,
+        custom_border_color_value_3: 0,
+        force_resource_index: false,
+        force_seams_on_cubemap_filtering: false,
+        label: None,
+        lod_average: false,
+        lod_bias: 0.0,
+        lod_max_clamp: f32::MAX,
+        lod_min_clamp: 0.0,
+        mag_filter: 0,
+        max_anisotropy: 1,
+        min_filter: 0,
+        mip_filter: 0,
+        normalized_coordinates: true,
+        pixel_format: 0,
+        r_address_mode: 0,
+        resource_index: 0,
+        s_address_mode: 0,
+        support_argument_buffers: false,
+        t_address_mode: 0,
+    }
+}
