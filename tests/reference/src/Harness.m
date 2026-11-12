@@ -202,7 +202,6 @@ size_t WMElemSize(WMElem elem) {
 @end
 
 @implementation WMCase {
-    NSURL *_libraryURL;
     WMRefRecordSink _sink;
     id<MTLLibrary> _library;
     id<MTLCommandQueue> _queue;

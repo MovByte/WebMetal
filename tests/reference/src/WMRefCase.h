@@ -40,8 +40,10 @@ size_t WMElemSize(WMElem elem);
 @interface WMCase : NSObject
 
 @property (nonatomic, readonly) id<MTLDevice> device;
-// Harness shader library (shaders/*.metal), loaded on first use.
+// Harness shader library (shaders/*.metal), loaded on first use, and the
+// file it is loaded from.
 @property (nonatomic, readonly) id<MTLLibrary> library;
+@property (nonatomic, readonly) NSURL *libraryURL;
 // A command queue created on first use.
 @property (nonatomic, readonly) id<MTLCommandQueue> queue;
 
