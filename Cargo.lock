@@ -298,6 +298,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "webmetal-embed-ref"
+version = "0.1.0"
+dependencies = [
+ "webmetal-host",
+ "webmetal-wire",
+]
+
+[[package]]
 name = "webmetal-host"
 version = "0.1.0"
 dependencies = [

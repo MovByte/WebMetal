@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["wire", "host"]
+members = ["wire", "host", "host/embed-ref"]
 
 [workspace.package]
 edition = "2024"

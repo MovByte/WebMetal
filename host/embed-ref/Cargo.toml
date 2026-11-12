@@ -1,0 +1,20 @@
+[package]
+name = "webmetal-embed-ref"
+version = "0.1.0"
+description = "WebMetal reference embedder: runs the host executor without a kernel, replaying recordings"
+edition.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[features]
+# Run on a native WebGPU implementation (Dawn or wgpu-native, chosen as host/build.rs describes).
+native = ["webmetal-host/native"]
+
+[dependencies]
+webmetal-host = { path = ".." }
+webmetal-wire = { path = "../../wire" }
+
+[[bin]]
+name = "webmetal-embed-ref"
+required-features = ["native"]
