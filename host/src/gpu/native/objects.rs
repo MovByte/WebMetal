@@ -509,8 +509,14 @@ impl Buffer<Native> for NativeBuffer {
     }
 
     fn unmap(&self) {
+        // unmap() of a buffer with no mapping and no pending map does nothing (its content-timeline steps return
+        // early); the implementation is told only when there is one to end, since wgpu-native reports an unmap of
+        // an unmapped buffer as a validation error.
+        let mapped = self.0.pending.borrow().is_some() || self.0.mapping.borrow().is_some();
         self.unmap_content();
-        unsafe { sys::wgpuBufferUnmap(self.0.raw) };
+        if mapped {
+            unsafe { sys::wgpuBufferUnmap(self.0.raw) };
+        }
     }
 
     fn destroy(&self) {
