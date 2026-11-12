@@ -9,8 +9,9 @@
 //!   command buffer's WebGPU command encoder.
 //! - [`Coherence`] (memory `mem/`): guest memory and the GPU copies of CPU-visible resources: uploads at commit,
 //!   write-back before a shared event is signalled and before completion.
-//! - [`super::Executor::committed_work_done`] (presentation `present/`): waiting for every command buffer committed
-//!   before a frame.
+//! - [`super::Executor::committed_work_done_where`] with [`super::writes`], and [`super::Executor::object`]
+//!   (presentation `present/`): waiting for the committed command buffers that can write a frame's source, and
+//!   reaching a task's texture outside a request.
 //!
 //! Services reach other services' objects through the object table: the service that creates an object attaches a
 //! payload ([`ServiceCx::attach`]) whose type it documents, and any service reads it through [`Table::get`].

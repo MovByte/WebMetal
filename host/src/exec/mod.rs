@@ -57,6 +57,7 @@ mod runtime;
 pub mod schema;
 pub mod service;
 pub mod stream;
+pub mod writes;
 
 use std::cell::RefCell;
 use std::future::Future;
@@ -221,6 +222,28 @@ impl<A: Api, E: Embedder + 'static> Executor<A, E> {
             exec.pump(cx);
             if exec.core.borrow().runs_before(mark, task) { Poll::Pending } else { Poll::Ready(()) }
         }))
+    }
+
+    /// Resolves once every command buffer committed so far that `select` picks has completed. `select` is called
+    /// now, once for each command buffer that has not completed, with what it was committed with and its task's object
+    /// table; command buffers committed later are not waited for. A handle a command buffer names may have been
+    /// released by the guest since, so a selection that cannot resolve one has to decide without it.
+    ///
+    /// This waits for the work one result depends on, and for nothing else: a command buffer that is not picked, even
+    /// one held by an event no one signals, does not hold it.
+    pub fn committed_work_done_where(&self, mut select: impl FnMut(&CommitInfo, &Table) -> bool) -> GpuFuture<()> {
+        let runs = self.core.borrow().runs_where(&mut select);
+        let exec = self.clone();
+        Box::pin(std::future::poll_fn(move |cx| {
+            exec.pump(cx);
+            if exec.core.borrow().any_run(&runs) { Poll::Pending } else { Poll::Ready(()) }
+        }))
+    }
+
+    /// The live object `handle` names in `task` (its table entry, with the payload its service attached), for the
+    /// embedder-facing parts of the executor that act on a task's objects outside a request.
+    pub fn object(&self, task: TaskId, handle: Handle) -> Option<Entry> {
+        self.core.borrow().object(task, handle)
     }
 
     /// The failures with status 2 or 3 since the last call.

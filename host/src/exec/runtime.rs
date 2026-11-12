@@ -322,6 +322,26 @@ impl<A: Api, E: Embedder> Core<A, E> {
         self.runs.range(..mark).any(|(_, r)| task.is_none_or(|t| r.task == t))
     }
 
+    /// The command buffers committed so far that have not completed and that `select` picks, given each with its
+    /// task's object table.
+    pub(crate) fn runs_where(&self, select: &mut dyn FnMut(&CommitInfo, &Table) -> bool) -> Vec<RunId> {
+        self.runs
+            .iter()
+            .filter(|(_, r)| self.tasks.get(&r.task).is_some_and(|t| select(&r.info, &t.table)))
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    /// Whether any of these command buffers has not completed.
+    pub(crate) fn any_run(&self, runs: &[RunId]) -> bool {
+        runs.iter().any(|id| self.runs.contains_key(id))
+    }
+
+    /// The live object `handle` names in `task`.
+    pub(crate) fn object(&self, task: TaskId, handle: Handle) -> Option<Entry> {
+        self.tasks.get(&task)?.table.get(handle).cloned()
+    }
+
     fn report(
         &mut self,
         task: TaskId,
