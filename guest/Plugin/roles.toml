@@ -7,3 +7,7 @@
 [[class]]
 name = "WebMetalDevice"
 target = "AGXA10XDevice"
+
+[[class]]
+name = "WebMetalBuffer"
+target = "AGXA10FamilyBuffer"

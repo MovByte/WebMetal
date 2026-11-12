@@ -9,6 +9,7 @@
 
 #include <dispatch/dispatch.h>
 
+#include <atomic>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -51,6 +52,8 @@ bool prepareClasses()
     uint64_t _registryID;
     // The connection to the accelerator service (WebMetalConnection.h).
     std::unique_ptr<webmetal::Connection> _connection;
+    // The allocated sizes of the device's live resources (currentAllocatedSize).
+    std::atomic<int64_t> _allocated;
     // IOGPUMetalDevice._deviceWrapper: the object Metal.framework wraps the device in (its debug layer), held weakly.
     __weak id _deviceWrapper;
 }
@@ -61,6 +64,16 @@ namespace webmetal {
 Connection *DeviceConnection(WebMetalDevice *device)
 {
     return device->_connection.get();
+}
+
+void DeviceAddAllocation(WebMetalDevice *device, int64_t bytes)
+{
+    device->_allocated.fetch_add(bytes, std::memory_order_relaxed);
+}
+
+int64_t DeviceAllocatedSize(WebMetalDevice *device)
+{
+    return device->_allocated.load(std::memory_order_relaxed);
 }
 
 }  // namespace webmetal
