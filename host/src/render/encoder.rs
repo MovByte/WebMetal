@@ -2107,7 +2107,10 @@ impl<A: Api> Run<'_, A> {
                     let mut d = TextureDescriptor::new(
                         Extent3D::Extent3DDict(Extent3DDict { width: w, height: h, depth_or_array_layers: 1 }),
                         t.gpu().format(),
-                        TextureUsage::COPY_DST | TextureUsage::TEXTURE_BINDING,
+                        // WebGPU requires RENDER_ATTACHMENT of a multisampled texture (createTexture validation).
+                        TextureUsage::COPY_DST
+                            | TextureUsage::TEXTURE_BINDING
+                            | if t.geometry.sample_count > 1 { TextureUsage::RENDER_ATTACHMENT } else { 0 },
                     );
                     d.sample_count = t.geometry.sample_count;
                     d.label = format!("{} snapshot of color attachment {a}", self.label);
