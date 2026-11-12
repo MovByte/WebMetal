@@ -8,6 +8,7 @@
 //! - [`etc2`], [`astc`], [`pvrtc`]: software decoders of the compressed formats, and [`decode`], which decodes a
 //!   Metal format's image with them.
 //! - [`packed`]: bit layouts and exact conversions of the formats stored in another WebGPU format.
+//! - [`storage`]: the stored texels of emulated textures, to and from Metal's bytes.
 //! - [`reinterpret`]: views in another pixel format.
 //! - [`ycbcr`]: the 4:2:2 formats and textures over IOSurface planes.
 
@@ -18,6 +19,7 @@ pub mod handling;
 pub mod packed;
 pub mod pvrtc;
 pub mod reinterpret;
+pub mod storage;
 #[rustfmt::skip]
 pub mod table;
 pub mod webgpu;
