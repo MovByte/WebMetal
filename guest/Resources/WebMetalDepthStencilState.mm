@@ -9,6 +9,7 @@
 
 #import "WebMetalResources.h"
 #import "WebMetalDepthStencilCache.h"
+#import "../Commands/WebMetalCommands.h"
 
 // The class adopts MTLDepthStencilState and MTLDepthStencilStateSPI as AGXA10FamilyDepthStencilState does and
 // implements only what the 21H461 driver implements; the protocols' other methods are Metal.framework's or LOUD stubs.
@@ -119,7 +120,8 @@ wire::StencilDescriptor wireFace(MTLStencilDescriptor *s)
 // descriptor is packed and looked up with its label (an empty string for none); a hit returns the cached state, a miss
 // makes one with -[_MTLDepthStencilState initWithDevice:depthStencilDescriptor:], stores the packed word and the needs
 // in it, and adds it to the cache, which keeps its reference. The returned state carries a reference for the caller
-// either way. Nothing is refused.
+// either way. Nothing is refused. A state holds its device (_MTLDepthStencilState) and the device's cache holds the
+// state, so a state lives as long as its device and its handle stays registered.
 id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, MTLDepthStencilDescriptor *d)
 {
     DepthStencilCache &cache = DeviceDepthStencilStates(device);
@@ -159,6 +161,7 @@ id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, 
     connection->Call(device, _cmd, request, &reply);
     if (!reply.ok)
         WMLoudMethod(device, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+    RegisterHandle(state, state->_handle);
     cache.states.emplace(std::move(key), DepthStencilCache::Entry{packed.loadStoreNeeds, state});
     os_unfair_lock_unlock(&cache.lock);
     return state;

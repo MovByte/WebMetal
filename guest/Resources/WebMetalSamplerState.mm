@@ -7,6 +7,7 @@
 // label and pixel format) and the driver's two answers below.
 
 #import "WebMetalResources.h"
+#import "../Commands/WebMetalCommands.h"
 
 // The class adopts MTLSamplerState and MTLSamplerStateSPI as AGXA10FamilySampler does and implements only what the
 // 21H461 driver implements; the protocols' other methods are Metal.framework's or LOUD stubs.
@@ -75,6 +76,7 @@ id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSampler
     connection->Call(device, _cmd, request, &reply);
     if (!reply.ok)
         WMLoudMethod(device, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+    RegisterHandle(sampler, sampler->_handle);
     return sampler;
 }
 
@@ -85,10 +87,8 @@ id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSampler
 - (void)dealloc
 {
     if (_handle) {
-        webmetal::wire::Release request;
-        request.object = _handle;
-        webmetal::DeviceConnection(_owner)->CallReportOnly<webmetal::wire::Release, webmetal::wire::ReleaseReply>(
-            "-[WebMetalSamplerState dealloc]", request);
+        webmetal::UnregisterHandle(self);
+        webmetal::ReleaseHandle(webmetal::DeviceConnection(_owner), _handle);
     }
 }
 
