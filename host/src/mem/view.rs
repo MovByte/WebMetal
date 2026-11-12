@@ -42,12 +42,13 @@ use crate::gpu::idl::{TextureAspect, TextureFormat, TextureViewDescriptor, Textu
 use webmetal_wire::{Handle, Range as WireRange, TextureSwizzleChannels};
 
 use super::buffer::label;
+use super::calls::Calls;
 use super::error::MemError;
-use super::layout::{Geometry, TextureType};
+use super::layout::{Geometry, RegionArgs, RegionLayout, TextureType};
 use super::memory::Memory;
 use super::options::StorageMode;
-use super::texture::{Texture, idl_format, usage};
-use crate::embed::TaskId;
+use super::texture::{Texture, TextureRead, idl_format, usage};
+use crate::embed::{Embedder, TaskId};
 
 /// `MTLTextureSwizzleChannelsDefault`: red 2, green 3, blue 4, alpha 5 (`MTLTextureSwizzle` of `MTLTexture.h`).
 pub const IDENTITY_SWIZZLE: [u8; 4] = [2, 3, 4, 5];
@@ -383,6 +384,48 @@ impl<A: Api> Memory<A> {
             plan,
             label: label(task, "texture view", handle),
         }))
+    }
+}
+
+impl<A: Api> Memory<A> {
+    /// The arguments of a CPU transfer through a view as the root's: Metal's rules checked against the view, then its
+    /// level and slice moved to the root's.
+    fn view_region(&self, call: &'static str, v: &TextureView<A>, a: &RegionArgs) -> Result<RegionArgs, MemError> {
+        v.bytes_are_root(call)?;
+        let blocks = self.cpu_rules(call, &v.root)?;
+        RegionLayout::new(call, &v.geometry, blocks, a)?;
+        Ok(RegionArgs {
+            level: u64::from(v.root_level(a.level as u32)),
+            slice: u64::from(v.root_slice(a.slice as u32)),
+            ..*a
+        })
+    }
+
+    /// `replaceRegion:` (both forms) through a view: the root's subresource at the view's bases.
+    pub fn replace_region_view(
+        &self,
+        g: &impl Calls<A>,
+        e: &dyn Embedder,
+        (task, call): (TaskId, &'static str),
+        v: &TextureView<A>,
+        a: &RegionArgs,
+        pixel_bytes: u64,
+    ) -> Result<(), MemError> {
+        let a = self.view_region(call, v, a)?;
+        self.replace(g, call, e, &v.root, &a, (task, pixel_bytes))
+    }
+
+    /// `getBytes:` (both forms) through a view: encode and submit the read of the root's subresource at the view's
+    /// bases.
+    pub fn get_bytes_view(
+        &self,
+        g: &impl Calls<A>,
+        call: &'static str,
+        v: &TextureView<A>,
+        a: &RegionArgs,
+    ) -> Result<TextureRead<A>, MemError> {
+        let a = self.view_region(call, v, a)?;
+        self.read_region(g, call, &v.root, &a)
     }
 }
 

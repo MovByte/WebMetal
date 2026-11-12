@@ -68,6 +68,14 @@ pub mod usage {
     pub const PIXEL_FORMAT_VIEW: u64 = 0x0010;
 }
 
+/// The Metal methods of the CPU transfers.
+pub(crate) const REPLACE_REGION_CALL: &str = "-[MTLTexture replaceRegion:mipmapLevel:withBytes:bytesPerRow:]";
+pub(crate) const REPLACE_REGION_SLICE_CALL: &str =
+    "-[MTLTexture replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:]";
+pub(crate) const GET_BYTES_CALL: &str = "-[MTLTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:]";
+pub(crate) const GET_BYTES_SLICE_CALL: &str =
+    "-[MTLTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:]";
+
 /// The WebGPU texture format of a format module format.
 pub fn idl_format(f: WebGpuFormat) -> TextureFormat {
     *TextureFormat::ALL.iter().find(|t| t.as_str() == f.name()).expect("the format tables share the IDL's names")
@@ -484,6 +492,12 @@ impl<A: Api> Memory<A> {
         t: &Texture<A>,
         a: &RegionArgs,
     ) -> Result<(RegionLayout, Blocks), MemError> {
+        let blocks = self.cpu_rules(call, t)?;
+        Ok((RegionLayout::new(call, &t.geometry, blocks, a)?, blocks))
+    }
+
+    /// The rules of `replaceRegion` and `getBytes` that concern the texture rather than the region; its blocks.
+    pub(crate) fn cpu_rules(&self, call: &'static str, t: &Texture<A>) -> Result<Blocks, MemError> {
         if t.surface.is_some() {
             return Err(MemError::unimplemented(format!(
                 "{call} of an IOSurface texture: the CPU's bytes are the surface's, which the kernel's IOSurface \
@@ -506,10 +520,9 @@ impl<A: Api> Memory<A> {
                 "{call} of a multisampled texture: WebGPU copies multisampled textures only to textures"
             )));
         }
-        let blocks = t.blocks.ok_or_else(|| {
+        t.blocks.ok_or_else(|| {
             MemError::undefined(call, "a combined depth-stencil texture has no single texel size for CPU access")
-        })?;
-        Ok((RegionLayout::new(call, &t.geometry, blocks, a)?, blocks))
+        })
     }
 
     /// Where a region of `(level, slice)` lies in the stored texture (texel coordinates; compressed regions rounded
@@ -671,7 +684,7 @@ impl<A: Api> Memory<A> {
             bytes_per_row: r.bytes_per_row,
             bytes_per_image: 0,
         };
-        let call = "-[MTLTexture replaceRegion:mipmapLevel:withBytes:bytesPerRow:]";
+        let call = REPLACE_REGION_CALL;
         self.replace(g, call, e, t, &a, (task, r.pixel_bytes.0))
     }
 
@@ -692,13 +705,13 @@ impl<A: Api> Memory<A> {
             bytes_per_row: r.bytes_per_row,
             bytes_per_image: r.bytes_per_image,
         };
-        let call = "-[MTLTexture replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:]";
+        let call = REPLACE_REGION_SLICE_CALL;
         self.replace(g, call, e, t, &a, (task, r.pixel_bytes.0))
     }
 
     /// Metal applies `replaceRegion` immediately, even before uncommitted command buffers that use the texture run;
     /// here the writes are queue operations, ordered before every later submission (plan section 6.2).
-    fn replace(
+    pub(crate) fn replace(
         &self,
         g: &impl Calls<A>,
         call: &'static str,
@@ -787,7 +800,7 @@ impl<A: Api> Memory<A> {
             bytes_per_row: r.bytes_per_row,
             bytes_per_image: 0,
         };
-        self.read_region(g, "-[MTLTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:]", t, &a)
+        self.read_region(g, GET_BYTES_CALL, t, &a)
     }
 
     /// `getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:` (GetBytesSlice).
@@ -805,10 +818,10 @@ impl<A: Api> Memory<A> {
             bytes_per_row: r.bytes_per_row,
             bytes_per_image: r.bytes_per_image,
         };
-        self.read_region(g, "-[MTLTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:]", t, &a)
+        self.read_region(g, GET_BYTES_SLICE_CALL, t, &a)
     }
 
-    fn read_region(
+    pub(crate) fn read_region(
         &self,
         g: &impl Calls<A>,
         call: &'static str,

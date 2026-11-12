@@ -63,7 +63,10 @@ use super::linear::LinearTexture;
 use super::memory::Memory;
 use super::purgeable::Purgeable;
 use super::surface::SurfaceReadback;
-use super::texture::{Texture, TextureBytes, TextureRead};
+use super::texture::{
+    GET_BYTES_CALL, GET_BYTES_SLICE_CALL, REPLACE_REGION_CALL, REPLACE_REGION_SLICE_CALL, Texture, TextureBytes,
+    TextureRead,
+};
 use super::view::{Parent, TextureView, ViewArgs};
 
 /// A resource of a heap.
@@ -323,6 +326,9 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
             Request::ReplaceRegion(r) => {
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     mem.replace_region(g, e, task, &t, r)?;
+                } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
+                    let a = args(&r.region, r.level, 0, r.bytes_per_row, 0);
+                    mem.replace_region_view(g, e, (task, REPLACE_REGION_CALL), &v, &a, r.pixel_bytes.0)?;
                 } else {
                     let lt = payload::<LinearTexture<A>>(objects, r.texture).ok_or_else(|| missing(r.texture))?;
                     mem.replace_region_linear(
@@ -338,6 +344,9 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
             Request::ReplaceRegionSlice(r) => {
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     mem.replace_region_slice(g, e, task, &t, r)?;
+                } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
+                    let a = args(&r.region, r.level, r.slice, r.bytes_per_row, r.bytes_per_image);
+                    mem.replace_region_view(g, e, (task, REPLACE_REGION_SLICE_CALL), &v, &a, r.pixel_bytes.0)?;
                 } else {
                     let lt = payload::<LinearTexture<A>>(objects, r.texture).ok_or_else(|| missing(r.texture))?;
                     let a = args(&r.region, r.level, r.slice, r.bytes_per_row, r.bytes_per_image);
@@ -348,6 +357,14 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
             Request::GetBytes(r) => {
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     let read = mem.get_bytes(g, &t, r)?;
+                    return Ok(self.later(task, read, r.pixel_bytes.0, |res| match res {
+                        Ok(()) => ok!(GetBytes, GetBytesReply),
+                        Err(e) => fail(opcode::GET_BYTES, e),
+                    }));
+                }
+                if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
+                    let read =
+                        mem.get_bytes_view(g, GET_BYTES_CALL, &v, &args(&r.region, r.level, 0, r.bytes_per_row, 0))?;
                     return Ok(self.later(task, read, r.pixel_bytes.0, |res| match res {
                         Ok(()) => ok!(GetBytes, GetBytesReply),
                         Err(e) => fail(opcode::GET_BYTES, e),
@@ -365,6 +382,14 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                         Err(e) => fail(opcode::GET_BYTES_SLICE, e),
                     }));
                 }
+                if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
+                    let a = args(&r.region, r.level, r.slice, r.bytes_per_row, r.bytes_per_image);
+                    let read = mem.get_bytes_view(g, GET_BYTES_SLICE_CALL, &v, &a)?;
+                    return Ok(self.later(task, read, r.pixel_bytes.0, |res| match res {
+                        Ok(()) => ok!(GetBytesSlice, GetBytesSliceReply),
+                        Err(e) => fail(opcode::GET_BYTES_SLICE, e),
+                    }));
+                }
                 let lt = payload::<LinearTexture<A>>(objects, r.texture).ok_or_else(|| missing(r.texture))?;
                 let a = args(&r.region, r.level, r.slice, r.bytes_per_row, r.bytes_per_image);
                 mem.get_bytes_linear(e, task, &lt, &a, r.pixel_bytes.0)?;
@@ -377,9 +402,13 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 }))));
             }
             Request::MakeAliasable(r) => {
+                // A view's dealloc makes its heap range aliasable, which is its root's range of the root's heap.
                 let heap = match payload::<Buffer<A>>(objects, r.resource) {
                     Some(b) => b.heap_object.clone(),
-                    None => payload::<Texture<A>>(objects, r.resource).and_then(|t| t.heap_object.clone()),
+                    None => match payload::<Texture<A>>(objects, r.resource) {
+                        Some(t) => t.heap_object.clone(),
+                        None => payload::<TextureView<A>>(objects, r.resource).and_then(|v| v.root.heap_object.clone()),
+                    },
                 };
                 match heap {
                     Some(heap) => heap.borrow().make_aliasable()?,
@@ -611,19 +640,33 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         let mut buffers = Vec::new();
         let mut surfaces: Vec<SurfaceReadback<A>> = Vec::new();
         let mut decodes: Vec<(Rc<Texture<A>>, TextureRead<A>)> = Vec::new();
+        // A texture named directly and through views of it is written back once.
+        let mut textures: Vec<Rc<Texture<A>>> = Vec::new();
+        for &h in &info.resources {
+            let t = payload::<Texture<A>>(objects, h)
+                .or_else(|| payload::<TextureView<A>>(objects, h).map(|v| v.root.clone()));
+            if let Some(t) = t
+                && !textures.iter().any(|u| Rc::ptr_eq(u, &t))
+            {
+                textures.push(t);
+            }
+        }
+        for t in &textures {
+            if t.surface.is_some() {
+                surfaces.extend(mem.read_back_surface_texture(g, &encoder, t).map_err(|e| e.failure())?);
+            }
+            // Any subresource a blit left stale: every level, every slice.
+            let stale = (0..t.geometry.mip_levels)
+                .any(|l| (0..t.geometry.slices()).any(|s| !t.stored_current(l, t.layer_of(s))));
+            if stale && matches!(t.resolution, Resolution::Emulated(e) if matches!(e.upload, Upload::Decode(_))) {
+                for read in mem.refresh_decoded(g, &encoder, t).map_err(|e| e.failure())? {
+                    decodes.push((t.clone(), read));
+                }
+            }
+        }
         for &h in &info.resources {
             if let Some(b) = payload::<Buffer<A>>(objects, h) {
                 buffers.push(b);
-            } else if let Some(t) = payload::<Texture<A>>(objects, h) {
-                if t.surface.is_some() {
-                    surfaces.extend(mem.read_back_surface_texture(g, &encoder, &t).map_err(|e| e.failure())?);
-                }
-                let stale = (0..t.geometry.mip_levels).any(|l| !t.stored_current(l, 0));
-                if stale && matches!(t.resolution, Resolution::Emulated(e) if matches!(e.upload, Upload::Decode(_))) {
-                    for read in mem.refresh_decoded(g, &encoder, &t).map_err(|e| e.failure())? {
-                        decodes.push((t.clone(), read));
-                    }
-                }
             } else if let Some(lt) = payload::<LinearTexture<A>>(objects, h) {
                 mem.sync_linear(g, &encoder, &lt).map_err(|e| e.failure())?;
                 buffers.push(lt.buffer.clone());
