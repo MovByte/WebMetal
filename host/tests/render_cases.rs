@@ -2381,3 +2381,91 @@ fn format_render() {
     println!("format.*.render: {compared} formats compared; skipped: {skipped:#?}");
     assert!(compared > 0);
 }
+
+/// Texture views as color attachments: a slice of a 2D array as a 2D view, a level of a mipmapped texture, and an sRGB
+/// view of a linear texture, which encodes the clear color. Not a reference case: the views are checked against their
+/// parent's stored bytes.
+#[test]
+fn view_attachments() {
+    let h = Harness::new();
+    const RGBA8_UNORM_SRGB: u64 = 71;
+    const T2D: u64 = 2;
+    let usage = usage::RENDER_TARGET | usage::SHADER_READ;
+    let view = |parent: Handle, format: u64, levels: (u64, u64), slices: (u64, u64)| {
+        let v = h.handle();
+        h.ok(Request::CreateTextureViewLevelsSlices(CreateTextureViewLevelsSlices {
+            texture: parent,
+            view: v,
+            pixel_format: format,
+            texture_type: T2D,
+            level_range: Range { location: levels.0, length: levels.1 },
+            slice_range: Range { location: slices.0, length: slices.1 },
+        }));
+        v
+    };
+    let clear_pass = |t: Handle, level: u64, slice: u64, c: ClearColor| {
+        let mut p = pass_color(t, c);
+        p.color_attachments[0].level = level;
+        p.color_attachments[0].slice = slice;
+        h.run_ok(&render(h.handle(), p, vec![]));
+    };
+    let texels = |rgba: [u8; 4], n: usize| rgba.repeat(n);
+
+    // Slice 2 of a three-slice 2D array, as a 2D view.
+    let mut d = texture_descriptor(pf::RGBA8_UNORM, 4, 4, STORAGE_PRIVATE, usage);
+    d.texture_type = 3;
+    d.array_length = 3;
+    let array = h.texture(d).unwrap();
+    for slice in 0..3 {
+        clear_pass(array, 0, slice, clear(0.0, 0.0, 0.0, 1.0));
+    }
+    let slice2 = view(array, pf::RGBA8_UNORM, (0, 1), (2, 1));
+    clear_pass(slice2, 0, 0, clear(1.0, 0.0, 1.0, 1.0));
+    assert_eq!(h.read_texture_options(array, 2, 4, 4, 16, 0), texels([255, 0, 255, 255], 16));
+    assert_eq!(h.read_texture_options(array, 1, 4, 4, 16, 0), texels([0, 0, 0, 255], 16));
+
+    // Level 1 of an 8x8 texture with two levels: a 4x4 attachment, which leaves level 0 as it was.
+    let mut d = texture_descriptor(pf::RGBA8_UNORM, 8, 8, STORAGE_PRIVATE, usage);
+    d.mipmap_level_count = 2;
+    let mipped = h.texture(d).unwrap();
+    clear_pass(mipped, 0, 0, clear(1.0, 0.0, 0.0, 1.0));
+    let level1 = view(mipped, pf::RGBA8_UNORM, (1, 1), (0, 1));
+    clear_pass(level1, 0, 0, clear(0.0, 1.0, 0.0, 1.0));
+    // The parent's level 1, read back by a blit of that level.
+    let (b, addr) = h.zeros(64);
+    h.run_ok(&[
+        Command::BeginBlit(BeginBlit { encoder: h.handle() }),
+        Command::BlitCopyTextureToBufferOptions(BlitCopyTextureToBufferOptions {
+            source_texture: Some(mipped),
+            source_slice: 0,
+            source_level: 1,
+            source_origin: Origin { x: 0, y: 0, z: 0 },
+            source_size: Size { width: 4, height: 4, depth: 1 },
+            destination_buffer: Some(b),
+            destination_offset: 0,
+            destination_bytes_per_row: 16,
+            destination_bytes_per_image: 64,
+            options: 0,
+        }),
+        end(),
+    ]);
+    assert_eq!(h.read(addr, 64), texels([0, 255, 0, 255], 16));
+    assert_eq!(h.read_texture(mipped, 8, 8, 32), texels([255, 0, 0, 255], 64));
+    // The view's level 1 is not the texture's: an attachment there is outside the view.
+    let mut p = pass_color(level1, clear(0.0, 0.0, 1.0, 1.0));
+    p.color_attachments[0].level = 1;
+    let f = h.run(&render(h.handle(), p, vec![]));
+    refused("view-attachments", &f, status::UNIMPLEMENTED, "level 1 of a texture with 1 levels");
+
+    // An sRGB view of a linear texture: the clear color is encoded (0.5 is code 188 within the conversion's rounding)
+    // and alpha is stored linearly.
+    let linear = h.texture(texture_descriptor(pf::RGBA8_UNORM, 4, 4, STORAGE_PRIVATE, usage)).unwrap();
+    let srgb = h.handle();
+    h.ok(Request::CreateTextureView(CreateTextureView { texture: linear, view: srgb, pixel_format: RGBA8_UNORM_SRGB }));
+    clear_pass(srgb, 0, 0, clear(0.5, 0.5, 0.5, 1.0));
+    let stored = h.read_texture(linear, 4, 4, 16);
+    for px in stored.chunks(4) {
+        assert!(px[..3].iter().all(|&c| c.abs_diff(188) <= 1) && px[3] == 255, "{px:?}");
+    }
+    h.g.assert_no_errors();
+}

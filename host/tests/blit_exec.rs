@@ -581,7 +581,21 @@ fn depth_stencil_blits() {
             let read = run_read(&h, tex, "fmt_read_depth", 4);
             t.data(&g, "read.depth", &read);
             t.value_bool(&g, "read.depth-equals-stored", read == depth);
-            t.note(&g.case, "the X32_Stencil8 view records need texture views, which no service creates yet");
+            // The stencil aspect through an X32_Stencil8 view, read as uint (`FmtRecordStencilRead`).
+            let view = h.handle();
+            h.ok(Request::CreateTextureView(CreateTextureView {
+                texture: tex,
+                view,
+                pixel_format: fmt("X32_Stencil8"),
+            }));
+            let read = words(&run_read(&h, view, "fmt_read_uint", 16));
+            let first: Vec<u8> = (0..32).flat_map(|i| read[i * 4].to_le_bytes()).collect();
+            t.data(&g, "read.x32-stencil8-view", &first);
+            t.value_bool(
+                &g,
+                "read.x32-stencil8-view-equals-stored",
+                (0..32).all(|i| read[i * 4] == u32::from(stencil[i])),
+            );
         }
     }
 
