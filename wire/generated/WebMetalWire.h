@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: e66975b8b2c59d2a8b49ee09abbedfc19aa80161071eb3a5ad5d723bc05dfed1
+// Schema SHA-256: aff9cf5c8aae43f24ddc8c0359e4fa418f16b944782e573c3938a2c2c3c2865c
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0xe6, 0x69, 0x75, 0xb8, 0xb2, 0xc5, 0x9d, 0x2a, 0x8b, 0x49, 0xee, 0x09, 0xab, 0xbe, 0xdf, 0xc1, 0x9a, 0xa8, 0x01, 0x61, 0x07, 0x1e, 0xb3, 0xa5, 0xad, 0x5d, 0x72, 0x3b, 0xc0, 0x5d, 0xfe, 0xd1};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0xaf, 0xf9, 0xcf, 0x5c, 0x8a, 0xae, 0x43, 0xf2, 0x4d, 0xdc, 0x8c, 0x03, 0x59, 0xe4, 0xfa, 0x41, 0x8f, 0x16, 0xb9, 0x44, 0x78, 0x2e, 0x57, 0x3c, 0x39, 0x38, 0xa2, 0xc2, 0xc3, 0xc2, 0x86, 0x5c};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -427,6 +427,7 @@ constexpr uint16_t kEncodeCacheHintTag = 0x1011;
 constexpr uint16_t kEncodeCacheHintFinalize = 0x1012;
 constexpr uint16_t kSetResourceGroups = 0x1013;
 constexpr uint16_t kDropResourceGroups = 0x1014;
+constexpr uint16_t kCommandBufferSetProtectionOptions = 0x1015;
 constexpr uint16_t kEncoderSetLabel = 0x1105;
 constexpr uint16_t kEncoderEndEncoding = 0x1101;
 constexpr uint16_t kEncoderInsertDebugSignpost = 0x1102;
@@ -2722,7 +2723,7 @@ inline bool decodeReply(const uint8_t* data, size_t size, Reply<SetBackgroundGPU
 // 0x0107 control record. Metal methods: -[MTLCommandBuffer commit]. command_buffer is the receiver. Submit a command
 // buffer. stream/stream_length locate its command stream in the calling task; the host has consumed the stream
 // before it replies. resources lists every object handle the stream references, once each. label,
-// retained_references, error_options and protection_options are the command buffer's state at commit.
+// retained_references and error_options are the command buffer's state at commit.
 struct Commit {
     static constexpr uint16_t kOpcode = 0x0107;
     uint64_t commandBuffer = 0;  // wire type `CommandBuffer`.
@@ -2730,7 +2731,6 @@ struct Commit {
     Str label{};  // wire type `str?`.
     bool retainedReferences = false;  // wire type `bool`.
     uint64_t errorOptions = 0;  // `MTLCommandBufferErrorOption`, wire type `u64`.
-    uint64_t protectionOptions = 0;  // wire type `u64`.
     uint64_t stream = 0;  // wire type `guest_addr`.
     uint64_t streamLength = 0;  // wire type `u64`.
     Span<uint64_t> resources{};  // wire type `[Object]`.
@@ -2744,7 +2744,6 @@ inline bool encodeFields(Writer& w, const Commit& v) {
     if (!w.optStr(v.label)) return false;
     w.boolean(v.retainedReferences);
     w.u64(v.errorOptions);
-    w.u64(v.protectionOptions);
     w.u64(v.stream);
     w.u64(v.streamLength);
     if (v.resources.size != 0 && v.resources.data == nullptr) return false;
@@ -5481,6 +5480,30 @@ inline bool encodeFields(Writer& w, const DropResourceGroups& v) {
 // Append the record; returns false (writer unchanged) if the value breaks a format rule.
 inline bool encode(Writer& w, const DropResourceGroups& v) {
     size_t start = w.begin(DropResourceGroups::kOpcode);
+    if (!encodeFields(w, v)) {
+        w.abandon(start);
+        return false;
+    }
+    return w.finish(start);
+}
+
+// 0x1015 stream record. Metal methods: -[MTLCommandBufferSPI setProtectionOptions:]. The kernel command IOGPU
+// encodes where setProtectionOptions: changes the value (kIOGPUKernelCommandSetProtectionOptions, a u64): it sets
+// the command queue's protection options for the rest of the command buffer, and the kernel returns them to 0 after
+// every command buffer.
+struct CommandBufferSetProtectionOptions {
+    static constexpr uint16_t kOpcode = 0x1015;
+    uint64_t options = 0;  // wire type `u64`.
+};
+
+inline bool encodeFields(Writer& w, const CommandBufferSetProtectionOptions& v) {
+    w.u64(v.options);
+    return true;
+}
+
+// Append the record; returns false (writer unchanged) if the value breaks a format rule.
+inline bool encode(Writer& w, const CommandBufferSetProtectionOptions& v) {
+    size_t start = w.begin(CommandBufferSetProtectionOptions::kOpcode);
     if (!encodeFields(w, v)) {
         w.abandon(start);
         return false;

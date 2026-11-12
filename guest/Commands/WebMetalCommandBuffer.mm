@@ -233,13 +233,20 @@ using namespace webmetal;
     return _protectionOptions;
 }
 
+// -[IOGPUMetalCommandBuffer setProtectionOptions:] (0x1fcb2e0d0): report an open encoder; a value equal to the current
+// one changes nothing; otherwise store it and encode, at this point of the command buffer, the kernel command that
+// sets it (kIOGPUKernelCommandSetProtectionOptions).
 - (void)setProtectionOptions:(NSUInteger)options
 {
     if (_currentEncoder)
         MTLReportFailure(0, "-[WebMetalCommandBuffer setProtectionOptions:]", __LINE__,
                          @"setProtectionOptions: with uncommitted encoder");
-    // The value reaches the host with Commit (wire schema: protection options are command-buffer state at commit).
+    if (options == _protectionOptions)
+        return;
     _protectionOptions = options;
+    wire::CommandBufferSetProtectionOptions record;
+    record.options = options;
+    EmitCommandBufferRecord(self, _cmd, record);
 }
 
 - (void)pushDebugGroup:(NSString *)string

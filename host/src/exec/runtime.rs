@@ -627,15 +627,6 @@ impl<A: Api, E: Embedder> Core<A, E> {
             records,
         });
         let mut failure = plan.unimplemented.map(|(offset, f)| (f, offset));
-        if failure.is_none() && c.protection_options != 0 {
-            failure = Some((
-                failure::unimplemented(format!(
-                    "-[MTLCommandBufferSPI setProtectionOptions:] {:#x}: not implemented by the host",
-                    c.protection_options
-                )),
-                NO_RECORD,
-            ));
-        }
         if failure.is_none()
             && self.lost.is_none()
             && let Some(co) = self.services.coherence.as_mut()

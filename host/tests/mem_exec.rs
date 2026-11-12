@@ -262,7 +262,6 @@ impl Harness {
             label: None,
             retained_references: true,
             error_options: 0,
-            protection_options: 0,
             stream: GuestAddr(addr),
             stream_length: bytes.len() as u64,
             resources: resources.to_vec(),

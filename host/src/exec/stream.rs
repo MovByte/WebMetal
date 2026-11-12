@@ -336,6 +336,20 @@ fn command_buffer_record(record: &Command, offset: u64, out: &mut Plan) -> Resul
             out.steps.push(Step::PushDebugGroup { label: r.string.clone().unwrap_or_default() });
         }
         Command::CommandBufferPopDebugGroup(_) => out.steps.push(Step::PopDebugGroup),
+        // The kernel sets the queue's protection options for the rest of the command buffer and returns them to 0
+        // after it (IOGPUFamily, kIOGPUKernelCommandSetProtectionOptions): 0 is every command buffer's starting state.
+        // What the A10X driver does under other options is not established.
+        Command::CommandBufferSetProtectionOptions(r) => {
+            if r.options != 0 && out.unimplemented.is_none() {
+                out.unimplemented = Some((
+                    offset,
+                    failure::unimplemented(format!(
+                        "-[MTLCommandBufferSPI setProtectionOptions:] {:#x}: not implemented by the host",
+                        r.options
+                    )),
+                ));
+            }
+        }
         // MTLCommandBufferSPI records whose behavior is not established: the agent mask of a signal, the timeout of a
         // wait, a signal at scheduling time, cache hints and resource groups.
         Command::EncodeSignalEventAgentMask(r) => {
@@ -447,6 +461,26 @@ mod tests {
                 Step::PopDebugGroup,
             ]
         );
+    }
+
+    #[test]
+    fn protection_options_other_than_zero_are_not_implemented() {
+        let t = table(&[(1, Kind::Buffer)]);
+        let options = |options| Command::CommandBufferSetProtectionOptions(CommandBufferSetProtectionOptions { options });
+        // Setting 0 again is the kernel's state at the start of every command buffer.
+        let s = stream(vec![options(0), Command::BeginBlit(BeginBlit { encoder: h(10) }), fill(1), end()]);
+        let p = plan(&s, &t, &[h(1)], &all).unwrap();
+        assert!(p.unimplemented.is_none());
+        assert_eq!(p.steps.len(), 1);
+        let s = stream(vec![Command::BeginBlit(BeginBlit { encoder: h(10) }), fill(1), end(), options(1), options(0)]);
+        let p = plan(&s, &t, &[h(1)], &all).unwrap();
+        let (offset, f) = p.unimplemented.unwrap();
+        assert_eq!(offset, s[3].0 as u64);
+        assert_eq!(f.status, webmetal_wire::status::UNIMPLEMENTED);
+        assert!(f.message.contains("setProtectionOptions:] 0x1"), "{}", f.message);
+        // The record belongs to the command buffer, not to an encoder.
+        let s = stream(vec![Command::BeginBlit(BeginBlit { encoder: h(10) }), options(1), end()]);
+        assert!(plan(&s, &t, &[], &all).unwrap_err().message.contains("with an encoder open"));
     }
 
     #[test]

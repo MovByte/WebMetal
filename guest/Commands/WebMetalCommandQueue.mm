@@ -360,7 +360,6 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what)
             WMLoudMethod(buffer, @selector(commit), "the command buffer's label has no UTF-8 form");
         request.retainedReferences = buffer.retainedReferences;
         request.errorOptions = buffer.errorOptions;
-        request.protectionOptions = buffer->_protectionOptions;
         request.stream = (uint64_t)(uintptr_t)cb.stream.bytes().data();
         request.streamLength = cb.stream.bytes().size();
         request.resources = {cb.stream.resources().data(), cb.stream.resources().size()};

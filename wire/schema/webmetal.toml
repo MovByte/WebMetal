@@ -948,9 +948,9 @@ name = "Commit"
 channel = "control"
 methods = ["MTLCommandBuffer commit"]
 receiver = "command_buffer"
-extra = ["queue", "label", "retained_references", "error_options", "protection_options", "stream", "stream_length", "resources"]
-args = ["command_buffer: CommandBuffer", "queue: CommandQueue", "label: str?", "retained_references: bool", "error_options: u64 (MTLCommandBufferErrorOption)", "protection_options: u64", "stream: guest_addr", "stream_length: u64", "resources: [Object]"]
-doc = "Submit a command buffer. stream/stream_length locate its command stream in the calling task; the host has consumed the stream before it replies. resources lists every object handle the stream references, once each. label, retained_references, error_options and protection_options are the command buffer's state at commit."
+extra = ["queue", "label", "retained_references", "error_options", "stream", "stream_length", "resources"]
+args = ["command_buffer: CommandBuffer", "queue: CommandQueue", "label: str?", "retained_references: bool", "error_options: u64 (MTLCommandBufferErrorOption)", "stream: guest_addr", "stream_length: u64", "resources: [Object]"]
+doc = "Submit a command buffer. stream/stream_length locate its command stream in the calling task; the host has consumed the stream before it replies. resources lists every object handle the stream references, once each. label, retained_references and error_options are the command buffer's state at commit."
 
 [[op]]
 code = 0x0201
@@ -1535,6 +1535,14 @@ name = "DropResourceGroups"
 channel = "stream"
 methods = ["MTLCommandBufferSPI dropResourceGroups:count:"]
 args = ["resource_groups: [Resource?] = count", "count: u64"]
+
+[[op]]
+code = 0x1015
+name = "CommandBufferSetProtectionOptions"
+channel = "stream"
+methods = ["MTLCommandBufferSPI setProtectionOptions:"]
+args = ["options: u64"]
+doc = "The kernel command IOGPU encodes where setProtectionOptions: changes the value (kIOGPUKernelCommandSetProtectionOptions, a u64): it sets the command queue's protection options for the rest of the command buffer, and the kernel returns them to 0 after every command buffer."
 
 [[op]]
 code = 0x1105
@@ -3366,8 +3374,8 @@ note = "Carried in Commit."
 [[local]]
 reason = "object-state"
 protocols = ["MTLCommandBufferSPI"]
-selectors = ["setProtectionOptions:", "protectionOptions"]
-note = "Carried in Commit."
+selectors = ["protectionOptions"]
+note = "The value setProtectionOptions: last set (CommandBufferSetProtectionOptions)."
 
 [[local]]
 reason = "object-state"
