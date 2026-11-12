@@ -199,33 +199,38 @@ impl Shadow {
         self.pending.insert(seq);
     }
 
-    /// Merge the GPU copy as read back at `seq` (`data`, the whole padded copy). Returns the runs to write into the
-    /// guest; the shadow already holds them.
-    pub fn merge_readback(&mut self, seq: u64, data: &[u8]) -> Vec<GuestWrite> {
+    /// Merge the GPU copy as read back at `seq`: `data` holds its bytes from `offset` on, and every byte the work
+    /// could have written lies in that window. Returns the runs to write into the guest; the shadow already holds
+    /// them.
+    pub fn merge_readback(&mut self, seq: u64, offset: u64, data: &[u8]) -> Vec<GuestWrite> {
         assert!(self.pending.remove(&seq), "readback {seq} is not pending");
-        assert_eq!(data.len(), self.bytes.len(), "a readback covers the whole GPU copy");
+        let (lo, hi) = (offset as usize, offset as usize + data.len());
+        assert!(hi <= self.bytes.len(), "a readback window lies inside the GPU copy");
         // The GPU copy before the work read back: the shadow without the uploads that reached the GPU later.
-        let mut base = self.bytes.clone();
-        let mut later = vec![false; self.bytes.len()];
+        let mut base = self.bytes[lo..hi].to_vec();
+        let mut later = vec![false; data.len()];
         for l in self.log.iter().rev().filter(|l| l.seq > seq) {
-            base[l.offset..l.offset + l.replaced.len()].copy_from_slice(&l.replaced);
-            later[l.offset..l.offset + l.replaced.len()].fill(true);
+            let (a, b) = (l.offset.max(lo), (l.offset + l.replaced.len()).min(hi));
+            if a < b {
+                base[a - lo..b - lo].copy_from_slice(&l.replaced[a - l.offset..b - l.offset]);
+                later[a - lo..b - lo].fill(true);
+            }
         }
         let mut writes = Vec::new();
-        let len = self.len as usize;
+        let end = (self.len as usize).clamp(lo, hi) - lo;
         let mut at = 0;
-        while at < len {
+        while at < end {
             if data[at] == base[at] || later[at] {
                 at += 1;
                 continue;
             }
             let start = at;
-            while at < len && data[at] != base[at] && !later[at] {
+            while at < end && data[at] != base[at] && !later[at] {
                 at += 1;
             }
-            self.bytes[start..at].copy_from_slice(&data[start..at]);
+            self.bytes[lo + start..lo + at].copy_from_slice(&data[start..at]);
             writes.push(GuestWrite {
-                offset: start as u64,
+                offset: (lo + start) as u64,
                 new: data[start..at].to_vec(),
                 old: base[start..at].to_vec(),
             });
@@ -238,7 +243,8 @@ impl Shadow {
         writes
     }
 
-    /// The contents were discarded and replaced by zeros on both sides (`setPurgeableState:` empty).
+    /// The contents were discarded and replaced by zeros on both sides (`setPurgeableState:` empty), at a moment
+    /// with no readback pending.
     pub fn reset_zero(&mut self) {
         assert!(self.pending.is_empty(), "contents discarded while a readback is pending");
         self.bytes.fill(0);
@@ -294,10 +300,20 @@ mod tests {
         let UploadPlan::Writes(w) = s.plan_upload(&[(0, &[0, 0, 0, 0, 9, 9, 9, 9])]) else { panic!() };
         s.apply_upload(&w, 3);
         // The readback holds the GPU work's bytes and the old bytes 4..8.
-        let g = s.merge_readback(2, &[5, 5, 5, 5, 0, 0, 0, 0]);
+        let g = s.merge_readback(2, 0, &[5, 5, 5, 5, 0, 0, 0, 0]);
         assert_eq!(g, vec![GuestWrite { offset: 0, new: vec![5; 4], old: vec![0; 4] }]);
         assert_eq!(s.bytes(), &[5, 5, 5, 5, 9, 9, 9, 9]);
         assert!(s.log.is_empty());
+    }
+
+    #[test]
+    fn readback_window() {
+        let mut s = Shadow::new(10, None);
+        s.begin_readback(1);
+        // The window 8..12 covers bytes 8 and 9 of the memory and the two padding bytes.
+        let g = s.merge_readback(1, 8, &[0, 4, 0, 0]);
+        assert_eq!(g, vec![GuestWrite { offset: 9, new: vec![4], old: vec![0] }]);
+        assert_eq!(s.bytes(), &[0, 0, 0, 0, 0, 0, 0, 0, 0, 4]);
     }
 
     #[test]
@@ -307,7 +323,7 @@ mod tests {
         let UploadPlan::Writes(w) = s.plan_upload(&[(0, &[3, 3, 3, 3])]) else { panic!() };
         s.apply_upload(&w, 2);
         // The GPU work of 1 also wrote these bytes: the race is resolved in favour of the later CPU write.
-        assert!(s.merge_readback(1, &[7, 7, 7, 7]).is_empty());
+        assert!(s.merge_readback(1, 0, &[7, 7, 7, 7]).is_empty());
         assert_eq!(s.bytes(), &[3, 3, 3, 3]);
     }
 
@@ -355,7 +371,8 @@ mod tests {
                 end: usize,
                 value: u8,
             },
-            Readback(u64),
+            /// The GPU copy's bytes `lo..hi` are read back at a sequence number.
+            Readback(u64, usize, usize),
         }
 
         #[derive(Debug, Default)]
@@ -378,41 +395,42 @@ mod tests {
             let mut gpu = vec![0u8; len.next_multiple_of(4)];
             let mut shadow = Shadow::new(len as u64, None);
             let mut queue: Vec<GpuOp> = Vec::new();
-            let mut readbacks: Vec<(u64, Vec<u8>)> = Vec::new();
+            let mut readbacks: Vec<(u64, usize, Vec<u8>)> = Vec::new();
             let mut in_flight: Vec<Committed> = Vec::new();
             let mut seq = 0u64;
 
-            let run_gpu = |queue: &mut Vec<GpuOp>, gpu: &mut Vec<u8>, readbacks: &mut Vec<(u64, Vec<u8>)>, n: usize| {
-                for op in queue.drain(..n.min(queue.len())) {
-                    match op {
-                        GpuOp::Write(w) => {
-                            gpu[w.offset as usize..w.offset as usize + w.bytes.len()].copy_from_slice(&w.bytes)
-                        }
-                        GpuOp::Add { start, end, delta } => {
-                            for b in &mut gpu[start..end] {
-                                *b = b.wrapping_add(delta);
+            let run_gpu =
+                |queue: &mut Vec<GpuOp>, gpu: &mut Vec<u8>, readbacks: &mut Vec<(u64, usize, Vec<u8>)>, n: usize| {
+                    for op in queue.drain(..n.min(queue.len())) {
+                        match op {
+                            GpuOp::Write(w) => {
+                                gpu[w.offset as usize..w.offset as usize + w.bytes.len()].copy_from_slice(&w.bytes)
                             }
+                            GpuOp::Add { start, end, delta } => {
+                                for b in &mut gpu[start..end] {
+                                    *b = b.wrapping_add(delta);
+                                }
+                            }
+                            GpuOp::Fill { start, end, value } => gpu[start..end].fill(value),
+                            GpuOp::Readback(s, lo, hi) => readbacks.push((s, lo, gpu[lo..hi].to_vec())),
                         }
-                        GpuOp::Fill { start, end, value } => gpu[start..end].fill(value),
-                        GpuOp::Readback(s) => readbacks.push((s, gpu.clone())),
                     }
-                }
-            };
+                };
             // Complete the oldest in-flight command buffer: run the GPU until its readback is done, then merge.
             let complete_oldest = |queue: &mut Vec<GpuOp>,
                                    gpu: &mut Vec<u8>,
-                                   readbacks: &mut Vec<(u64, Vec<u8>)>,
+                                   readbacks: &mut Vec<(u64, usize, Vec<u8>)>,
                                    in_flight: &mut Vec<Committed>,
                                    shadow: &mut Shadow,
                                    guest: &mut Vec<u8>| {
                 let c = in_flight.remove(0);
-                while !readbacks.iter().any(|(s, _)| *s == c.seq) {
+                while !readbacks.iter().any(|(s, _, _)| *s == c.seq) {
                     run_gpu(queue, gpu, readbacks, 1);
                 }
-                let i = readbacks.iter().position(|(s, _)| *s == c.seq).unwrap();
-                let (_, data) = readbacks.remove(i);
+                let i = readbacks.iter().position(|(s, _, _)| *s == c.seq).unwrap();
+                let (_, lo, data) = readbacks.remove(i);
                 let later = shadow.log.iter().any(|l| l.seq > c.seq);
-                for w in shadow.merge_readback(c.seq, &data) {
+                for w in shadow.merge_readback(c.seq, lo as u64, &data) {
                     for (k, (&n, &o)) in w.new.iter().zip(&w.old).enumerate() {
                         if n != o {
                             guest[w.offset as usize + k] = n;
@@ -479,7 +497,10 @@ mod tests {
                             model[start..end].fill(value);
                         }
                         seq += 1;
-                        queue.push(GpuOp::Readback(seq));
+                        // Read back the words the work could have written, or the whole copy.
+                        let (lo, hi) =
+                            if rng.below(2) == 0 { (start & !3, end.next_multiple_of(4)) } else { (0, gpu.len()) };
+                        queue.push(GpuOp::Readback(seq, lo, hi));
                         shadow.begin_readback(seq);
                         in_flight.push(Committed { seq, start, end });
                     }
