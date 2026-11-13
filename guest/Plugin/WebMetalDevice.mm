@@ -26,6 +26,11 @@
 // Metal.framework's overriding device creation flags: true, with the flags, when an override is in effect.
 extern "C" bool MTLGetOverridenDeviceCreationFlags(uint64_t *flags);
 
+// Metal.framework's MTLArchitecture initializer (21H461: -initWithCPUType:(int) cpuSubtype:(int) revision:(id)).
+@protocol WebMetalArchitectureInit
+- (id)initWithCPUType:(int)cpuType cpuSubtype:(int)cpuSubtype revision:(NSString *)revision;
+@end
+
 namespace {
 
 // The base-class guard, then the LOUD stubs: once per process, before the first device is created.
@@ -262,6 +267,33 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
 - (NSUInteger)deviceCreationFlags
 {
     return _creationFlags;
+}
+
+// -[AGXA10FamilyDevice gpuRevisionName] (AGXMetalA10 0x21c8d4dc0): a new string of kAGXGPURevName (0x22b7bc630) at the
+// revision index AGX::Device keeps at +0x33c. The device's initializer fills +0x338 with the 128 bytes the AGX kext's
+// user-client selector 256 returns (0x21c8d38a0), its accelerator's block at +0x390 (kernel handler
+// 0xfffffff005c010ac), whose word +4 is the index. The accelerator's setup has its info routine fill the block
+// (0xfffffff005c035ec through vtable slot +0xc80, 0xfffffff005c28a8c) and stops when the first word stays 0
+// (0xfffffff005c0368c); the routine sets the first two words from the pair (4, 1) at 0xfffffff00531abe0, so the index
+// is 1, "A0".
+- (NSString *)gpuRevisionName
+{
+    return [NSString stringWithUTF8String:"A0"];
+}
+
+// -[AGXA10FamilyDevice architecture] (AGXMetalA10 0x21c8d5100): a new MTLArchitecture with CPU type 0x1000013, the
+// subtype setupCompiler: recorded (AGX::Device +0x968: 0x61, as -targetDeviceArchitecture reads it) and the
+// device's -gpuRevisionName. -[MTLArchitecture initWithCPUType:cpuSubtype:revision:] (Metal 0x187ad0c90) names it from
+// the type and subtype (newArchitectureNameString, 0x187ad0d0c) and keeps a copy of the revision.
+- (id)architecture
+{
+    Class architecture = objc_getClass("MTLArchitecture");
+    if (!architecture || ![architecture instancesRespondToSelector:@selector(initWithCPUType:cpuSubtype:revision:)])
+        WMLoudMethod(self, _cmd,
+                     "the running Metal.framework has no -[MTLArchitecture initWithCPUType:cpuSubtype:revision:]");
+    return [(id<WebMetalArchitectureInit>)[architecture alloc] initWithCPUType:0x1000013
+                                                                    cpuSubtype:0x61
+                                                                      revision:[self gpuRevisionName]];
 }
 
 // -[IOGPUMetalDevice maxBufferLength] (IOGPU 0x1fcb302e8): IOGPUDeviceGetMaxResourceSize (0x1fcb3031c), the

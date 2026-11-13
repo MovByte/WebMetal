@@ -2525,7 +2525,7 @@ AGXA10XDevice	instance	alertCommandBufferActivityStart	-	agx	driver	WebMetalDevi
 AGXA10XDevice	instance	allocBufferSubDataWithLength:options:alignment:heapIndex:bufferIndex:bufferOffset:	-	iogpu	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	allocBufferSubDataWithLength:options:alignment:heapIndex:bufferIndex:bufferOffset:parentAddress:parentLength:	-	iogpu	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	allowLibrariesFromOtherPlatforms	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
-AGXA10XDevice	instance	architecture	MTLDevice	agx	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	architecture	MTLDevice	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	areBarycentricCoordsSupported	MTLDevice	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	areGPUAssertionsEnabled	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	areProgrammableSamplePositionsSupported	MTLDevice	agx	driver	WebMetalDevice	profile
@@ -2584,7 +2584,7 @@ AGXA10XDevice	instance	getRawBVHBuilderPtr	MTLDeviceSPI	framework	framework	WebM
 AGXA10XDevice	instance	getShaderCacheKeys	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	getSupportedCommandBufferErrorOptions	-	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	gpuCoreCount	-	agx	driver	WebMetalDevice	loud
-AGXA10XDevice	instance	gpuRevisionName	-	agx	driver	WebMetalDevice	loud
+AGXA10XDevice	instance	gpuRevisionName	-	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	halfFPConfig	MTLDeviceSPI	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	hasUnifiedMemory	MTLDevice	iogpu	driver	WebMetalDevice	profile
 AGXA10XDevice	instance	heapAccelerationStructureSizeAndAlignWithDescriptor:	MTLDevice	agx	driver	WebMetalDevice	loud

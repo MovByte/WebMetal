@@ -34,6 +34,7 @@
                                  descriptor:(MTLTextureDescriptor *)descriptor
                                 deallocator:(void (^)(void *pointer, NSUInteger length))deallocator;
 - (NSUInteger)gpuCoreCount;
+- (NSString *)gpuRevisionName;
 - (id)newTextureLayoutWithDescriptor:(MTLTextureDescriptor *)descriptor isHeapOrBufferBacked:(BOOL)heapOrBufferBacked;
 @end
 
@@ -205,6 +206,16 @@ void checkDevice(id<MTLDevice> device)
     check([spi newVisibleFunctionTableWithDescriptor:[MTLVisibleFunctionTableDescriptor new]] == nil,
           "newVisibleFunctionTableWithDescriptor: is nil");
     check([spi newIndirectComputeCommandEncoderWithBuffer:nil] == nil, "newIndirectComputeCommandEncoderWithBuffer: is nil");
+    // -[AGXA10FamilyDevice gpuRevisionName] 0x21c8d4dc0 and -architecture 0x21c8d5100: revision "A0", and an
+    // MTLArchitecture of CPU type 0x1000013, subtype 0x61 and that revision, made anew on each call.
+    MTLArchitecture *architecture = device.architecture;
+    check([[spi gpuRevisionName] isEqualToString:@"A0"], "gpuRevisionName is \"A0\"");
+    check(architecture != nil && architecture != device.architecture &&
+              ((int (*)(id, SEL))objc_msgSend)(architecture, sel_registerName("cpuType")) == 0x1000013 &&
+              ((int (*)(id, SEL))objc_msgSend)(architecture, sel_registerName("cpuSubtype")) == 0x61 &&
+              [((id (*)(id, SEL))objc_msgSend)(architecture, sel_registerName("revision")) isEqual:@"A0"] &&
+              architecture.name.length > 0,
+          "architecture is a new MTLArchitecture of CPU type 0x1000013, subtype 0x61 and revision A0");
     // A LOUD stub reports the note guest/SPI/notes.toml gives it.
     NSString *reason = loudReason(^{
         (void)[spi gpuCoreCount];
