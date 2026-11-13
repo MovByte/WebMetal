@@ -1196,6 +1196,181 @@ WMREF_CASE(texViewSwizzle, "texture.view-swizzle", "texture.views",
     TexRecordReads(c, @"r8uint-view.reads", q, n, TexRunReads(c, @"tex_read_2d", redView, q, n), expected);
 }
 
+#pragma mark - Fragment access
+
+// A pipeline of tex_cover_vertex and `fragment` drawing into a color
+// attachment of `format`.
+static id<MTLRenderPipelineState> TexFragmentPipeline(WMCase *c, NSString *fragment, MTLPixelFormat format) {
+    MTLRenderPipelineDescriptor *pd = [MTLRenderPipelineDescriptor new];
+    pd.vertexFunction = [c function:@"tex_cover_vertex"];
+    pd.fragmentFunction = [c function:fragment];
+    pd.colorAttachments[0].pixelFormat = format;
+    return [c renderPipeline:pd];
+}
+
+// One draw of `pipeline` over the one-pixel `target` in a command buffer of
+// its own, with `t` at fragment texture 0, the query at fragment buffer 0 and
+// `value` (when given) at fragment buffer 1.
+static void TexFragmentDraw(WMCase *c, id<MTLRenderPipelineState> pipeline, id<MTLTexture> target, id<MTLTexture> t,
+                            TexQuery q, const void *value, NSUInteger valueLength) {
+    id<MTLBuffer> qb = [c bufferWithBytes:&q length:sizeof q];
+    id<MTLBuffer> vb = value ? [c bufferWithBytes:value length:valueLength] : nil;
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = target;
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+    [c render:pass body:^(id<MTLRenderCommandEncoder> e) {
+        [e setRenderPipelineState:pipeline];
+        [e setFragmentTexture:t atIndex:0];
+        [e setFragmentBuffer:qb offset:0 atIndex:0];
+        if (vb) [e setFragmentBuffer:vb offset:0 atIndex:1];
+        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }];
+}
+
+static id<MTLTexture> TexOnePixelTarget(WMCase *c, MTLPixelFormat format) {
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:1 height:1
+                                                                             mipmapped:NO];
+    d.storageMode = MTLStorageModePrivate;
+    d.usage = MTLTextureUsageRenderTarget;
+    return [c texture:d];
+}
+
+// RGBA8Unorm codes of a float value (MSL 4.1 section 8.7.1.2, table 8.7): clamp to
+// [0, 1], scale by 255 and round. The values written are chosen so that
+// rounding to nearest and toward zero give the same code.
+static uint8_t TexUnormCode(float v) {
+    float clamped = fminf(fmaxf(v, 0.0f), 1.0f);
+    return (uint8_t)lrintf(clamped * 255.0f);
+}
+
+WMREF_CASE(texFragmentAccess, "texture.fragment-access", "texture.access",
+           "Fragment functions write textures at levels computed at run time, in R32Uint and RGBA8Unorm and through "
+           "a level-range view, and read through a swizzled view")
+{
+    // Each write is one fragment of its own draw and command buffer, as the
+    // compute writes of texture.write-levels are one thread each; writes at a
+    // level out of range of the texture written (a view's own levels) are
+    // ignored (MSL 4.1 section 6.13).
+    id<MTLTexture> uintTarget = TexOnePixelTarget(c, MTLPixelFormatR32Uint);
+    id<MTLRenderPipelineState> writeUint = TexFragmentPipeline(c, @"tex_fragment_write_2d", MTLPixelFormatR32Uint);
+
+    // R32Uint, 4 levels: one write at each level; levels 4 and 2^32 - 1 are
+    // out of range.
+    MTLTextureDescriptor *d2 = TexDescriptor(MTLTextureType2D, 8, 8, 1, 4, 1);
+    d2.usage |= MTLTextureUsagePixelFormatView;
+    const TexQuery levelQueries[6] = {TexQ(5, 6, 0, 0, 0), TexQ(2, 3, 0, 0, 1), TexQ(1, 0, 0, 0, 2),
+                                      TexQ(0, 0, 0, 0, 3), TexQ(0, 1, 0, 0, 4), TexQ(0, 0, 0, 0, 0xffffffffu)};
+    // A view of levels 1 and 2 of the same kind of texture: its levels 0 and 1
+    // are the parent's levels 1 and 2.
+    const TexQuery viewQueries[3] = {TexQ(3, 1, 0, 0, 0), TexQ(1, 1, 0, 0, 1), TexQ(2, 2, 0, 0, 0xffffffffu)};
+    struct {
+        NSString *name;
+        const TexQuery *queries;
+        NSUInteger count, baseLevel, levels;
+    } targets[] = {{@"levels", levelQueries, 6, 0, 0}, {@"level-view", viewQueries, 3, 1, 2}};
+    for (int i = 0; i < 2; i++) {
+        id<MTLTexture> root = [c texture:d2];
+        TexUploadAll(c, root);
+        id<MTLTexture> t = root;
+        if (targets[i].levels) {
+            t = [root newTextureViewWithPixelFormat:MTLPixelFormatR32Uint textureType:MTLTextureType2D
+                                             levels:NSMakeRange(targets[i].baseLevel, targets[i].levels)
+                                             slices:NSMakeRange(0, 1)];
+            if (!t) [c fail:@"%@: the view returned nil", targets[i].name];
+        }
+        NSMutableData *expected = TexInitialContents(root);
+        for (NSUInteger j = 0; j < targets[i].count; j++) {
+            uint32_t value[4] = {0xf7a00000u | (uint32_t)(i << 8) | (uint32_t)j, 0, 0, 0};
+            TexFragmentDraw(c, writeUint, uintTarget, t, targets[i].queries[j], value, sizeof value);
+            TexApplyWrite(expected, root, t, targets[i].baseLevel, 0, targets[i].queries[j], value[0]);
+        }
+        [c data:[targets[i].name stringByAppendingString:@".writes"] elem:WMElemU32 bytes:targets[i].queries
+         length:targets[i].count * sizeof(TexQuery) rule:WMExact()];
+        NSData *contents = TexReadAll(c, root);
+        [c data:[targets[i].name stringByAppendingString:@".contents"] elem:WMElemU32 bytes:contents.bytes
+         length:contents.length rule:WMExact()];
+        [c value:[targets[i].name stringByAppendingString:@".contents.match-specification"]
+         boolean:[contents isEqualToData:expected] rule:WMExact()];
+    }
+
+    // RGBA8Unorm, 2 levels, written with float values: each component is
+    // clamped to [0, 1] and converted to its code; level 2 is out of range.
+    MTLTextureDescriptor *ud = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                  width:4 height:4 mipmapped:NO];
+    ud.mipmapLevelCount = 2;
+    ud.storageMode = MTLStorageModePrivate;
+    ud.usage = MTLTextureUsageShaderWrite;
+    id<MTLTexture> unorm = [c texture:ud];
+    uint8_t initial[64 + 16];
+    WMPattern(initial, sizeof initial, 73);
+    for (NSUInteger level = 0; level < 2; level++) {
+        NSUInteger w = TexMip(4, level);
+        id<MTLBuffer> source = [c bufferWithBytes:initial + (level ? 64 : 0) length:w * w * 4];
+        [c blit:^(id<MTLBlitCommandEncoder> e) {
+            [e copyFromBuffer:source sourceOffset:0 sourceBytesPerRow:w * 4 sourceBytesPerImage:0
+                   sourceSize:MTLSizeMake(w, w, 1) toTexture:unorm destinationSlice:0 destinationLevel:level
+            destinationOrigin:MTLOriginMake(0, 0, 0)];
+        }];
+    }
+    id<MTLRenderPipelineState> writeFloat =
+        TexFragmentPipeline(c, @"tex_fragment_write_2d_float", MTLPixelFormatR32Uint);
+    const TexQuery unormQueries[4] = {TexQ(1, 2, 0, 0, 0), TexQ(3, 0, 0, 0, 0), TexQ(1, 1, 0, 0, 1),
+                                      TexQ(0, 0, 0, 0, 2)};
+    const float unormValues[4][4] = {
+        {0.2f, 0.6f, 1.0f, 0.0f}, {-1.0f, 2.0f, 0.4f, 0.8f}, {1.0f, 0.0f, 0.2f, 0.6f}, {0.4f, 0.4f, 0.4f, 0.4f}};
+    uint8_t unormExpected[64 + 16];
+    memcpy(unormExpected, initial, sizeof initial);
+    for (NSUInteger j = 0; j < 4; j++) {
+        TexFragmentDraw(c, writeFloat, uintTarget, unorm, unormQueries[j], unormValues[j], sizeof unormValues[j]);
+        uint32_t x = unormQueries[j].c[0], y = unormQueries[j].c[1], lod = unormQueries[j].c[4];
+        if (lod >= 2) continue;
+        NSUInteger w = TexMip(4, lod);
+        for (int k = 0; k < 4; k++)
+            unormExpected[(lod ? 64 : 0) + (y * w + x) * 4 + k] = TexUnormCode(unormValues[j][k]);
+    }
+    [c data:@"unorm.writes" elem:WMElemU32 bytes:unormQueries length:sizeof unormQueries rule:WMExact()];
+    [c data:@"unorm.values" elem:WMElemF32 bytes:unormValues length:sizeof unormValues rule:WMExact()];
+    NSMutableData *unormContents = [NSMutableData data];
+    for (NSUInteger level = 0; level < 2; level++)
+        [unormContents appendData:[c readTexture:unorm level:level slice:0 bytesPerRow:TexMip(4, level) * 4]];
+    [c data:@"unorm.contents" elem:WMElemU8 bytes:unormContents.bytes length:unormContents.length rule:WMExact()];
+    [c value:@"unorm.contents.match-specification"
+     boolean:memcmp(unormContents.bytes, unormExpected, sizeof unormExpected) == 0 rule:WMExact()];
+
+    // An RGBA8Uint view swizzled (blue, zero, one, red), read texel by texel:
+    // the swizzle applies to reads (MTLTexture.h).
+    [c require:@"family.apple2" value:[c.device supportsFamily:MTLGPUFamilyApple2]];
+    uint8_t pattern[64];
+    TexRGBA8Pattern(pattern);
+    MTLTextureDescriptor *sd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Uint
+                                                                                  width:4 height:4 mipmapped:NO];
+    sd.storageMode = MTLStorageModePrivate;
+    sd.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
+    id<MTLTexture> base = [c texture:sd];
+    TexUploadBytes(c, base, pattern, 16);
+    MTLTextureSwizzleChannels swizzle =
+        MTLTextureSwizzleChannelsMake(MTLTextureSwizzleBlue, MTLTextureSwizzleZero, MTLTextureSwizzleOne,
+                                      MTLTextureSwizzleRed);
+    id<MTLTexture> view = [base newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Uint textureType:MTLTextureType2D
+                                                       levels:NSMakeRange(0, 1) slices:NSMakeRange(0, 1)
+                                                      swizzle:swizzle];
+    if (!view) [c fail:@"swizzled view returned nil"];
+    id<MTLTexture> readTarget = TexOnePixelTarget(c, MTLPixelFormatRGBA32Uint);
+    id<MTLRenderPipelineState> read = TexFragmentPipeline(c, @"tex_fragment_read_2d", MTLPixelFormatRGBA32Uint);
+    TexQuery q[16];
+    NSUInteger n = TexAllTexels2D(base, q);
+    NSMutableData *reads = [NSMutableData data];
+    TexTexel expected[16];
+    for (NSUInteger i = 0; i < n; i++) {
+        TexFragmentDraw(c, read, readTarget, view, q[i], NULL, 0);
+        [reads appendData:[c readTexture:readTarget level:0 slice:0 bytesPerRow:16]];
+        expected[i] = TexSwizzled(pattern + 4 * i, swizzle, YES);
+    }
+    TexRecordReads(c, @"swizzled-view.reads", q, n, reads, expected);
+}
+
 #pragma mark - Mipmaps and properties
 
 WMREF_CASE(texGenerateMipmaps, "texture.generate-mipmaps", "texture.mipmaps",
