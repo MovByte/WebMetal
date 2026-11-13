@@ -263,16 +263,6 @@
     webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
 }
 
-// RenderSampleCountersInBuffer (0x1215).
-- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer atSampleIndex:(NSUInteger)sampleIndex withBarrier:(BOOL)barrier
-{
-    webmetal::wire::RenderSampleCountersInBuffer record;
-    record.sampleBuffer = webmetal::EncoderReference(self, _cmd, *_encoder, sampleBuffer, true);
-    record.sampleIndex = sampleIndex;
-    record.barrier = barrier;
-    webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
-}
-
 // RenderSetAlphaTestReferenceValue (0x1282).
 - (void)setAlphaTestReferenceValue:(float)referenceValue
 {
@@ -1789,16 +1779,6 @@
     webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
 }
 
-// ComputeSampleCountersInBuffer (0x1408).
-- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer atSampleIndex:(NSUInteger)sampleIndex withBarrier:(BOOL)barrier
-{
-    webmetal::wire::ComputeSampleCountersInBuffer record;
-    record.sampleBuffer = webmetal::EncoderReference(self, _cmd, *_encoder, sampleBuffer, true);
-    record.sampleIndex = sampleIndex;
-    record.barrier = barrier;
-    webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
-}
-
 // ComputeSetAccelerationStructure (0x1409).
 - (void)setAccelerationStructure:(id<MTLAccelerationStructure>)accelerationStructure atBufferIndex:(NSUInteger)bufferIndex
 {
@@ -2475,16 +2455,6 @@
     record.range = {range.location, range.length};
     record.destinationBuffer = webmetal::EncoderReference(self, _cmd, *_encoder, destinationBuffer, true);
     record.destinationOffset = destinationOffset;
-    webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
-}
-
-// BlitSampleCountersInBuffer (0x1515).
-- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer atSampleIndex:(NSUInteger)sampleIndex withBarrier:(BOOL)barrier
-{
-    webmetal::wire::BlitSampleCountersInBuffer record;
-    record.sampleBuffer = webmetal::EncoderReference(self, _cmd, *_encoder, sampleBuffer, true);
-    record.sampleIndex = sampleIndex;
-    record.barrier = barrier;
     webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
 }
 

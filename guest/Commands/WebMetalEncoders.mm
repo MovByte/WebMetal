@@ -476,6 +476,17 @@ using namespace webmetal;
     [super popDebugGroup];
 }
 
+// -[AGXA10FamilyBlitContext sampleCountersInBuffer:atSampleIndex:withBarrier:]: the A10X samples no counters at
+// blit boundaries, so the driver reports the call (MTLReportFailure) and records nothing.
+- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer
+                 atSampleIndex:(NSUInteger)sampleIndex
+                   withBarrier:(BOOL)barrier
+{
+    MTLReportFailure(0, "-[AGXA10FamilyBlitContext sampleCountersInBuffer:atSampleIndex:withBarrier:]", 404,
+                     @"MTLBlitCommandEncoder:sampleCountersInBuffer:atSampleIndex:withBarrier not supported on this "
+                     @"device");
+}
+
 @end
 
 // Compute --------------------------------------------------------------------------------------------------------------
@@ -548,6 +559,17 @@ using namespace webmetal;
 {
     EmitEncoderRecord(self, _cmd, *_encoder, wire::EncoderPopDebugGroup{});
     [super popDebugGroup];
+}
+
+// -[AGXA10FamilyComputeContext sampleCountersInBuffer:atSampleIndex:withBarrier:]: the A10X samples no counters at
+// dispatch boundaries, so the driver reports the call (MTLReportFailure) and records nothing.
+- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer
+                 atSampleIndex:(NSUInteger)sampleIndex
+                   withBarrier:(BOOL)barrier
+{
+    MTLReportFailure(0, "-[AGXA10FamilyComputeContext sampleCountersInBuffer:atSampleIndex:withBarrier:]", 993,
+                     @"MTLComputeCommandEncoder:sampleCountersInBuffer:atSampleIndex:withBarrier not supported on this "
+                     @"device");
 }
 
 @end
@@ -633,6 +655,17 @@ using namespace webmetal;
 {
     EmitEncoderRecord(self, _cmd, *_encoder, wire::EncoderPopDebugGroup{});
     [super popDebugGroup];
+}
+
+// -[AGXA10FamilyRenderContext sampleCountersInBuffer:atSampleIndex:withBarrier:]: the A10X samples no counters at
+// draw boundaries, so the driver reports the call (MTLReportFailure) and records nothing.
+- (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer
+                 atSampleIndex:(NSUInteger)sampleIndex
+                   withBarrier:(BOOL)barrier
+{
+    MTLReportFailure(0, "-[AGXA10FamilyRenderContext sampleCountersInBuffer:atSampleIndex:withBarrier:]", 1262,
+                     @"MTLRenderCommandEncoder:sampleCountersInBuffer:atSampleIndex:withBarrier not supported on this "
+                     @"device");
 }
 
 @end

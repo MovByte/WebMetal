@@ -143,7 +143,7 @@ inline constexpr DriverSelector kAGXA10XDeviceDriver[] = {
     {SelectorKind::Instance, "newComputePipelineStateWithDescriptor:error:", "@32@0:8@16^@24", "agx", ""},
     {SelectorKind::Instance, "newComputePipelineStateWithDescriptor:options:completionHandler:", "v40@0:8@16Q24@?32", "agx", ""},
     {SelectorKind::Instance, "newComputePipelineStateWithDescriptor:options:reflection:error:", "@48@0:8@16Q24^@32^@40", "agx", ""},
-    {SelectorKind::Instance, "newCounterSampleBufferWithDescriptor:error:", "@32@0:8@16^@24", "agx", "an AGXMTLCounterSampleBuffer (0x21c8db494), whose GPU timestamps the encoders' sampleCountersInBuffer: commands write; no plugin class stands in for AGXMTLCounterSampleBuffer and the mapping of the A10X's timestamp counter to the host's timestamp queries is not built"},
+    {SelectorKind::Instance, "newCounterSampleBufferWithDescriptor:error:", "@32@0:8@16^@24", "agx", "an AGXMTLCounterSampleBuffer (0x21c8db494, 0x21c9ce600): one timestamp counter whose 8-byte samples live in an AGXBuffer of 8 to 32768 bytes (0x21c9ce7d0), written by the sample buffer attachments of the passes at stage boundaries (the A10X samples no counters at draw, dispatch or blit boundaries: the encoders' sampleCountersInBuffer:atSampleIndex:withBarrier: report the call) and copied out by -resolveCounterRange: (0x21c9cea64); no plugin class stands in for AGXMTLCounterSampleBuffer and the host writes no GPU timestamps"},
     {SelectorKind::Instance, "newCounterSampleBufferWithLength:label:error:", "@40@0:8Q16@24^@32", "agx", ""},
     {SelectorKind::Instance, "newDefaultLibrary", "@16@0:8", "agx", ""},
     {SelectorKind::Instance, "newDepthStencilStateWithDescriptor:", "@24@0:8@16", "agx", ""},
