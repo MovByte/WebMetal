@@ -8,6 +8,7 @@
 //! - [`memory`]: [`Memory`], the services of one WebGPU device, and [`staging`], its readback buffers.
 //! - [`buffer`]: Metal buffers over WebGPU buffers and guest memory.
 //! - [`layout`]: texture geometry and the byte layouts of CPU and blit transfers.
+//! - [`agx`]: the A10X driver's texture memory layout, and its copies between that memory and linear bytes.
 //! - [`texture`]: Metal textures, their exact byte copies, `replaceRegion`, `getBytes` and the blit transfers.
 //! - [`proof`]: the per-host test of texel copies of formats whose bits WebGPU does not promise to keep.
 //! - [`view`]: texture views over a texture's storage.
@@ -17,6 +18,7 @@
 //!
 //! Every failure is a [`MemError`] that names what failed; nothing here substitutes a result.
 
+pub mod agx;
 pub mod buffer;
 pub mod calls;
 pub mod error;
