@@ -57,6 +57,8 @@ struct Draw {
     base: u64,
     patch_indices: bool,
     index_offset: u64,
+    /// The fragment function reads the swizzled texture at index 0 (`tess_draw_fragment_texture`).
+    texture: bool,
 }
 
 const POW2: u64 = 0;
@@ -99,11 +101,16 @@ const fn draw(
         base,
         patch_indices,
         index_offset,
+        texture: false,
     }
 }
 
+const fn with_texture(d: Draw) -> Draw {
+    Draw { texture: true, ..d }
+}
+
 /// The draws of `tessellation.render`, in its order.
-const DRAWS: [Draw; 13] = [
+const DRAWS: [Draw; 14] = [
     draw("quad-integer", true, INTEGER, CW, PER_PATCH, 0, 0.0, [0, 0, 0, 3, 1, 0], false, 0),
     draw("quad-fractional-odd-instances", true, ODD, CW, PER_PATCH, 0, 0.0, [48, 0, 1, 2, 2, 1], false, 0),
     draw("quad-culled-patch", true, INTEGER, CW, PER_PATCH, 0, 0.0, [0, 0, 9, 3, 1, 0], false, 0),
@@ -128,6 +135,7 @@ const DRAWS: [Draw; 13] = [
     draw("triangle-indexed-uint32-patch-indices", false, INTEGER, CW, PER_PATCH, 2, 0.0, [0, 0, 0, 4, 1, 0], true, 8),
     draw("quad-scale", true, ODD, CW, PER_PATCH, 0, 1.5, [0, 0, 0, 2, 1, 0], false, 0),
     draw("quad-tiled-inside", true, INTEGER, CW, PER_PATCH, 0, 0.0, [276, 0, 0, 1, 1, 0], false, 0),
+    with_texture(draw("quad-fragment-texture", true, INTEGER, CW, PER_PATCH, 0, 0.0, [0, 0, 0, 2, 1, 0], false, 0)),
 ];
 
 fn le32(words: impl IntoIterator<Item = u32>) -> Vec<u8> {
@@ -142,6 +150,8 @@ struct Buffers {
     patch_indices: Handle,
     indices16: Handle,
     indices32: Handle,
+    /// RGBA8Uint, 4 x 4, with the descriptor swizzle (alpha, red, green, blue).
+    texture: Handle,
 }
 
 impl Buffers {
@@ -164,8 +174,38 @@ impl Buffers {
             patch_indices: h.buffer_with(&le32([5, 2, 9, 0])).0,
             indices16: h.buffer_with(&indices16).0,
             indices32: h.buffer_with(&le32((0..64u32).map(|i| (i * 11 + 5) % POINTS as u32))).0,
+            texture: swizzled_texture(h),
         }
     }
+}
+
+/// The texture of `quad-fragment-texture`: bytes `i * 37 + 11`, copied in by a blit.
+fn swizzled_texture(h: &Harness) -> Handle {
+    // MTLPixelFormatRGBA8Uint 73; MTLStorageModePrivate 2; MTLTextureUsageShaderRead 1; MTLTextureSwizzleRed 2, Green
+    // 3, Blue 4, Alpha 5.
+    let mut d = render_common::texture_descriptor(73, 4, 4, 2, 1);
+    d.swizzle = TextureSwizzleChannels { red: 5, green: 2, blue: 3, alpha: 4 };
+    let t = h.handle();
+    h.ok(Request::CreateTexture(CreateTexture { texture: t, descriptor: d }));
+    let bytes: Vec<u8> = (0..64u32).map(|i| (i * 37 + 11) as u8).collect();
+    let (src, _) = h.buffer_with(&bytes);
+    let (f, at) = h.run(&[
+        Command::BeginBlit(BeginBlit { encoder: h.handle() }),
+        Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+            source_buffer: Some(src),
+            source_offset: 0,
+            source_bytes_per_row: 16,
+            source_bytes_per_image: 64,
+            source_size: Size { width: 4, height: 4, depth: 1 },
+            destination_texture: Some(t),
+            destination_slice: 0,
+            destination_level: 0,
+            destination_origin: Origin { x: 0, y: 0, z: 0 },
+        }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+    ]);
+    assert_eq!(f.status, status::OK, "{}: offset {at}: {f:?}", h.name());
+    t
 }
 
 /// Attribute 0 a float4 of buffer 1 per control point, attribute 1 a uint of buffer 2 per patch.
@@ -193,7 +233,8 @@ fn vertex_descriptor() -> VertexDescriptor {
 fn descriptor(h: &Harness, lib: &HashMap<String, LibraryFunction>, d: &Draw) -> RenderPipelineDescriptor {
     let fun = |name: &str| h.function(&lib[name].bitcode, name, lib[name].function_type);
     let vertex = fun(if d.quad { "tess_draw_quad" } else { "tess_draw_triangle" });
-    let mut desc = render_descriptor(Some(vertex), Some(fun("tess_draw_fragment")), R32_UINT);
+    let fragment = fun(if d.texture { "tess_draw_fragment_texture" } else { "tess_draw_fragment" });
+    let mut desc = render_descriptor(Some(vertex), Some(fragment), R32_UINT);
     desc.tessellation_partition_mode = d.mode;
     desc.max_tessellation_factor = 16;
     desc.tessellation_factor_scale_enabled = d.scale != 0.0;
@@ -263,6 +304,10 @@ fn render(h: &Harness, p: Handle, d: &Draw, b: &Buffers, body: Vec<Command>) -> 
             instance_stride: d.stride,
         }),
     ];
+    if d.texture {
+        commands
+            .push(Command::RenderSetFragmentTexture(RenderSetFragmentTexture { texture: Some(b.texture), index: 0 }));
+    }
     if d.scale != 0.0 {
         commands.push(Command::RenderSetTessellationFactorScale(RenderSetTessellationFactorScale { scale: d.scale }));
     }
@@ -292,7 +337,8 @@ fn render(h: &Harness, p: Handle, d: &Draw, b: &Buffers, body: Vec<Command>) -> 
 }
 
 /// `tessellation.render`: every draw's target equals Metal's, except the draw whose inside the M4 emits in tiles,
-/// whose command buffer fails naming the order it does not reproduce.
+/// whose command buffer fails naming the order it does not reproduce. The draw whose fragment function reads a swizzled
+/// texture is drawn with the pipeline compiled for the texture it binds, as an ordinary draw is.
 #[test]
 fn rendered_patch_draws_equal_metal_s_targets() {
     let h = Harness::new();
