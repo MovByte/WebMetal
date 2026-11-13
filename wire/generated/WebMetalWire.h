@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: ba44868b9a381e74e94125ac9525ccef37ca8f33911ad91b54797eeb7493cc1f
+// Schema SHA-256: 639d044a43b533b5c240cbd6cc36933d01de3493db4a90f0fc0519841ad46603
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0xba, 0x44, 0x86, 0x8b, 0x9a, 0x38, 0x1e, 0x74, 0xe9, 0x41, 0x25, 0xac, 0x95, 0x25, 0xcc, 0xef, 0x37, 0xca, 0x8f, 0x33, 0x91, 0x1a, 0xd9, 0x1b, 0x54, 0x79, 0x7e, 0xeb, 0x74, 0x93, 0xcc, 0x1f};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0x63, 0x9d, 0x04, 0x4a, 0x43, 0xb5, 0x33, 0xb5, 0xc2, 0x40, 0xcb, 0xd6, 0xcc, 0x36, 0x93, 0x3d, 0x01, 0xde, 0x34, 0x93, 0xdb, 0x4a, 0x90, 0xf0, 0xfc, 0x05, 0x19, 0x84, 0x1a, 0xd4, 0x66, 0x03};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -390,6 +390,8 @@ constexpr uint16_t kBufferDidModifyRange = 0x021d;
 constexpr uint16_t kBufferAddDebugMarker = 0x021e;
 constexpr uint16_t kBufferRemoveAllDebugMarkers = 0x021f;
 constexpr uint16_t kCreateIndirectCommandBuffer = 0x0220;
+constexpr uint16_t kTextureLayoutCopyFromLinearBytes = 0x0228;
+constexpr uint16_t kTextureLayoutCopyFromTextureMemory = 0x0229;
 constexpr uint16_t kRegisterAir = 0x0301;
 constexpr uint16_t kRegisterFunction = 0x0302;
 constexpr uint16_t kCreateRenderPipeline = 0x0303;
@@ -4256,6 +4258,134 @@ inline bool decodeFields(Reader&, CreateIndirectCommandBufferReply&) {
 // Decode the reply to a CreateIndirectCommandBuffer request: either its fields or the failure.
 inline bool decodeReply(const uint8_t* data, size_t size, Reply<CreateIndirectCommandBufferReply>& out, DecodeError* error = nullptr) {
     return decodeReplyRecord(data, size, CreateIndirectCommandBufferReply::kOpcode, out, error);
+}
+
+// 0x0228 control record. Metal methods: -[MTLTextureLayout
+// copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:].
+// The receiver is the texture layout of descriptor and heap_or_buffer_backed
+// (newTextureLayoutWithDescriptor:isHeapOrBufferBacked:), which has no handle; page_size and iosurface_alignment are
+// the values that layout reads from the running system. The host reads the linear bytes at bytes + offset and writes
+// the region into the texture memory at memory, both in the calling task, before it replies. refusal is the
+// assertion the A10X driver logs when it copies nothing, nil when it copied.
+struct TextureLayoutCopyFromLinearBytes {
+    static constexpr uint16_t kOpcode = 0x0228;
+    TextureDescriptor descriptor{};  // wire type `TextureDescriptor`.
+    bool heapOrBufferBacked = false;  // wire type `bool`.
+    uint64_t pageSize = 0;  // wire type `u64`.
+    uint64_t iosurfaceAlignment = 0;  // wire type `u64`.
+    uint64_t bytes = 0;  // wire type `guest_addr`.
+    uint64_t offset = 0;  // wire type `u64`.
+    uint64_t bytesPerRow = 0;  // wire type `u64`.
+    uint64_t bytesPerImage = 0;  // wire type `u64`.
+    uint64_t memory = 0;  // wire type `guest_addr`.
+    uint64_t slice = 0;  // wire type `u64`.
+    uint64_t level = 0;  // wire type `u64`.
+    Region region{};  // wire type `Region`.
+};
+
+inline bool encodeFields(Writer& w, const TextureLayoutCopyFromLinearBytes& v) {
+    if (!encodeFields(w, v.descriptor)) return false;
+    w.boolean(v.heapOrBufferBacked);
+    w.u64(v.pageSize);
+    w.u64(v.iosurfaceAlignment);
+    w.u64(v.bytes);
+    w.u64(v.offset);
+    w.u64(v.bytesPerRow);
+    w.u64(v.bytesPerImage);
+    w.u64(v.memory);
+    w.u64(v.slice);
+    w.u64(v.level);
+    if (!encodeFields(w, v.region)) return false;
+    return true;
+}
+
+// Append the record; returns false (writer unchanged) if the value breaks a format rule.
+inline bool encode(Writer& w, const TextureLayoutCopyFromLinearBytes& v) {
+    size_t start = w.begin(TextureLayoutCopyFromLinearBytes::kOpcode);
+    if (!encodeFields(w, v)) {
+        w.abandon(start);
+        return false;
+    }
+    return w.finish(start);
+}
+
+// 0x0228 reply fields.
+struct TextureLayoutCopyFromLinearBytesReply {
+    static constexpr uint16_t kOpcode = 0x8228;
+    std::optional<std::string> refusal{};  // wire type `str?`.
+};
+
+inline bool decodeFields(Reader& r, TextureLayoutCopyFromLinearBytesReply& v) {
+    if (!r.optStr(v.refusal)) return false;
+    return true;
+}
+
+// Decode the reply to a TextureLayoutCopyFromLinearBytes request: either its fields or the failure.
+inline bool decodeReply(const uint8_t* data, size_t size, Reply<TextureLayoutCopyFromLinearBytesReply>& out, DecodeError* error = nullptr) {
+    return decodeReplyRecord(data, size, TextureLayoutCopyFromLinearBytesReply::kOpcode, out, error);
+}
+
+// 0x0229 control record. Metal methods: -[MTLTextureLayout
+// copyFromTextureMemory:textureSlice:textureLevel:textureRegion:toLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:].
+// The receiver as for TextureLayoutCopyFromLinearBytes. The host reads the region from the texture memory at memory
+// and writes it to the linear bytes at bytes + offset, both in the calling task, before it replies. refusal as for
+// TextureLayoutCopyFromLinearBytes.
+struct TextureLayoutCopyFromTextureMemory {
+    static constexpr uint16_t kOpcode = 0x0229;
+    TextureDescriptor descriptor{};  // wire type `TextureDescriptor`.
+    bool heapOrBufferBacked = false;  // wire type `bool`.
+    uint64_t pageSize = 0;  // wire type `u64`.
+    uint64_t iosurfaceAlignment = 0;  // wire type `u64`.
+    uint64_t memory = 0;  // wire type `guest_addr`.
+    uint64_t slice = 0;  // wire type `u64`.
+    uint64_t level = 0;  // wire type `u64`.
+    Region region{};  // wire type `Region`.
+    uint64_t bytes = 0;  // wire type `guest_addr`.
+    uint64_t offset = 0;  // wire type `u64`.
+    uint64_t bytesPerRow = 0;  // wire type `u64`.
+    uint64_t bytesPerImage = 0;  // wire type `u64`.
+};
+
+inline bool encodeFields(Writer& w, const TextureLayoutCopyFromTextureMemory& v) {
+    if (!encodeFields(w, v.descriptor)) return false;
+    w.boolean(v.heapOrBufferBacked);
+    w.u64(v.pageSize);
+    w.u64(v.iosurfaceAlignment);
+    w.u64(v.memory);
+    w.u64(v.slice);
+    w.u64(v.level);
+    if (!encodeFields(w, v.region)) return false;
+    w.u64(v.bytes);
+    w.u64(v.offset);
+    w.u64(v.bytesPerRow);
+    w.u64(v.bytesPerImage);
+    return true;
+}
+
+// Append the record; returns false (writer unchanged) if the value breaks a format rule.
+inline bool encode(Writer& w, const TextureLayoutCopyFromTextureMemory& v) {
+    size_t start = w.begin(TextureLayoutCopyFromTextureMemory::kOpcode);
+    if (!encodeFields(w, v)) {
+        w.abandon(start);
+        return false;
+    }
+    return w.finish(start);
+}
+
+// 0x0229 reply fields.
+struct TextureLayoutCopyFromTextureMemoryReply {
+    static constexpr uint16_t kOpcode = 0x8229;
+    std::optional<std::string> refusal{};  // wire type `str?`.
+};
+
+inline bool decodeFields(Reader& r, TextureLayoutCopyFromTextureMemoryReply& v) {
+    if (!r.optStr(v.refusal)) return false;
+    return true;
+}
+
+// Decode the reply to a TextureLayoutCopyFromTextureMemory request: either its fields or the failure.
+inline bool decodeReply(const uint8_t* data, size_t size, Reply<TextureLayoutCopyFromTextureMemoryReply>& out, DecodeError* error = nullptr) {
+    return decodeReplyRecord(data, size, TextureLayoutCopyFromTextureMemoryReply::kOpcode, out, error);
 }
 
 // 0x0301 control record. Make an AIR bitcode module known to the host under its SHA-256. Sent once per hash per

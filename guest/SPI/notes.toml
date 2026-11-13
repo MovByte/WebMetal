@@ -55,7 +55,6 @@
 "initWithDevice:descriptor:" = "an initializer the driver sends only to a heap it allocated itself (-[AGXA10FamilyDevice newHeapWithDescriptor:]); the plugin creates its heaps through its own initializers. MetalPerformanceShaders's reference is to its own classes (MPSMatrix, MPSNDArray and others implement initWithDevice:descriptor:)"
 
 [loud.AGXTextureLayout]
-"copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:" = "writes linear texels into texture memory in the A10X layout (mostly twiddled blocks, agxsTwiddledBlockInfo), the memory newTextureWithBytesNoCopy:length:descriptor:deallocator: then wraps; the host has no decoder for that layout yet (it refuses CreateTextureNoCopy), so the plugin does not write it either"
 "initWithDevice:descriptor:" = "-[IOGPUMetalTextureLayout initWithDevice:descriptor:], an initializer the driver sends only to a layout object it allocated itself; the plugin creates its layouts through -newTextureLayoutWithDescriptor:isHeapOrBufferBacked:. MetalPerformanceShaders's reference is to its own classes (MPSMatrix, MPSNDArray and others implement initWithDevice:descriptor:)"
 
 [unserved]

@@ -194,6 +194,7 @@ compared exactly.
 | `commitAndWaitUntilSubmitted`, kernel start and end times across the command buffers of a queue | `spi.commit-and-wait-until-submitted` |
 | A memoryless depth attachment on a device that reports `supportsMemorylessRenderTargets` | `spi.memoryless-render-target` |
 | A raster order group on a fragment output, with the device's `rasterOrderGroupsSupported` answer | `spi.raster-order-groups` |
+| A texture layout (`newTextureLayoutWithDescriptor:isHeapOrBufferBacked:`): its size and alignment, and its copies into and out of texture memory for every slice and level of 2D, 2D array, cube, 3D and ASTC textures and a sub-region (`copyFromLinearBytes:...`, `copyFromTextureMemory:...`) | `spi.texture-layout-copies` |
 
 ## Not covered
 

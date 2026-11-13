@@ -1833,6 +1833,52 @@ inline bool same(const CreateIndirectCommandBufferReply&, const CreateIndirectCo
     return true;
 }
 
+inline void random(Gen& g, TextureLayoutCopyFromLinearBytes& v) {
+    random(g, v.descriptor);
+    v.heapOrBufferBacked = g.boolean();
+    v.pageSize = g.u64();
+    v.iosurfaceAlignment = g.u64();
+    v.bytes = g.u64();
+    v.offset = g.u64();
+    v.bytesPerRow = g.u64();
+    v.bytesPerImage = g.u64();
+    v.memory = g.u64();
+    v.slice = g.u64();
+    v.level = g.u64();
+    random(g, v.region);
+}
+
+inline void random(Gen& g, TextureLayoutCopyFromLinearBytesReply& v) {
+    v.refusal = g.ownOptString();
+}
+
+inline bool same(const TextureLayoutCopyFromLinearBytesReply& a, const TextureLayoutCopyFromLinearBytesReply& b) {
+    return a.refusal == b.refusal;
+}
+
+inline void random(Gen& g, TextureLayoutCopyFromTextureMemory& v) {
+    random(g, v.descriptor);
+    v.heapOrBufferBacked = g.boolean();
+    v.pageSize = g.u64();
+    v.iosurfaceAlignment = g.u64();
+    v.memory = g.u64();
+    v.slice = g.u64();
+    v.level = g.u64();
+    random(g, v.region);
+    v.bytes = g.u64();
+    v.offset = g.u64();
+    v.bytesPerRow = g.u64();
+    v.bytesPerImage = g.u64();
+}
+
+inline void random(Gen& g, TextureLayoutCopyFromTextureMemoryReply& v) {
+    v.refusal = g.ownOptString();
+}
+
+inline bool same(const TextureLayoutCopyFromTextureMemoryReply& a, const TextureLayoutCopyFromTextureMemoryReply& b) {
+    return a.refusal == b.refusal;
+}
+
 inline void random(Gen& g, RegisterAir& v) {
     random(g, v.hash);
     v.bitcode = g.bytes(g.bytesLength());
@@ -4342,7 +4388,7 @@ inline bool same(const DeviceLost& a, const DeviceLost& b) {
 
 // Append one random control record, the op chosen uniformly in schema order.
 inline bool encodeRandomRequest(Gen& g, Writer& w) {
-    switch (g.below(60)) {
+    switch (g.below(62)) {
     case 0: { Open v; random(g, v); return encode(w, v); }
     case 1: { FetchEvents v; random(g, v); return encode(w, v); }
     case 2: { Release v; random(g, v); return encode(w, v); }
@@ -4386,23 +4432,25 @@ inline bool encodeRandomRequest(Gen& g, Writer& w) {
     case 40: { BufferAddDebugMarker v; random(g, v); return encode(w, v); }
     case 41: { BufferRemoveAllDebugMarkers v; random(g, v); return encode(w, v); }
     case 42: { CreateIndirectCommandBuffer v; random(g, v); return encode(w, v); }
-    case 43: { RegisterAir v; random(g, v); return encode(w, v); }
-    case 44: { RegisterFunction v; random(g, v); return encode(w, v); }
-    case 45: { CreateRenderPipeline v; random(g, v); return encode(w, v); }
-    case 46: { CreateRenderPipelineReflection v; random(g, v); return encode(w, v); }
-    case 47: { CreateRenderPipelineAsync v; random(g, v); return encode(w, v); }
-    case 48: { CreateRenderPipelineReflectionAsync v; random(g, v); return encode(w, v); }
-    case 49: { CreateTileRenderPipeline v; random(g, v); return encode(w, v); }
-    case 50: { CreateTileRenderPipelineAsync v; random(g, v); return encode(w, v); }
-    case 51: { CreateComputePipeline v; random(g, v); return encode(w, v); }
-    case 52: { CreateComputePipelineAsync v; random(g, v); return encode(w, v); }
-    case 53: { CreateBinaryArchive v; random(g, v); return encode(w, v); }
-    case 54: { BinaryArchiveAddRenderPipelineFunctions v; random(g, v); return encode(w, v); }
-    case 55: { BinaryArchiveAddComputePipelineFunctions v; random(g, v); return encode(w, v); }
-    case 56: { BinaryArchiveAddTileRenderPipelineFunctions v; random(g, v); return encode(w, v); }
-    case 57: { RegisterSharedEvent v; random(g, v); return encode(w, v); }
-    case 58: { CreateFence v; random(g, v); return encode(w, v); }
-    case 59: { CreateEvent v; random(g, v); return encode(w, v); }
+    case 43: { TextureLayoutCopyFromLinearBytes v; random(g, v); return encode(w, v); }
+    case 44: { TextureLayoutCopyFromTextureMemory v; random(g, v); return encode(w, v); }
+    case 45: { RegisterAir v; random(g, v); return encode(w, v); }
+    case 46: { RegisterFunction v; random(g, v); return encode(w, v); }
+    case 47: { CreateRenderPipeline v; random(g, v); return encode(w, v); }
+    case 48: { CreateRenderPipelineReflection v; random(g, v); return encode(w, v); }
+    case 49: { CreateRenderPipelineAsync v; random(g, v); return encode(w, v); }
+    case 50: { CreateRenderPipelineReflectionAsync v; random(g, v); return encode(w, v); }
+    case 51: { CreateTileRenderPipeline v; random(g, v); return encode(w, v); }
+    case 52: { CreateTileRenderPipelineAsync v; random(g, v); return encode(w, v); }
+    case 53: { CreateComputePipeline v; random(g, v); return encode(w, v); }
+    case 54: { CreateComputePipelineAsync v; random(g, v); return encode(w, v); }
+    case 55: { CreateBinaryArchive v; random(g, v); return encode(w, v); }
+    case 56: { BinaryArchiveAddRenderPipelineFunctions v; random(g, v); return encode(w, v); }
+    case 57: { BinaryArchiveAddComputePipelineFunctions v; random(g, v); return encode(w, v); }
+    case 58: { BinaryArchiveAddTileRenderPipelineFunctions v; random(g, v); return encode(w, v); }
+    case 59: { RegisterSharedEvent v; random(g, v); return encode(w, v); }
+    case 60: { CreateFence v; random(g, v); return encode(w, v); }
+    case 61: { CreateEvent v; random(g, v); return encode(w, v); }
     }
     return false;
 }
@@ -4696,7 +4744,7 @@ inline bool checkRandomReply(Gen& g, const uint8_t* data, size_t size, size_t* c
     DecodeError e;
     if (!splitRecord(data, size, opcode, length, &e)) return false;
     *consumed = length;
-    switch (g.below(60)) {
+    switch (g.below(62)) {
     case 0: {
         Reply<OpenReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
@@ -4999,118 +5047,132 @@ inline bool checkRandomReply(Gen& g, const uint8_t* data, size_t size, size_t* c
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
     case 43: {
+        Reply<TextureLayoutCopyFromLinearBytesReply> expected;
+        if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
+        Reply<TextureLayoutCopyFromLinearBytesReply> got;
+        if (!decodeReply(data, length, got, &e)) return false;
+        return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
+    }
+    case 44: {
+        Reply<TextureLayoutCopyFromTextureMemoryReply> expected;
+        if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
+        Reply<TextureLayoutCopyFromTextureMemoryReply> got;
+        if (!decodeReply(data, length, got, &e)) return false;
+        return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
+    }
+    case 45: {
         Reply<RegisterAirReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<RegisterAirReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 44: {
+    case 46: {
         Reply<RegisterFunctionReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<RegisterFunctionReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 45: {
+    case 47: {
         Reply<CreateRenderPipelineReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateRenderPipelineReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 46: {
+    case 48: {
         Reply<CreateRenderPipelineReflectionReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateRenderPipelineReflectionReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 47: {
+    case 49: {
         Reply<CreateRenderPipelineAsyncReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateRenderPipelineAsyncReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 48: {
+    case 50: {
         Reply<CreateRenderPipelineReflectionAsyncReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateRenderPipelineReflectionAsyncReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 49: {
+    case 51: {
         Reply<CreateTileRenderPipelineReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateTileRenderPipelineReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 50: {
+    case 52: {
         Reply<CreateTileRenderPipelineAsyncReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateTileRenderPipelineAsyncReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 51: {
+    case 53: {
         Reply<CreateComputePipelineReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateComputePipelineReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 52: {
+    case 54: {
         Reply<CreateComputePipelineAsyncReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateComputePipelineAsyncReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 53: {
+    case 55: {
         Reply<CreateBinaryArchiveReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateBinaryArchiveReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 54: {
+    case 56: {
         Reply<BinaryArchiveAddRenderPipelineFunctionsReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<BinaryArchiveAddRenderPipelineFunctionsReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 55: {
+    case 57: {
         Reply<BinaryArchiveAddComputePipelineFunctionsReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<BinaryArchiveAddComputePipelineFunctionsReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 56: {
+    case 58: {
         Reply<BinaryArchiveAddTileRenderPipelineFunctionsReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<BinaryArchiveAddTileRenderPipelineFunctionsReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 57: {
+    case 59: {
         Reply<RegisterSharedEventReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<RegisterSharedEventReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 58: {
+    case 60: {
         Reply<CreateFenceReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateFenceReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 59: {
+    case 61: {
         Reply<CreateEventReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateEventReply> got;

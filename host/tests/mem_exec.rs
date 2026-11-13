@@ -717,3 +717,125 @@ fn buffer_backed_texture_through_the_executor() {
     assert!(now[..offset as usize].iter().all(|&b| b == 0xee));
     h.g.assert_no_errors();
 }
+
+/// `LayoutPattern` of the reference case `spi.texture-layout-copies` (tests/reference/src/cases/TextureLayout.m).
+fn layout_pattern(len: usize, seed: u32) -> Vec<u8> {
+    let mut x = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+    (0..len)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x as u8
+        })
+        .collect()
+}
+
+fn layout_copy_in(d: &TextureDescriptor, memory: u64, bytes: u64, level: u64, region: Region) -> Request {
+    let (w, h) = (region.size.width, region.size.height);
+    Request::TextureLayoutCopyFromLinearBytes(TextureLayoutCopyFromLinearBytes {
+        descriptor: d.clone(),
+        heap_or_buffer_backed: false,
+        page_size: 16384,
+        iosurface_alignment: 16384,
+        bytes: GuestAddr(bytes),
+        offset: 0,
+        bytes_per_row: w * 4,
+        bytes_per_image: w * h * 4,
+        memory: GuestAddr(memory),
+        slice: 0,
+        level,
+        region,
+    })
+}
+
+fn layout_copy_out(d: &TextureDescriptor, memory: u64, bytes: u64, level: u64, region: Region) -> Request {
+    let (w, h) = (region.size.width, region.size.height);
+    Request::TextureLayoutCopyFromTextureMemory(TextureLayoutCopyFromTextureMemory {
+        descriptor: d.clone(),
+        heap_or_buffer_backed: false,
+        page_size: 16384,
+        iosurface_alignment: 16384,
+        memory: GuestAddr(memory),
+        slice: 0,
+        level,
+        region,
+        bytes: GuestAddr(bytes),
+        offset: 0,
+        bytes_per_row: w * 4,
+        bytes_per_image: w * h * 4,
+    })
+}
+
+/// The RGBA8 37x21 texture of six levels of `spi.texture-layout-copies`, and its levels' extents.
+fn layout_texture() -> TextureDescriptor {
+    let mut d = texture_descriptor(70, 37, 21, 0, 1);
+    d.mipmap_level_count = 6;
+    d
+}
+
+fn layout_extent(level: u64) -> (u64, u64) {
+    ((37u64 >> level).max(1), (21u64 >> level).max(1))
+}
+
+/// Memory for the layout of `d`, filled through the texture layout's copies with the reference case's texels.
+fn layout_fill(h: &Harness, d: &TextureDescriptor) -> (u64, u64, Vec<Vec<u8>>) {
+    use webmetal_host::mem::agx::{gen2, guest as agx_guest};
+    let layout = gen2::texture_layout(&agx_guest::layout_fields(d), false, gen2::SystemValues::default()).unwrap();
+    let size = layout.size + 16;
+    let memory = h.alloc(size);
+    let mut levels = Vec::new();
+    for level in 0..d.mipmap_level_count {
+        let (w, hh) = layout_extent(level);
+        let texels = layout_pattern((w * hh * 4) as usize, level as u32);
+        let src = h.alloc(texels.len() as u64);
+        h.guest.cpu_write(src, &texels);
+        let reply = h.request(layout_copy_in(d, memory, src, level, region(w, hh)));
+        assert!(
+            matches!(reply, Reply::TextureLayoutCopyFromLinearBytes(Ok(ref r)) if r.refusal.is_none()),
+            "{reply:?}"
+        );
+        levels.push(texels);
+    }
+    (memory, size, levels)
+}
+
+/// `spi.texture-layout-copies` (its RGBA8 37x21 texture of six levels) through the executor: the texture layout's
+/// copies fill memory in the A10X layout and read back what the reference read back; a region the driver refuses
+/// copies nothing and the reply carries the driver's assertion.
+#[test]
+fn texture_layout_copies_through_the_executor() {
+    let golden = Golden::load("spi.texture-layout-copies");
+    let h = Harness::new();
+    let d = layout_texture();
+    let (memory, _, levels) = layout_fill(&h, &d);
+    for (level, texels) in levels.iter().enumerate() {
+        let (w, hh) = layout_extent(level as u64);
+        let out = h.alloc(texels.len() as u64);
+        let reply = h.request(layout_copy_out(&d, memory, out, level as u64, region(w, hh)));
+        assert!(matches!(reply, Reply::TextureLayoutCopyFromTextureMemory(Ok(ref r)) if r.refusal.is_none()));
+        let name = format!("2d-rgba8-37x21.slice0.level{level}");
+        assert_eq!(h.guest.cpu_read(out, texels.len()), golden.bytes(&name).unwrap(), "{name}");
+        assert_eq!(&h.guest.cpu_read(out, texels.len()), texels);
+    }
+    let before = h.guest.cpu_read(memory, 4096);
+    let reply = h.request(layout_copy_in(&d, memory, memory, 0, region(0, 1)));
+    match reply {
+        Reply::TextureLayoutCopyFromLinearBytes(Ok(r)) => assert_eq!(r.refusal.as_deref(), Some("width > 0")),
+        r => panic!("{r:?}"),
+    }
+    let reply = h.request(layout_copy_in(&d, memory, memory, 1, region(37, 21)));
+    match reply {
+        Reply::TextureLayoutCopyFromLinearBytes(Ok(r)) => assert_eq!(
+            r.refusal.as_deref(),
+            Some(
+                "(xoffset + width) <= ALIGNGRAN_NPOT(getViewLevelWidth(mipmapLevel), block_width) && \"Region width \
+                 OOB\""
+            )
+        ),
+        r => panic!("{r:?}"),
+    }
+    assert_eq!(h.guest.cpu_read(memory, 4096), before, "a refused copy writes nothing");
+    h.g.assert_no_errors();
+}
+

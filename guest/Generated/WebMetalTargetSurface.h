@@ -1147,7 +1147,7 @@ inline constexpr DriverSelector kAGXA10FamilyBinaryArchiveDriver[] = {
 // Driver-layer selectors of AGXTextureLayout -> IOGPUMetalTextureLayout.
 inline constexpr DriverSelector kAGXTextureLayoutDriver[] = {
     {SelectorKind::Instance, "alignment", "Q16@0:8", "agx", ""},
-    {SelectorKind::Instance, "copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:", "v120@0:8r^v16Q24Q32Q40^v48Q56Q64{?={?=QQQ}{?=QQQ}}72", "agx", "writes linear texels into texture memory in the A10X layout (mostly twiddled blocks, agxsTwiddledBlockInfo), the memory newTextureWithBytesNoCopy:length:descriptor:deallocator: then wraps; the host has no decoder for that layout yet (it refuses CreateTextureNoCopy), so the plugin does not write it either"},
+    {SelectorKind::Instance, "copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:", "v120@0:8r^v16Q24Q32Q40^v48Q56Q64{?={?=QQQ}{?=QQQ}}72", "agx", ""},
     {SelectorKind::Instance, "copyFromTextureMemory:textureSlice:textureLevel:textureRegion:toLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:", "v120@0:8r^v16Q24Q32{?={?=QQQ}{?=QQQ}}40^v88Q96Q104Q112", "agx", ""},
     {SelectorKind::Instance, "copyGranularity", "{?=QQQ}16@0:8", "agx", ""},
     {SelectorKind::Instance, "finalizeTextureMemory:", "v24@0:8^v16", "agx", ""},

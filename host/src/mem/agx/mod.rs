@@ -8,8 +8,10 @@
 //! - [`gen2`]: the texture object the driver builds from a descriptor (`AGX::TextureGen2`): kind (linear or
 //!   twiddled), level offsets, slice sizes, twiddled block information and the layout's size and alignment.
 //! - [`region`]: `writeRegion` and `readRegion`, with `validateRegion`'s refusals.
+//! - [`guest`]: the copies of a texture layout object, between two blocks of a task's memory.
 //! - [`formats`]: the fields of the driver's format table the layout reads (generated).
 
 pub mod formats;
 pub mod gen2;
+pub mod guest;
 pub mod region;

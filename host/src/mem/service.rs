@@ -52,9 +52,10 @@ use webmetal_wire::{
     CreateTextureViewReply, CreateTextureViewResourceIndexReply, CreateTextureWithIOSurfaceReply, Failure,
     GetBytesReply, GetBytesSliceReply, Handle, HeapCreateBufferReply, HeapCreateTextureReply, MakeAliasableReply,
     Region, ReplaceRegionReply, ReplaceRegionSliceReply, Reply, Request, SetPurgeableState, SetPurgeableStateReply,
-    opcode,
+    TextureLayoutCopyFromLinearBytesReply, TextureLayoutCopyFromTextureMemoryReply, opcode,
 };
 
+use super::agx::guest as agx_guest;
 use super::buffer::{Buffer, Readbacks};
 use super::calls::Calls;
 use super::error::MemError;
@@ -396,6 +397,18 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 mem.get_bytes_linear(e, task, &lt, &a, r.pixel_bytes.0)?;
                 return Ok(Served::Ready(ok!(GetBytesSlice, GetBytesSliceReply)));
             }
+            Request::TextureLayoutCopyFromLinearBytes(r) => {
+                let refusal = agx_guest::copy_from_linear_bytes(e, task, r)?.map(str::to_owned);
+                return Ok(Served::Ready(Reply::TextureLayoutCopyFromLinearBytes(Ok(
+                    TextureLayoutCopyFromLinearBytesReply { refusal },
+                ))));
+            }
+            Request::TextureLayoutCopyFromTextureMemory(r) => {
+                let refusal = agx_guest::copy_from_texture_memory(e, task, r)?.map(str::to_owned);
+                return Ok(Served::Ready(Reply::TextureLayoutCopyFromTextureMemory(Ok(
+                    TextureLayoutCopyFromTextureMemoryReply { refusal },
+                ))));
+            }
             Request::SetPurgeableState(r) => {
                 let previous = self.set_purgeable(cx, r)?;
                 return Ok(Served::Ready(Reply::SetPurgeableState(Ok(SetPurgeableStateReply {
@@ -569,6 +582,8 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for Control<A, E> {
             opcode::HEAP_CREATE_BUFFER,
             opcode::HEAP_CREATE_TEXTURE,
             opcode::BUFFER_DID_MODIFY_RANGE,
+            opcode::TEXTURE_LAYOUT_COPY_FROM_LINEAR_BYTES,
+            opcode::TEXTURE_LAYOUT_COPY_FROM_TEXTURE_MEMORY,
         ]
     }
 

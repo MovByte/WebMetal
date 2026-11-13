@@ -1254,6 +1254,26 @@ args = ["buffer: IndirectCommandBuffer", "descriptor: IndirectCommandBufferDescr
 doc = "contents is the guest allocation that holds the commands the guest encodes on the CPU (MTLIndirectRenderCommand and MTLIndirectComputeCommand setters), in a layout this schema does not define yet; until it does, the host refuses to execute those commands (status 2)."
 
 [[op]]
+code = 0x0228
+name = "TextureLayoutCopyFromLinearBytes"
+channel = "control"
+methods = ["MTLTextureLayout copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:"]
+extra = ["descriptor", "heap_or_buffer_backed", "page_size", "iosurface_alignment"]
+args = ["descriptor: TextureDescriptor", "heap_or_buffer_backed: bool", "page_size: u64", "iosurface_alignment: u64", "bytes: guest_addr", "offset: u64", "bytes_per_row: u64", "bytes_per_image: u64", "memory: guest_addr", "slice: u64", "level: u64", "region: Region"]
+reply = ["refusal: str?"]
+doc = "The receiver is the texture layout of descriptor and heap_or_buffer_backed (newTextureLayoutWithDescriptor:isHeapOrBufferBacked:), which has no handle; page_size and iosurface_alignment are the values that layout reads from the running system. The host reads the linear bytes at bytes + offset and writes the region into the texture memory at memory, both in the calling task, before it replies. refusal is the assertion the A10X driver logs when it copies nothing, nil when it copied."
+
+[[op]]
+code = 0x0229
+name = "TextureLayoutCopyFromTextureMemory"
+channel = "control"
+methods = ["MTLTextureLayout copyFromTextureMemory:textureSlice:textureLevel:textureRegion:toLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:"]
+extra = ["descriptor", "heap_or_buffer_backed", "page_size", "iosurface_alignment"]
+args = ["descriptor: TextureDescriptor", "heap_or_buffer_backed: bool", "page_size: u64", "iosurface_alignment: u64", "memory: guest_addr", "slice: u64", "level: u64", "region: Region", "bytes: guest_addr", "offset: u64", "bytes_per_row: u64", "bytes_per_image: u64"]
+reply = ["refusal: str?"]
+doc = "The receiver as for TextureLayoutCopyFromLinearBytes. The host reads the region from the texture memory at memory and writes it to the linear bytes at bytes + offset, both in the calling task, before it replies. refusal as for TextureLayoutCopyFromLinearBytes."
+
+[[op]]
 code = 0x0301
 name = "RegisterAir"
 channel = "control"
@@ -3701,9 +3721,8 @@ note = "Device-profile values of the layout object (see newTextureLayoutWithDesc
 [[local]]
 reason = "guest-memory"
 protocols = ["MTLTextureLayout"]
-selectors = ["copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:",
-             "initializeTextureMemory:", "finalizeTextureMemory:"]
-note = "CPU copies between two guest memory blocks; the texture-memory layout is the one the layout object reports."
+selectors = ["initializeTextureMemory:", "finalizeTextureMemory:"]
+note = "Writes of the layout's watermark into guest memory (or nothing): the layout object reports where."
 
 [[local]]
 reason = "kernel-object"
