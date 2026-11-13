@@ -225,3 +225,11 @@ fragment uint tess_draw_fragment(TessDrawOut in [[stage_in]])
 {
     return in.code;
 }
+
+// tessellation.render quad-fragment-texture: the code mixed with a texel of a texture whose descriptor swizzle
+// rearranges its components, so that the fragment function's code depends on the bound texture.
+fragment uint tess_draw_fragment_texture(TessDrawOut in [[stage_in]], texture2d<uint, access::read> t [[texture(0)]])
+{
+    uint4 c = t.read(uint2(in.position.xy) % 4u);
+    return in.code ^ (c.x | (c.y << 8) | (c.z << 16) | (c.w << 24));
+}

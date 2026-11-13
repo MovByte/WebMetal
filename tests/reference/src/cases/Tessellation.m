@@ -518,11 +518,13 @@ typedef struct {
     NSUInteger offset, stride, start, count, instances, base;
     BOOL patchIndices;
     NSUInteger indexOffset; // controlPointIndexBufferOffset
+    BOOL texture;           // the fragment function reads the swizzled texture at index 0
 } TRender;
 
 WMREF_CASE(tessRender, "tessellation.render", "pass.tessellation",
            "Rendered patch draws: control points and per-patch attributes through the vertex descriptor, indexed "
-           "control points, patch index buffers, factor step functions, culled patches and the triangles' order")
+           "control points, patch index buffers, factor step functions, culled patches, a fragment texture read and "
+           "the triangles' order")
 {
     [c require:@"family.apple3" value:[c.device supportsFamily:MTLGPUFamilyApple3]];
     // Buffer 1: a float4 per control point, its x and y on the 1/64 grid. Buffer 2: a uint per patch.
@@ -556,43 +558,70 @@ WMREF_CASE(tessRender, "tessellation.render", "pass.tessellation",
     id<MTLBuffer> patchIndexBuffer = [c bufferWithBytes:patchIndices length:sizeof patchIndices];
     id<MTLBuffer> index16Buffer = [c bufferWithBytes:indices16 length:sizeof indices16];
     id<MTLBuffer> index32Buffer = [c bufferWithBytes:indices32 length:sizeof indices32];
+    // RGBA8Uint, 4 x 4, with the descriptor swizzle (alpha, red, green, blue) ("Texture swizzle": Apple2 and later,
+    // Metal Feature Set Tables, 2026-10-23).
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Uint
+                                                                                  width:4
+                                                                                 height:4
+                                                                              mipmapped:NO];
+    td.storageMode = MTLStorageModePrivate;
+    td.usage = MTLTextureUsageShaderRead;
+    td.swizzle = MTLTextureSwizzleChannelsMake(MTLTextureSwizzleAlpha, MTLTextureSwizzleRed, MTLTextureSwizzleGreen,
+                                               MTLTextureSwizzleBlue);
+    id<MTLTexture> texels = [c texture:td];
+    uint8_t texelBytes[64];
+    for (int i = 0; i < 64; i++) texelBytes[i] = (uint8_t)(i * 37 + 11);
+    id<MTLBuffer> texelBuffer = [c bufferWithBytes:texelBytes length:sizeof texelBytes];
+    [c blit:^(id<MTLBlitCommandEncoder> b) {
+        [b copyFromBuffer:texelBuffer
+                   sourceOffset:0
+              sourceBytesPerRow:16
+            sourceBytesPerImage:64
+                     sourceSize:MTLSizeMake(4, 4, 1)
+                      toTexture:texels
+               destinationSlice:0
+               destinationLevel:0
+              destinationOrigin:MTLOriginMake(0, 0, 0)];
+    }];
 
     const MTLTessellationFactorStepFunction perPatch = MTLTessellationFactorStepFunctionPerPatch;
     const MTLTessellationControlPointIndexType none = MTLTessellationControlPointIndexTypeNone;
     const TRender draws[] = {
         {"quad-integer", YES, MTLTessellationPartitionModeInteger, MTLWindingClockwise, perPatch, none, 0, 0, 0, 0, 3,
-         1, 0, NO, 0},
+         1, 0, NO, 0, NO},
         {"quad-fractional-odd-instances", YES, MTLTessellationPartitionModeFractionalOdd, MTLWindingClockwise,
-         perPatch, none, 0, 48, 0, 1, 2, 2, 1, NO, 0},
+         perPatch, none, 0, 48, 0, 1, 2, 2, 1, NO, 0, NO},
         {"quad-culled-patch", YES, MTLTessellationPartitionModeInteger, MTLWindingClockwise, perPatch, none, 0, 0, 0,
-         9, 3, 1, 0, NO, 0},
+         9, 3, 1, 0, NO, 0, NO},
         {"triangle-fractional-even", NO, MTLTessellationPartitionModeFractionalEven, MTLWindingClockwise, perPatch,
-         none, 0, 0, 0, 0, 3, 1, 0, NO, 0},
+         none, 0, 0, 0, 0, 3, 1, 0, NO, 0, NO},
         {"triangle-pow2-counter-clockwise", NO, MTLTessellationPartitionModePow2, MTLWindingCounterClockwise,
-         perPatch, none, 0, 0, 0, 1, 2, 1, 0, NO, 0},
+         perPatch, none, 0, 0, 0, 1, 2, 1, 0, NO, 0, NO},
         {"quad-constant", YES, MTLTessellationPartitionModeFractionalEven, MTLWindingClockwise,
-         MTLTessellationFactorStepFunctionConstant, none, 0, 24, 0, 0, 3, 2, 3, NO, 0},
+         MTLTessellationFactorStepFunctionConstant, none, 0, 24, 0, 0, 3, 2, 3, NO, 0, NO},
         {"quad-per-instance", YES, MTLTessellationPartitionModeInteger, MTLWindingClockwise,
-         MTLTessellationFactorStepFunctionPerInstance, none, 0, 0, 24, 0, 2, 3, 2, NO, 0},
+         MTLTessellationFactorStepFunctionPerInstance, none, 0, 0, 24, 0, 2, 3, 2, NO, 0, NO},
         {"triangle-per-patch-and-instance", NO, MTLTessellationPartitionModeFractionalOdd, MTLWindingClockwise,
-         MTLTessellationFactorStepFunctionPerPatchAndPerInstance, none, 0, 8, 40, 1, 2, 2, 1, NO, 0},
+         MTLTessellationFactorStepFunctionPerPatchAndPerInstance, none, 0, 8, 40, 1, 2, 2, 1, NO, 0, NO},
         {"quad-patch-indices", YES, MTLTessellationPartitionModeInteger, MTLWindingClockwise, perPatch, none, 0, 0, 0,
-         1, 3, 1, 0, YES, 0},
+         1, 3, 1, 0, YES, 0, NO},
         {"quad-indexed-uint16", YES, MTLTessellationPartitionModeFractionalEven, MTLWindingClockwise, perPatch,
-         MTLTessellationControlPointIndexTypeUInt16, 0, 0, 0, 1, 2, 2, 0, NO, 6},
+         MTLTessellationControlPointIndexTypeUInt16, 0, 0, 0, 1, 2, 2, 0, NO, 6, NO},
         {"triangle-indexed-uint32-patch-indices", NO, MTLTessellationPartitionModeInteger, MTLWindingClockwise,
-         perPatch, MTLTessellationControlPointIndexTypeUInt32, 0, 0, 0, 0, 4, 1, 0, YES, 8},
+         perPatch, MTLTessellationControlPointIndexTypeUInt32, 0, 0, 0, 0, 4, 1, 0, YES, 8, NO},
         {"quad-scale", YES, MTLTessellationPartitionModeFractionalOdd, MTLWindingClockwise, perPatch, none, 1.5f, 0, 0,
-         0, 2, 1, 0, NO, 0},
+         0, 2, 1, 0, NO, 0, NO},
         {"quad-tiled-inside", YES, MTLTessellationPartitionModeInteger, MTLWindingClockwise, perPatch, none, 0, 276, 0,
-         0, 1, 1, 0, NO, 0},
+         0, 1, 1, 0, NO, 0, NO},
+        {"quad-fragment-texture", YES, MTLTessellationPartitionModeInteger, MTLWindingClockwise, perPatch, none, 0, 0,
+         0, 0, 2, 1, 0, NO, 0, YES},
     };
     for (size_t i = 0; i < sizeof draws / sizeof draws[0]; i++) {
         const TRender *d = &draws[i];
         [c step:@(d->name)];
         MTLRenderPipelineDescriptor *p = [MTLRenderPipelineDescriptor new];
         p.vertexFunction = [c function:d->quad ? @"tess_draw_quad" : @"tess_draw_triangle"];
-        p.fragmentFunction = [c function:@"tess_draw_fragment"];
+        p.fragmentFunction = [c function:d->texture ? @"tess_draw_fragment_texture" : @"tess_draw_fragment"];
         p.colorAttachments[0].pixelFormat = MTLPixelFormatR32Uint;
         p.tessellationPartitionMode = d->mode;
         p.maxTessellationFactor = 16;
@@ -618,6 +647,7 @@ WMREF_CASE(tessRender, "tessellation.render", "pass.tessellation",
             [e setRenderPipelineState:pipeline];
             [e setVertexBuffer:pointBuffer offset:0 atIndex:1];
             [e setVertexBuffer:tagBuffer offset:0 atIndex:2];
+            if (d->texture) [e setFragmentTexture:texels atIndex:0];
             [e setTessellationFactorBuffer:factorBuffer offset:d->offset instanceStride:d->stride];
             if (d->scale != 0) [e setTessellationFactorScale:d->scale];
             id<MTLBuffer> patches = d->patchIndices ? patchIndexBuffer : nil;
