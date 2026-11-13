@@ -103,6 +103,14 @@ impl<A: Api> Tex<A> {
         }
     }
 
+    /// The `MTLTextureSwizzle` channels shader reads apply: a view's own, else the texture's descriptor swizzle.
+    pub(crate) fn swizzle(&self) -> [u8; 4] {
+        match self {
+            Tex::View(v) => v.swizzle,
+            _ => self.texture().swizzle,
+        }
+    }
+
     /// The view, for a view.
     pub(crate) fn view(&self) -> Option<&Rc<TextureView<A>>> {
         match self {

@@ -36,6 +36,7 @@ use webmetal_wire::{Command, Handle, RenderPassDescriptor, Viewport};
 use crate::embed::Embedder;
 use crate::exec::{EncodeCx, EncoderKind, EncoderService, RecordFailure, Segment, Table, failure};
 use crate::format::handling::{Read, Resolution};
+use crate::format::webgpu::Feature;
 use crate::gpu::idl::{
     BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, BufferBindingType, BufferDescriptor,
     BufferUsage, Color, ColorDict, Extent3D, Extent3DDict, IndexFormat, Origin3D, Origin3DDict, TexelCopyTextureInfo,
@@ -47,6 +48,7 @@ use crate::gpu::{
 };
 use crate::mem::buffer::Buffer;
 use crate::mem::texture::{Prepare, Texture};
+use crate::mem::view::{IDENTITY_SWIZZLE, read_swizzle, swizzle_string};
 use crate::mem::{MemError, Memory};
 use crate::state::SamplerObject;
 
@@ -1878,7 +1880,8 @@ impl<A: Api> Run<'_, A> {
         match tex.resolution() {
             // An X32_Stencil8 view reads the stencil aspect, a WebGPU view of its own.
             Resolution::Native(_) | Resolution::StencilAspect => {}
-            Resolution::Emulated(e) if e.read == Read::Native => {}
+            // A format read with its components rearranged: the view's swizzle below.
+            Resolution::Emulated(e) if matches!(e.read, Read::Native | Read::Swizzle(_)) => {}
             _ => {
                 return Err(RenderError::unimplemented(format!(
                     "{} texture {index}: a texture whose format is emulated with a shader conversion; the conversion \
@@ -1954,6 +1957,22 @@ impl<A: Api> Run<'_, A> {
         }
         if let (Some(v), Resource::Texture { .. }) = (tex.view(), resource) {
             v.describe(&mut d, 0..v.geometry.mip_levels, TextureUsage::TEXTURE_BINDING);
+        }
+        // The swizzle reads and samples apply (writes take none). Render pipelines have no variant per bound texture
+        // to apply it in the shader, so the WebGPU view applies it; depth reads take none, as in the compiler.
+        let swizzle = read_swizzle(tex.resolution(), tex.swizzle());
+        if let Resource::Texture { sample_type, .. } = resource
+            && swizzle != IDENTITY_SWIZZLE
+            && *sample_type != crate::gpu::idl::TextureSampleType::Depth
+        {
+            if !self.memory.features().has(Feature::TextureComponentSwizzle) {
+                return Err(RenderError::unimplemented(format!(
+                    "{} texture {index}: swizzle {swizzle:?} needs texture-component-swizzle on this host; render \
+                     pipelines have no variant per bound texture to apply it in the shader",
+                    stage.name()
+                )));
+            }
+            d.swizzle = swizzle_string(swizzle);
         }
         self.call("GPUTexture.createView", |_| t.gpu().create_view(&d))
             .map_err(|e| RenderError::gpu("GPUTexture.createView", e))

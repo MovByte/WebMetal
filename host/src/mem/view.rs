@@ -24,6 +24,11 @@
 //! the view's bases ([`TextureView::root_level`], [`TextureView::root_slice`]), after Metal's rules are checked
 //! against the view. The stencil view's bytes are one aspect of the root's; its transfers are refused with the reason.
 //!
+//! **Swizzle.** A view's swizzle is the one it is made with, or its parent's (the parent texture's descriptor swizzle,
+//! or the parent view's). Like a texture's, it applies to shader reads and samples only ([`read_swizzle`]): through the
+//! WebGPU view where the host has `texture-component-swizzle`, else in the compiled shader, whose pipeline variant
+//! takes the bound texture's swizzle.
+//!
 //! **What is checked when a view is made.** Metal's own validation of the arguments
 //! (`_mtlValidateArgumentsForTextureViewOnDevice`, which asserts in release builds as well) runs in the guest. The host
 //! checks what it relies on and refuses the rest with the rule it breaks: levels and slices inside the parent; the
@@ -34,7 +39,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::format::handling::{self, Dimension, Resolution, Unavailable};
+use crate::format::handling::{self, Dimension, Read, Resolution, Swizzle, Unavailable};
 use crate::format::reinterpret::{ViewPlan, view_plan};
 use crate::format::table::METAL_FORMATS;
 use crate::gpu::Api;
@@ -52,6 +57,36 @@ use crate::embed::{Embedder, TaskId};
 
 /// `MTLTextureSwizzleChannelsDefault`: red 2, green 3, blue 4, alpha 5 (`MTLTextureSwizzle` of `MTLTexture.h`).
 pub const IDENTITY_SWIZZLE: [u8; 4] = [2, 3, 4, 5];
+
+/// The channels a shader read or sample of a texture returns, as `MTLTextureSwizzle` values (zero 0, one 1, red 2 to
+/// alpha 5): the bound texture's `swizzle` composed after the component mapping of its format's `resolution` (A8Unorm,
+/// stored in `r8unorm`, reads (0, 0, 0, r)), as the compiler composes them (AirWgsl `tex::lower::swizzle`).
+pub fn read_swizzle(resolution: Resolution, swizzle: [u8; 4]) -> [u8; 4] {
+    let own = match resolution {
+        Resolution::Emulated(e) => match e.read {
+            Read::Swizzle(s) => s.map(|c| match c {
+                Swizzle::Zero => 0,
+                Swizzle::One => 1,
+                Swizzle::R => 2,
+                Swizzle::G => 3,
+                Swizzle::B => 4,
+                Swizzle::A => 5,
+            }),
+            _ => IDENTITY_SWIZZLE,
+        },
+        _ => IDENTITY_SWIZZLE,
+    };
+    swizzle.map(|c| match c {
+        0 | 1 => c,
+        k => own[usize::from(k - 2)],
+    })
+}
+
+/// The `swizzle` of a WebGPU texture view (WebGPU section 6.2.1, "Validate swizzle string": `r`, `g`, `b`, `a`, `0`
+/// and `1`) that applies `MTLTextureSwizzle` channels.
+pub fn swizzle_string(swizzle: [u8; 4]) -> String {
+    swizzle.iter().map(|&c| ['0', '1', 'r', 'g', 'b', 'a'][usize::from(c)]).collect()
+}
 
 /// A texture view: the payload of a view handle in the executor's object table.
 pub struct TextureView<A: Api> {
@@ -221,10 +256,7 @@ impl<A: Api> Memory<A> {
         let call = a.call;
         // The parent's view of the root: its geometry, bases, format and swizzle.
         let (root, pg, (pbase_level, pbase_slice), pformat, pswizzle) = match parent {
-            Parent::Texture(t) => {
-                // The memory module refuses a descriptor swizzle that is not the identity (`build_texture`).
-                (t.clone(), t.geometry, (0, 0), t.format, IDENTITY_SWIZZLE)
-            }
+            Parent::Texture(t) => (t.clone(), t.geometry, (0, 0), t.format, t.swizzle),
             Parent::View(v) => (v.root.clone(), v.geometry, (v.base_level, v.base_slice), v.format, v.swizzle),
         };
         if root.surface.is_some() {
@@ -304,11 +336,6 @@ impl<A: Api> Memory<A> {
         };
         if let Some(c) = swizzle.iter().find(|&&c| c > 5) {
             return Err(MemError::undefined(call, format!("{c} is not an MTLTextureSwizzle value (MTLTexture.h)")));
-        }
-        if swizzle != IDENTITY_SWIZZLE {
-            return Err(MemError::unimplemented(format!(
-                "{call}: texture swizzle {swizzle:?} is not applied by the host yet"
-            )));
         }
 
         // Pixel format.

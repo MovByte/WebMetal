@@ -58,6 +58,7 @@ use super::memory::Memory;
 use super::options::{ResourceOptions, StorageMode};
 use super::purgeable::Purgeable;
 use super::surface::SurfacePlane;
+use super::view::IDENTITY_SWIZZLE;
 
 /// `MTLTextureUsage` bits (`MTLTexture.h`).
 pub mod usage {
@@ -120,6 +121,8 @@ pub struct Texture<A: Api> {
     /// `MTLPixelFormat`.
     pub format: u32,
     pub resolution: Resolution,
+    /// The descriptor's `MTLTextureSwizzle` channels (red, green, blue, alpha), which shader reads and samples apply.
+    pub swizzle: [u8; 4],
     pub geometry: Geometry,
     pub storage: StorageMode,
     /// `MTLTextureUsage`.
@@ -349,13 +352,19 @@ impl<A: Api> Memory<A> {
         if multisampled != (geometry.sample_count > 1) || (multisampled && geometry.mip_levels != 1) {
             return Err(MemError::undefined(call, "sample count and texture type disagree"));
         }
-        // MTLTextureSwizzle red 2, green 3, blue 4, alpha 5: the identity. A descriptor swizzle changes what every read
-        // of the texture returns; nothing here applies one yet.
+        // The swizzle is the "channel swizzle to use when reading or sampling from the texture" (MTLTexture.h,
+        // MTLTextureDescriptor.swizzle): the shader bindings apply it (`super::view::read_swizzle`), and writes, render
+        // targets, blits and CPU transfers move the texture's own channels. The SPI's write swizzle would apply it to
+        // writes as well, which nothing here does.
         let sw = &d.swizzle;
-        if (sw.red, sw.green, sw.blue, sw.alpha) != (2, 3, 4, 5) {
+        let swizzle = [sw.red, sw.green, sw.blue, sw.alpha];
+        if let Some(c) = swizzle.iter().find(|&&c| c > 5) {
+            return Err(MemError::undefined(call, format!("{c} is not an MTLTextureSwizzle value (MTLTexture.h)")));
+        }
+        if d.write_swizzle_enabled && swizzle != IDENTITY_SWIZZLE {
             return Err(MemError::unimplemented(format!(
-                "{call}: texture swizzle ({}, {}, {}, {}) is not applied by the host yet",
-                sw.red, sw.green, sw.blue, sw.alpha
+                "{call}: writeSwizzleEnabled with swizzle {swizzle:?}: writes through the swizzle are not applied by the \
+                 host"
             )));
         }
         let format = u32::try_from(d.pixel_format).map_err(|_| MemError::undefined(call, "pixel format"))?;
@@ -471,6 +480,7 @@ impl<A: Api> Memory<A> {
         Ok(Rc::new(Texture {
             format,
             resolution,
+            swizzle,
             geometry,
             storage,
             usage: d.usage,

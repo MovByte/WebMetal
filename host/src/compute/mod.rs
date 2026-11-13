@@ -35,7 +35,7 @@ use crate::blit::{Tex, buffer as buffer_payload, texture as texture_payload};
 use crate::embed::Embedder;
 use crate::exec::failure;
 use crate::exec::{DebugGroups, EncodeCx, EncoderService, Gpu, RecordFailure, Segment, Table};
-use crate::format::webgpu::Aspect;
+use crate::format::webgpu::{Aspect, Feature};
 use crate::gpu::idl::{
     BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, BufferBindingType, BufferUsage,
     ComputePassDescriptor, StorageTextureAccess, TextureAspect, TextureSampleType, TextureUsage, TextureViewDescriptor,
@@ -48,7 +48,7 @@ use crate::gpu::{
 use crate::mem::buffer::Buffer;
 use crate::mem::layout::TextureType;
 use crate::mem::texture::{Prepare, Texture, idl_format, usage};
-use crate::mem::view::TextureView;
+use crate::mem::view::{IDENTITY_SWIZZLE, TextureView, read_swizzle, swizzle_string};
 use crate::mem::{MemError, Memory};
 use crate::state::SamplerObject;
 
@@ -616,6 +616,7 @@ impl<A: Api> ComputeService<A> {
                 texture_type: texture_type_value(e.tex.geometry().kind),
                 pixel_format: u64::from(e.tex.format()),
                 sample_count: u64::from(e.tex.geometry().sample_count),
+                swizzle: e.tex.swizzle(),
             })
             .collect();
         Ok(VariantKey {
@@ -743,6 +744,15 @@ impl<A: Api> ComputeService<A> {
                                 return Err(undefined(CALL, view_mismatch(*index, v, *view_dimension)));
                             }
                             v.describe(&mut d, 0..v.geometry.mip_levels, TextureUsage::TEXTURE_BINDING);
+                        }
+                        // The swizzle reads apply, which the variant applies in its shader unless the host has
+                        // texture-component-swizzle (the variant key holds it); depth reads take none.
+                        let swizzle = read_swizzle(e.tex.resolution(), e.tex.swizzle());
+                        if swizzle != IDENTITY_SWIZZLE
+                            && *sample_type != TextureSampleType::Depth
+                            && mem.features().has(Feature::TextureComponentSwizzle)
+                        {
+                            d.swizzle = swizzle_string(swizzle);
                         }
                         let view = g
                             .call("GPUTexture.createView", &t.label, |_| t.gpu().create_view(&d))

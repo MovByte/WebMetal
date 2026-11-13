@@ -395,6 +395,132 @@ fn format_views() {
     h.assert_no_errors();
 }
 
+/// MTLSamplerDescriptor's defaults (MTLSampler.h): nearest filters, not mipmapped, clamp to edge, normalized
+/// coordinates, LOD clamps [0, FLT_MAX], anisotropy 1, compare never.
+fn default_sampler(h: &Harness) -> Handle {
+    let sampler = h.handle();
+    h.ok(Request::CreateSamplerState(CreateSamplerState {
+        sampler,
+        descriptor: SamplerDescriptor {
+            border_color: 0,
+            border_color_spi: 0,
+            compare_function: 0,
+            custom_border_color_value_0: 0,
+            custom_border_color_value_1: 0,
+            custom_border_color_value_2: 0,
+            custom_border_color_value_3: 0,
+            force_resource_index: false,
+            force_seams_on_cubemap_filtering: false,
+            label: None,
+            lod_average: false,
+            lod_bias: 0.0,
+            lod_max_clamp: f32::MAX,
+            lod_min_clamp: 0.0,
+            mag_filter: 0,
+            max_anisotropy: 1,
+            min_filter: 0,
+            mip_filter: 0,
+            normalized_coordinates: true,
+            pixel_format: 0,
+            r_address_mode: 0,
+            resource_index: 0,
+            s_address_mode: 0,
+            support_argument_buffers: false,
+            t_address_mode: 0,
+        },
+    }));
+    sampler
+}
+
+/// texture.view-swizzle: a swizzled view, a descriptor swizzle read and sampled, and a swizzled one-component view,
+/// with every `exact` record of the reads compared byte for byte. The swizzle is the WebGPU view's where the host has
+/// texture-component-swizzle, else the compiled kernel's.
+#[test]
+fn swizzles() {
+    let h = Harness::new();
+    let g = Golden::load("texture.view-swizzle");
+    let mut t = Tally { host: h.name(), count: 0 };
+    let codes = rgba8_pattern();
+    let all: Vec<_> = (0..16).map(|i| query(i % 4, i / 4, 0, 0)).collect();
+    let usage = SHADER_READ | PIXEL_FORMAT_VIEW;
+
+    // A view with swizzle (blue, zero, one, red) of an RGBA8Uint texture.
+    let mut desc = texture_descriptor(T2D, fmt("RGBA8Uint"), (4, 4, 1), 1, 1, PRIVATE, usage, 1);
+    let base = h.texture(desc.clone());
+    let (src, _) = h.buffer_with(&codes);
+    h.blit(vec![copy_to_texture(src, 16, (4, 4), base, 0, 0)]);
+    let v = h.handle();
+    h.ok(Request::CreateTextureViewLevelsSlicesSwizzle(CreateTextureViewLevelsSlicesSwizzle {
+        texture: base,
+        view: v,
+        pixel_format: fmt("RGBA8Uint"),
+        texture_type: T2D,
+        level_range: range(0, 1),
+        slice_range: range(0, 1),
+        swizzle: TextureSwizzleChannels { red: 4, green: 0, blue: 1, alpha: 2 },
+    }));
+    t.exact(&g, "view.reads.queries", &query_bytes(&all));
+    t.exact(&g, "view.reads", &run_reads(&h, "tex_read_2d", v, &all));
+
+    // A descriptor swizzle (alpha, red, green, blue), read and nearest-sampled at texel centres.
+    desc.swizzle = TextureSwizzleChannels { red: 5, green: 2, blue: 3, alpha: 4 };
+    desc.usage = SHADER_READ;
+    desc.texture_usage = SHADER_READ;
+    let swizzled = h.texture(desc);
+    let (src, _) = h.buffer_with(&codes);
+    h.blit(vec![copy_to_texture(src, 16, (4, 4), swizzled, 0, 0)]);
+    t.exact(&g, "descriptor.reads", &run_reads(&h, "tex_read_2d", swizzled, &all));
+    let centres: Vec<u8> = (0..16)
+        .flat_map(|i| [((i % 4) as f32 + 0.5) / 4.0, ((i / 4) as f32 + 0.5) / 4.0])
+        .flat_map(f32::to_le_bytes)
+        .collect();
+    let sampler = default_sampler(&h);
+    let p = h.pipeline("tex_sample_2d_uint", None, 0);
+    let (coords, _) = h.buffer_with(&centres);
+    let (out, addr) = h.buffer(16 * 16);
+    h.compute(vec![
+        Command::ComputeSetComputePipelineState(ComputeSetComputePipelineState { state: Some(p) }),
+        set_texture(swizzled),
+        Command::ComputeSetSamplerState(ComputeSetSamplerState { sampler: Some(sampler), index: 0 }),
+        set_buffer(coords, 0),
+        set_buffer(out, 1),
+        Command::ComputeDispatchThreadgroups(ComputeDispatchThreadgroups {
+            threadgroups_per_grid: size(16, 1, 1),
+            threads_per_threadgroup: size(1, 1, 1),
+        }),
+    ]);
+    t.exact(&g, "descriptor.samples", &h.read(addr, 16 * 16));
+
+    // An R8Uint view with swizzle (alpha, green, red, blue): the missing components read as 0 and alpha as 1.
+    let single = h.texture(texture_descriptor(T2D, fmt("R8Uint"), (4, 4, 1), 1, 1, PRIVATE, usage, 1));
+    let (src, _) = h.buffer_with(&pattern(16, 72));
+    h.blit(vec![copy_to_texture(src, 4, (4, 4), single, 0, 0)]);
+    let red_view = h.handle();
+    h.ok(Request::CreateTextureViewLevelsSlicesSwizzle(CreateTextureViewLevelsSlicesSwizzle {
+        texture: single,
+        view: red_view,
+        pixel_format: fmt("R8Uint"),
+        texture_type: T2D,
+        level_range: range(0, 1),
+        slice_range: range(0, 1),
+        swizzle: TextureSwizzleChannels { red: 5, green: 3, blue: 2, alpha: 4 },
+    }));
+    t.exact(&g, "r8uint-view.reads", &run_reads(&h, "tex_read_2d", red_view, &all));
+
+    // A hand translation would not apply the swizzle: the reads come from compiled kernels.
+    for k in ["tex_read_2d", "tex_sample_2d_uint"] {
+        assert!(h.compiled.borrow().contains(k), "{}: {k} is not a compiled kernel", h.name());
+    }
+    eprintln!(
+        "{}: {}: {} exact records equal; the swizzle is applied by the {}",
+        h.name(),
+        g.case,
+        t.count,
+        if h.memory.features().has(Feature::TextureComponentSwizzle) { "WebGPU view" } else { "compiled kernel" }
+    );
+    h.assert_no_errors();
+}
+
 /// A view of each plan, each request form, a view of a view, and a view that outlives its parent's handle.
 #[test]
 fn views_of_each_plan() {
@@ -752,7 +878,7 @@ fn view_refusals() {
     let f = view(&h, wide, r32, TCUBE, (0, 1), (0, 6)).unwrap_err();
     assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
     assert!(f.message.contains("square"), "{f:?}");
-    // A swizzle other than the identity.
+    // A channel that is not an MTLTextureSwizzle value.
     let f = h.status(Request::CreateTextureViewLevelsSlicesSwizzle(CreateTextureViewLevelsSlicesSwizzle {
         texture: parent,
         view: h.handle(),
@@ -760,10 +886,10 @@ fn view_refusals() {
         texture_type: T2D,
         level_range: range(0, 1),
         slice_range: range(0, 1),
-        swizzle: TextureSwizzleChannels { red: 4, green: 0, blue: 1, alpha: 2 },
+        swizzle: TextureSwizzleChannels { red: 4, green: 0, blue: 6, alpha: 2 },
     }));
-    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
-    assert!(f.message.contains("swizzle"), "{f:?}");
+    undefined(f.clone());
+    assert!(f.message.contains("MTLTextureSwizzle"), "{f:?}");
     // A reinterpreting view of a texture without MTLTextureUsagePixelFormatView (the debug layer's rule).
     let rgba = h.texture(texture_descriptor(T2D, fmt("RGBA8Unorm"), (4, 4, 1), 1, 1, PRIVATE, SHADER_READ, 1));
     let f = format_view(&h, rgba, fmt("RGBA8Uint")).unwrap_err();

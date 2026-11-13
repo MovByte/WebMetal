@@ -126,9 +126,6 @@ pub mod option {
 /// `MTLMutability` values (iPhoneOS SDK, `MTLPipeline.h`): Default, Mutable, Immutable.
 pub const MUTABILITY_VALUES: [u64; 3] = [0, 1, 2];
 
-/// The identity `MTLTextureSwizzleChannels` (Red, Green, Blue, Alpha; iPhoneOS SDK, `MTLTexture.h`).
-pub const IDENTITY_SWIZZLE: [u8; 4] = [2, 3, 4, 5];
-
 /// The function a handle names, as this service registered it.
 pub fn function(objects: &Table, handle: Handle) -> Result<Rc<Function>, Failure> {
     let entry =
@@ -380,7 +377,6 @@ pub fn variant_desc(stage_input: &Option<StageInputDescriptor>, key: &VariantKey
             .iter()
             .map(|&index| BufferSlot { index, alias_group: None, also_vertex_or_index_buffer: false })
             .collect(),
-        // The memory module refuses textures whose swizzle is not the identity, so every bound texture has it.
         textures: key
             .textures
             .iter()
@@ -389,7 +385,7 @@ pub fn variant_desc(stage_input: &Option<StageInputDescriptor>, key: &VariantKey
                 texture_type: t.texture_type,
                 pixel_format: t.pixel_format,
                 sample_count: t.sample_count,
-                swizzle: IDENTITY_SWIZZLE,
+                swizzle: t.swizzle,
             })
             .collect(),
         samplers: key

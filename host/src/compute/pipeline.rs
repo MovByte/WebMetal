@@ -91,6 +91,8 @@ pub struct TextureSlot {
     /// `MTLPixelFormat`.
     pub pixel_format: u64,
     pub sample_count: u64,
+    /// The `MTLTextureSwizzle` channels reads apply ([`crate::mem::view::read_swizzle`]).
+    pub swizzle: [u8; 4],
 }
 
 /// A compiled variant: the WebGPU pipeline and its bind groups.
