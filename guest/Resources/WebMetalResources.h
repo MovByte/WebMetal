@@ -87,6 +87,8 @@ void DeviceAddUnsized(WebMetalDevice *device, int64_t count);
 int64_t DeviceUnsizedCount(WebMetalDevice *device);
 // The AGX device's creation flags (-deviceCreationFlags).
 uint64_t DeviceCreationFlags(WebMetalDevice *device);
+// IOGPUMetalDevice._configBits: the IOGPU device configuration's bits (WebMetalIOGPUDevice.h).
+uint32_t DeviceConfigBits(WebMetalDevice *device);
 // The AGX device's depth-stencil state cache (WebMetalDepthStencilCache.h).
 struct DepthStencilCache;
 DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device);
