@@ -386,6 +386,7 @@ pub fn variant_desc(stage_input: &Option<StageInputDescriptor>, key: &VariantKey
                 pixel_format: t.pixel_format,
                 sample_count: t.sample_count,
                 swizzle: t.swizzle,
+                mipmap_level_count: u64::from(t.mipmap_level_count),
             })
             .collect(),
         samplers: key
@@ -468,6 +469,9 @@ fn bind_groups<A: Api>(
             let source = match &e.source {
                 BindingSource::MetalBuffer { stage, index } if kernel(stage) => Source::Buffer { index: *index },
                 BindingSource::MetalTexture { stage, index } if kernel(stage) => Source::Texture { index: *index },
+                BindingSource::MetalTextureLevel { stage, index, level } if kernel(stage) => {
+                    Source::TextureLevel { index: *index, level: *level }
+                }
                 BindingSource::MetalSampler { stage, index } if kernel(stage) => Source::Sampler { index: *index },
                 BindingSource::Uniforms(block) => {
                     let mut fields = Vec::new();

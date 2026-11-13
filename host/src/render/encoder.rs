@@ -1718,7 +1718,15 @@ impl<A: Api> Run<'_, A> {
                         }
                         buffers.push((b.binding, binding));
                     }
-                    (Source::MetalTexture { stage, index }, resource) => {
+                    (
+                        source @ (Source::MetalTexture { stage, index }
+                        | Source::MetalTextureLevel { stage, index, .. }),
+                        resource,
+                    ) => {
+                        let level = match source {
+                            Source::MetalTextureLevel { level, .. } => Some(*level),
+                            _ => None,
+                        };
                         let tex = self.state.slots_ref(*stage).textures.get(index).cloned().ok_or_else(|| {
                             RenderError::undefined(
                                 DRAW,
@@ -1741,12 +1749,12 @@ impl<A: Api> Run<'_, A> {
                             }
                         }
                         self.copies.add(tex.texture(), tex.alias().map(|a| &**a), tex.root_window(), b.writable())?;
-                        let view = self.texture_view(&tex, resource, *stage, *index)?;
+                        let view = self.texture_view(&tex, resource, *stage, *index, level)?;
                         if b.writable() {
-                            // A storage binding is the first level of the texture or view.
+                            // A storage binding is one level of the texture or view.
                             let (levels, slices) = tex.root_window();
                             for layer in slices {
-                                self.notes.textures.push((tex.clone(), levels.start, layer));
+                                self.notes.textures.push((tex.clone(), levels.start + level.unwrap_or(0), layer));
                             }
                         }
                         views.push((b.binding, view));
@@ -1868,8 +1876,16 @@ impl<A: Api> Run<'_, A> {
         Ok(())
     }
 
-    /// The view of a bound texture for a binding.
-    fn texture_view(&self, tex: &Tex<A>, resource: &Resource, stage: MetalStage, index: u64) -> Result<A::TextureView> {
+    /// The view of a bound texture for a binding: `level` is a storage binding's level (counted from a view's first
+    /// level), `None` a binding of the texture itself.
+    fn texture_view(
+        &self,
+        tex: &Tex<A>,
+        resource: &Resource,
+        stage: MetalStage,
+        index: u64,
+        level: Option<u32>,
+    ) -> Result<A::TextureView> {
         let t: &Texture<A> = tex.texture();
         // The root's subresources the binding sees: every level and slice of a texture, a view's own.
         let (levels, slices) = tex.root_window();
@@ -1927,12 +1943,25 @@ impl<A: Api> Run<'_, A> {
                 );
             }
             Resource::StorageTexture { view_dimension, .. } => {
+                // Render pipelines are compiled without the textures a draw binds, so a written texture is compiled
+                // as one of one level: its write at a level computed at run time selects level 0 alone, and a level
+                // out of a texture's range is not known to be out of range. Only a texture of one level, written at
+                // level 0, is written as Metal writes it.
                 if tex.geometry().mip_levels != 1 {
                     return Err(RenderError::unimplemented(format!(
-                        "{} texture {index}: a read-write or write-only binding of a texture with {} levels (a WebGPU \
-                         storage binding is one level)",
+                        "{} texture {index}: a read-write or write-only binding of a texture with {} levels: render \
+                         pipeline variants are not compiled for the bound textures' level counts, which the levels a \
+                         function writes at run time select among",
                         stage.name(),
                         tex.geometry().mip_levels
+                    )));
+                }
+                if level.unwrap_or(0) != 0 {
+                    return Err(RenderError::unimplemented(format!(
+                        "{} texture {index}: the function writes level {} of a texture of one level; Metal ignores \
+                         the write, and render pipeline variants are not compiled for the bound textures' level counts",
+                        stage.name(),
+                        level.unwrap_or(0)
                     )));
                 }
                 if tex.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 {

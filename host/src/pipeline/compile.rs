@@ -344,12 +344,13 @@ fn write_buffer_slot(w: &mut KeyWriter, b: &BufferSlot) {
 }
 
 fn write_texture_slot(w: &mut KeyWriter, t: &TextureSlot) {
-    let TextureSlot { index, texture_type, pixel_format, sample_count, swizzle } = t;
+    let TextureSlot { index, texture_type, pixel_format, sample_count, swizzle, mipmap_level_count } = t;
     w.u64(*index);
     w.u64(*texture_type);
     w.u64(*pixel_format);
     w.u64(*sample_count);
     w.0.extend_from_slice(swizzle);
+    w.u64(*mipmap_level_count);
 }
 
 fn write_sampler_slot(w: &mut KeyWriter, s: &SamplerSlot) {

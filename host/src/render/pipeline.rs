@@ -94,6 +94,9 @@ pub enum Source {
     MetalBuffer { stage: MetalStage, index: u64 },
     /// A texture argument table slot.
     MetalTexture { stage: MetalStage, index: u64 },
+    /// One level of the texture at a texture argument table slot, viewed alone (a storage binding of a written
+    /// texture; `level` counts from a view's first level).
+    MetalTextureLevel { stage: MetalStage, index: u64, level: u32 },
     /// A sampler argument table slot.
     MetalSampler { stage: MetalStage, index: u64 },
     /// The executor's per-draw uniform block.
@@ -392,6 +395,7 @@ impl<A: Api> RenderPipeline<A> {
                     (Source::Uniforms(_), _) => return Err(invalid(format!("binding {}: uniforms", b.binding))),
                     (Source::MetalBuffer { .. }, Resource::Buffer { .. })
                     | (Source::MetalTexture { .. }, Resource::Texture { .. } | Resource::StorageTexture { .. })
+                    | (Source::MetalTextureLevel { .. }, Resource::StorageTexture { .. })
                     | (Source::MetalSampler { .. }, Resource::Sampler { .. })
                     | (Source::FetchSnapshot { .. }, Resource::Texture { .. }) => {}
                     (s, r) => {

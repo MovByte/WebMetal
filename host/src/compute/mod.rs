@@ -626,6 +626,7 @@ impl<A: Api> ComputeService<A> {
                 pixel_format: u64::from(e.tex.format()),
                 sample_count: u64::from(e.tex.geometry().sample_count),
                 swizzle: e.tex.swizzle(),
+                mipmap_level_count: e.tex.geometry().mip_levels,
             })
             .collect();
         Ok(VariantKey {
@@ -771,7 +772,10 @@ impl<A: Api> ComputeService<A> {
                             .map_err(|ex| MemError::gpu("GPUTexture.createView", ex).failure())?;
                         owned.push((b.binding, Owned::View(view)));
                     }
-                    (Source::Texture { index }, Resource::StorageTexture { access, format, view_dimension }) => {
+                    (
+                        source @ (Source::Texture { index } | Source::TextureLevel { index, .. }),
+                        Resource::StorageTexture { access, format, view_dimension },
+                    ) => {
                         let e = st.textures.get(index).cloned().ok_or_else(|| {
                             undefined(CALL, format!("the function uses texture index {index} and none is bound"))
                         })?;
@@ -794,15 +798,30 @@ impl<A: Api> ComputeService<A> {
                                 ))
                             });
                         }
-                        if e.tex.geometry().mip_levels > 1 {
-                            return Err(failure::unimplemented(format!(
-                                "{CALL}: texture index {index} is a mipmapped texture bound for writing; the binding \
-                                 layout does not say which level the function writes"
-                            )));
-                        }
+                        // A storage binding shows one level (WebGPU 8.2.1): a level binding's own, counted from a
+                        // view's first level. A binding of the texture itself shows its level 0, which is all of it
+                        // only when it has one level.
+                        let levels_of = e.tex.geometry().mip_levels;
+                        let level = match source {
+                            Source::TextureLevel { level, .. } if *level < levels_of => *level,
+                            Source::TextureLevel { level, .. } => {
+                                return Err(failure::invalid(format!(
+                                    "{CALL}: the variant binds level {level} of texture index {index}, which has \
+                                     {levels_of} levels; the variant key holds the level count"
+                                )));
+                            }
+                            _ if levels_of > 1 => {
+                                return Err(failure::unimplemented(format!(
+                                    "{CALL}: texture index {index} is a mipmapped texture bound for writing; the \
+                                     binding layout does not say which level the function writes"
+                                )));
+                            }
+                            _ => 0,
+                        };
                         let mut d = TextureViewDescriptor::new();
                         d.dimension = Some(*view_dimension);
                         d.format = Some(*format);
+                        d.base_mip_level = level;
                         d.mip_level_count = Some(1);
                         let (levels, slices) = e.tex.root_window();
                         if let Some(v) = e.tex.view() {
@@ -818,16 +837,17 @@ impl<A: Api> ComputeService<A> {
                                     format.as_str()
                                 )));
                             }
-                            v.describe(&mut d, 0..1, TextureUsage::STORAGE_BINDING);
+                            v.describe(&mut d, level..level + 1, TextureUsage::STORAGE_BINDING);
                             d.format = Some(*format);
                         }
                         let view = g
                             .call("GPUTexture.createView", &t.label, |_| e.tex.gpu().create_view(&d))
                             .map_err(|ex| MemError::gpu("GPUTexture.createView", ex).failure())?;
                         if writes {
+                            let root_level = levels.start + level;
                             match e.tex.alias() {
-                                Some(a) => mem.note_alias_write(t, a, levels.start..levels.start + 1, slices),
-                                None => mem.note_texture_write(t, levels.start..levels.start + 1, slices),
+                                Some(a) => mem.note_alias_write(t, a, root_level..root_level + 1, slices),
+                                None => mem.note_texture_write(t, root_level..root_level + 1, slices),
                             }
                             if let Tex::Linear(lt, _) = &e.tex {
                                 mem.note_linear_write(lt);

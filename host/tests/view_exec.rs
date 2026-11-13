@@ -1,8 +1,8 @@
 //! Texture views (`newTextureViewWithPixelFormat:` and its five variants) through the executor on a native WebGPU
 //! implementation: a view of each plan the format module gives, CPU transfers and blits through views, compute bindings
-//! of views, and the views and uses the host refuses. The reference cases `texture.view-levels-slices` and
-//! `texture.view-format-reinterpret` (tests/reference/src/cases/Textures.m) are replayed where the host provides them,
-//! with every `exact` record compared byte for byte.
+//! of views, and the views and uses the host refuses. The reference cases `texture.view-levels-slices`,
+//! `texture.view-format-reinterpret` and `texture.write-levels` (tests/reference/src/cases/Textures.m) are replayed
+//! where the host provides them, with every `exact` record compared byte for byte.
 
 #![cfg(feature = "native")]
 
@@ -153,9 +153,7 @@ fn write_records(h: &Harness, kernel: &str, t: Handle, q: &[[u32; 8]], values: &
     ]
 }
 
-/// The records of `fmt_write_uint` (formats.metal) writing every texel of a `w` × `hh` texture, row-major: a write
-/// at the constant level 0, which the compiler lowers (it does not lower `tex_write_2d`'s level taken from the query
-/// yet, `[compiler:texture-write-level]`).
+/// The records of `fmt_write_uint` (formats.metal) writing every texel of a `w` × `hh` texture, row-major, at level 0.
 fn write_all_records(h: &Harness, t: Handle, (w, hh): (u64, u64), values: &[[u32; 4]]) -> Vec<Command> {
     assert_eq!(values.len() as u64, w * hh);
     let p = h.pipeline("fmt_write_uint", None, 0);
@@ -269,21 +267,11 @@ fn levels_and_slices() {
         );
     }
 
-    // A write through a view of two levels: a WebGPU storage binding is one level, so it is refused. The case's write
-    // (texel (3, 2) of the view's level 0 and slice 1: the parent's level 1 and slice 2) is made through a view of that
-    // one level and slice, and the parent's level reads back as Metal's.
+    // A write through the view of two levels, at a level the kernel takes from its query: the variant binds each of the
+    // view's levels as a storage texture, and the write (texel (3, 2) of the view's level 0 and slice 1) lands in the
+    // parent's level 1 and slice 2.
     let wq = [query(3, 2, 1, 0)];
-    let f = {
-        let e = h.handle();
-        let mut v = vec![Command::BeginCompute(BeginCompute { encoder: e })];
-        v.extend(write_records(&h, "tex_write_2d_array", range_view, &wq, &[[0xfeed_f00d, 0, 0, 0]]));
-        v.push(Command::EncoderEndEncoding(EncoderEndEncoding {}));
-        h.run(&v).0
-    };
-    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
-    assert!(f.message.contains("mipmapped texture bound for writing"), "{f:?}");
-    let one = view(&h, parent, fmt("R32Uint"), T2D, (1, 1), (2, 1)).unwrap();
-    h.compute(write_records(&h, "tex_write_2d", one, &[query(3, 2, 0, 0)], &[[0xfeed_f00d, 0, 0, 0]]));
+    h.compute(write_records(&h, "tex_write_2d_array", range_view, &wq, &[[0xfeed_f00d, 0, 0, 0]]));
     t.exact(&g, "parent.level1.slice2.after-view-write", &h.read_texture(parent, &d, 1, 2, 16));
 
     // Slice 3 as a 2D texture with all levels.
@@ -339,13 +327,253 @@ fn levels_and_slices() {
     t.exact(&g, "array-as-cube.reads", &reads);
     t.exact_bool(&g, "array-as-cube.reads.match-specification", reads == texel_bytes(&expected));
 
-    eprintln!(
-        "{}: {}: {} exact records equal; the view properties are the guest's; the write is made through a one-level \
-         view of the subresource the case writes",
-        h.name(),
-        g.case,
-        t.count
-    );
+    assert!(h.compiled.borrow().contains("tex_write_2d_array"), "{}: tex_write_2d_array is not compiled", h.name());
+    eprintln!("{}: {}: {} exact records equal; the view properties are the guest's", h.name(), g.case, t.count);
+    h.assert_no_errors();
+}
+
+/// The array slices of a texture's levels a blit addresses: a 3D level is one slice of all its depth images.
+fn blit_slices(d: &TextureDescriptor) -> u64 {
+    match d.texture_type {
+        T3D => 1,
+        TCUBE | TCUBE_ARRAY => 6 * d.array_length,
+        _ => d.array_length,
+    }
+}
+
+/// `TexUploadAll` of Textures.m for any type: `TexValue(level, slice, y, x)`, the depth in place of the slice for 3D.
+fn upload_volume(h: &Harness, t: Handle, d: &TextureDescriptor) {
+    for level in 0..d.mipmap_level_count {
+        let (w, hh) = (mip(d.width, level), mip(d.height, level));
+        let depth = if d.texture_type == T3D { mip(d.depth, level) } else { 1 };
+        for slice in 0..blit_slices(d) {
+            let bytes: Vec<u8> = (0..depth)
+                .flat_map(|z| (0..hh).flat_map(move |y| (0..w).map(move |x| (z, y, x))))
+                .flat_map(|(z, y, x)| tex_value(level, if depth > 1 { z } else { slice }, y, x).to_le_bytes())
+                .collect();
+            let (src, _) = h.buffer_with(&bytes);
+            h.blit(vec![Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+                source_buffer: Some(src),
+                source_offset: 0,
+                source_bytes_per_row: w * 4,
+                source_bytes_per_image: w * hh * 4,
+                source_size: size(w, hh, depth),
+                destination_texture: Some(t),
+                destination_slice: slice,
+                destination_level: level,
+                destination_origin: origin(0, 0, 0),
+            })]);
+        }
+    }
+}
+
+/// `TexInitialContents` of Textures.m: the texels [`upload_volume`] writes, levels first, then slices.
+fn initial_contents(d: &TextureDescriptor) -> Vec<u32> {
+    let mut v = Vec::new();
+    for level in 0..d.mipmap_level_count {
+        let (w, hh) = (mip(d.width, level), mip(d.height, level));
+        let depth = if d.texture_type == T3D { mip(d.depth, level) } else { 1 };
+        for slice in 0..blit_slices(d) {
+            for z in 0..depth {
+                for y in 0..hh {
+                    for x in 0..w {
+                        v.push(tex_value(level, if d.texture_type == T3D { z } else { slice }, y, x));
+                    }
+                }
+            }
+        }
+    }
+    v
+}
+
+/// What the function writes through: the texture, or a view of `kind` over the root's `levels` and `slices` (first,
+/// count).
+#[derive(Clone, Copy)]
+struct Through {
+    kind: u64,
+    levels: (u64, u64),
+    slices: (u64, u64),
+}
+
+/// `TexApplyWrite` of Textures.m: the write of `value` at query `q` through `through`, applied to `contents` (laid
+/// out as [`initial_contents`] of `root`) when it is in bounds of the texture written, a view's own levels and slices
+/// (MSL 4.1 section 6.13): an out-of-bounds write is ignored.
+fn apply_write(contents: &mut [u32], root: &TextureDescriptor, through: Through, q: [u32; 8], value: u32) {
+    let (x, y, z, lod) = (u64::from(q[0]), u64::from(q[1]), u64::from(q[2]), u64::from(q[4]));
+    if lod >= through.levels.1 {
+        return;
+    }
+    let level = through.levels.0 + lod;
+    let (w, hh) = (mip(root.width, level), mip(root.height, level));
+    let rd = if root.texture_type == T3D { mip(root.depth, level) } else { 1 };
+    let (slice, depth) = match through.kind {
+        T2D => (0, 0),
+        T2D_ARRAY if z < through.slices.1 => (z, 0),
+        TCUBE if z < 6 => (z, 0),
+        T3D if z < rd => (0, z),
+        _ => return,
+    };
+    if x >= w || y >= hh {
+        return;
+    }
+    let mut offset = 0;
+    for l in 0..level {
+        let ld = if root.texture_type == T3D { mip(root.depth, l) } else { 1 };
+        offset += mip(root.width, l) * mip(root.height, l) * ld * blit_slices(root);
+    }
+    offset += (through.slices.0 + slice) * w * hh * rd + (depth * hh + y) * w + x;
+    contents[offset as usize] = value;
+}
+
+/// One texture texture.write-levels writes: its records' name prefix, the kernel, the texture, the view written
+/// through, whether Metal defines the result exactly, and the queries.
+struct WriteTarget {
+    name: &'static str,
+    kernel: &'static str,
+    d: TextureDescriptor,
+    through: Option<Through>,
+    exact: bool,
+    queries: Vec<[u32; 8]>,
+}
+
+/// texture.write-levels: writes at each level and at levels out of range of textures and of level-range views, each in
+/// a command buffer of its own, through kernels whose level comes from the query. The records Metal defines exactly
+/// are compared byte for byte. The writes Apple silicon does not ignore although MSL 4.1 section 6.13 puts them out of
+/// bounds (recorded for reference only) leave the contents that section gives.
+#[test]
+fn write_levels() {
+    let h = Harness::new();
+    let g = Golden::load("texture.write-levels");
+    let mut t = Tally { host: h.name(), count: 0 };
+    let r32 = |kind: u64, (w, hh, d): (u64, u64, u64), levels: u64, array: u64| {
+        texture_descriptor(kind, fmt("R32Uint"), (w, hh, d), array, levels, PRIVATE, SHADER_READ | SHADER_WRITE, 1)
+    };
+    let mut viewable2d = r32(T2D, (8, 8, 1), 4, 1);
+    viewable2d.usage |= PIXEL_FORMAT_VIEW;
+    let mut viewable_array = r32(T2D_ARRAY, (8, 8, 1), 3, 3);
+    viewable_array.usage |= PIXEL_FORMAT_VIEW;
+    let level_view = Some(Through { kind: T2D, levels: (1, 1), slices: (0, 1) });
+    let array_view = Some(Through { kind: T2D_ARRAY, levels: (1, 1), slices: (1, 1) });
+    let q = |v: &[(u32, u32, u32, u32)]| -> Vec<[u32; 8]> { v.iter().map(|&(x, y, z, l)| query(x, y, z, l)).collect() };
+    let target = |name, kernel, d, through, exact, queries| WriteTarget { name, kernel, d, through, exact, queries };
+    let targets = [
+        target(
+            "2d",
+            "tex_write_2d",
+            r32(T2D, (8, 8, 1), 4, 1),
+            None,
+            true,
+            q(&[
+                (1, 1, 0, 0),
+                (2, 1, 0, 1),
+                (1, 0, 0, 2),
+                (0, 0, 0, 3),
+                (3, 3, 0, 4),
+                (0, 1, 0, 5),
+                (1, 1, 0, 31),
+                (2, 2, 0, 32),
+                (0, 0, 0, 0xffff),
+                (0, 0, 0, 0x7fff_ffff),
+                (0, 0, 0, 0xffff_ffff),
+            ]),
+        ),
+        target(
+            "level-view",
+            "tex_write_2d",
+            viewable2d.clone(),
+            level_view,
+            true,
+            q(&[(3, 2, 0, 0), (2, 0, 0, 0), (0, 0, 0, 3), (2, 2, 0, 0xffff_ffff)]),
+        ),
+        target(
+            "array-view",
+            "tex_write_2d_array",
+            viewable_array.clone(),
+            array_view,
+            true,
+            q(&[(1, 0, 0, 0), (3, 3, 0, 0), (2, 2, 1, 0), (0, 0, 0, 3)]),
+        ),
+        target(
+            "3d",
+            "tex_write_3d",
+            r32(T3D, (4, 4, 4), 3, 1),
+            None,
+            true,
+            q(&[(1, 2, 3, 0), (1, 0, 1, 1), (0, 0, 0, 2), (0, 0, 1, 2), (1, 1, 1, 3), (0, 0, 0, 0xffff_ffff)]),
+        ),
+        target(
+            "cube",
+            "tex_write_cube",
+            r32(TCUBE, (4, 4, 1), 3, 1),
+            None,
+            true,
+            q(&[(3, 0, 0, 0), (1, 1, 2, 1), (0, 0, 5, 2), (0, 0, 1, 3), (0, 0, 6, 1), (1, 1, 3, 0xffff_ffff)]),
+        ),
+        target(
+            "2d.wrapped-levels",
+            "tex_write_2d",
+            r32(T2D, (8, 8, 1), 4, 1),
+            None,
+            false,
+            q(&[(1, 1, 0, 0x1_0000), (0, 0, 0, 0x1_0003), (2, 3, 0, 0x8000_0000), (1, 0, 0, 0x8000_0001)]),
+        ),
+        target("level-view.past-view", "tex_write_2d", viewable2d, level_view, false, q(&[(1, 1, 0, 1), (0, 0, 0, 2)])),
+        target(
+            "array-view.past-view",
+            "tex_write_2d_array",
+            viewable_array,
+            array_view,
+            false,
+            q(&[(0, 1, 0, 1), (1, 1, 0, 1)]),
+        ),
+    ];
+    for (i, WriteTarget { name, kernel, d, through, exact, queries }) in targets.into_iter().enumerate() {
+        let root = h.texture(d.clone());
+        upload_volume(&h, root, &d);
+        let (target, through) = match through {
+            Some(v) => (view(&h, root, fmt("R32Uint"), v.kind, v.levels, v.slices).unwrap(), v),
+            None => {
+                (root, Through { kind: d.texture_type, levels: (0, d.mipmap_level_count), slices: (0, d.array_length) })
+            }
+        };
+        if i == 1 {
+            // Reads through the view at its levels 1 and 2, which the parent has, are out of bounds.
+            let rq = q(&[(1, 0, 0, 0), (1, 0, 0, 1), (0, 0, 0, 2), (0, 0, 0, 0xffff_ffff)]);
+            let expected = [texel(tex_value(1, 0, 0, 1)), [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1]];
+            t.exact(&g, "level-view.reads.queries", &query_bytes(&rq));
+            let reads = run_reads(&h, "tex_read_2d", target, &rq);
+            t.exact(&g, "level-view.reads", &reads);
+            t.exact_bool(&g, "level-view.reads.match-specification", reads == texel_bytes(&expected));
+        }
+        let mut expected = initial_contents(&d);
+        for (j, &w) in queries.iter().enumerate() {
+            let value = 0xc0de_0000 | (i as u32) << 8 | j as u32;
+            h.compute(write_records(&h, kernel, target, &[w], &[[value, 0, 0, 0]]));
+            apply_write(&mut expected, &d, through, w, value);
+        }
+        t.exact(&g, &format!("{name}.writes"), &query_bytes(&queries));
+        let mut contents = Vec::new();
+        for level in 0..d.mipmap_level_count {
+            for slice in 0..blit_slices(&d) {
+                contents.extend(h.read_texture(root, &d, level, slice, mip(d.width, level) * 4));
+            }
+        }
+        let expected: Vec<u8> = expected.iter().flat_map(|v| v.to_le_bytes()).collect();
+        if exact {
+            t.exact(&g, &format!("{name}.contents"), &contents);
+            t.exact_bool(&g, &format!("{name}.contents.match-specification"), contents == expected);
+        } else {
+            assert_eq!(g.rule(&format!("{name}.contents")), Some("none"), "{}: {name}", g.case);
+            assert_eq!(contents, expected, "{}: {name}: MSL 4.1 section 6.13 ignores the writes", h.name());
+            let measured = g.bytes(&format!("{name}.contents")).unwrap();
+            let differing = measured.chunks(4).zip(contents.chunks(4)).filter(|(a, b)| a != b).count();
+            eprintln!("{}: {name}: the Apple M4 wrote {differing} texels MSL leaves alone", h.name());
+        }
+    }
+    for k in ["tex_write_2d", "tex_write_2d_array", "tex_write_3d", "tex_write_cube", "tex_read_2d"] {
+        assert!(h.compiled.borrow().contains(k), "{}: {k} is not a compiled kernel", h.name());
+    }
+    eprintln!("{}: {}: {} exact records equal", h.name(), g.case, t.count);
     h.assert_no_errors();
 }
 
@@ -398,12 +626,9 @@ fn format_views() {
     t.exact_bool(&g, "uint-view.reads.match-specification", reads == texel_bytes(&expected));
     let floats = run_reads(&h, "tex_read_2d_float", unorm, &all);
     t.exact(&g, "unorm.reads.corner-codes", &unorm_corner_codes(&h, &codes, &floats));
-    // Writes through the uint view saturate to 8 bits and are visible through the parent. The case writes texels (1, 0)
-    // and (2, 3) with tex_write_2d; here every texel is written, the others with the codes they hold.
-    let mut values = rgba8_texels(&codes);
-    values[1] = [1, 128, 255, 256];
-    values[14] = [1000, 0, 77, 0xffff_ffff];
-    h.compute(write_all_records(&h, uint_view, (4, 4), &values));
+    // Writes through the uint view saturate to 8 bits and are visible through the parent: texels (1, 0) and (2, 3).
+    let wq = [query(1, 0, 0, 0), query(2, 3, 0, 0)];
+    h.compute(write_records(&h, "tex_write_2d", uint_view, &wq, &[[1, 128, 255, 256], [1000, 0, 77, 0xffff_ffff]]));
     t.exact(&g, "unorm.after-uint-writes", &h.read_texture(unorm, &ud, 0, 0, 16));
 
     // R32Float viewed as R32Uint: bit patterns written through the uint view are stored unchanged, denormals and NaNs
@@ -414,7 +639,7 @@ fn format_views() {
     let bits = [0x3f80_0000u32, 0xc2f6_e979, 0, 0x8000_0000, 0x7f7f_ffff, 0x7f80_0000, 1, 0x7fc0_0001];
     let fq: Vec<_> = (0..8).map(|i| query(i % 4, i / 4, 0, 0)).collect();
     let fv: Vec<[u32; 4]> = bits.iter().map(|&b| [b, 0, 0, 0]).collect();
-    h.compute(write_all_records(&h, bits_view, (4, 2), &fv));
+    h.compute(write_records(&h, "tex_write_2d", bits_view, &fq, &fv));
     t.exact(&g, "r32float.stored-bits", &h.read_texture(floats, &fd, 0, 0, 16));
     let reads = run_reads(&h, "tex_read_2d_float", floats, &fq);
     let preserved: Vec<u8> = reads.chunks(16).take(6).flat_map(|c| c[..4].to_vec()).collect();
@@ -442,15 +667,10 @@ fn format_views() {
     t.exact(&g, "srgb.uint-view.reads", &reads);
     t.exact_bool(&g, "srgb.uint-view.reads.match-specification", reads == texel_bytes(&expected));
 
-    for k in ["tex_read_2d", "tex_read_2d_float", "fmt_write_uint"] {
+    for k in ["tex_read_2d", "tex_read_2d_float", "tex_write_2d"] {
         assert!(h.compiled.borrow().contains(k), "{}: {k} is not a compiled kernel", h.name());
     }
-    eprintln!(
-        "{}: {}: {} exact records equal; the writes through the uint views are made by fmt_write_uint",
-        h.name(),
-        g.case,
-        t.count
-    );
+    eprintln!("{}: {}: {} exact records equal", h.name(), g.case, t.count);
     h.assert_no_errors();
 }
 

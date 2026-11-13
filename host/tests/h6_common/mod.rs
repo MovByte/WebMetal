@@ -36,9 +36,8 @@ use webmetal_host::gpu::idl::{
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferBindingLayout, BufferBindingType, Color, ColorDict,
     ComputePipelineDescriptor as GpuComputePipelineDescriptor, LoadOp, PipelineLayoutDescriptor, PipelineLayoutOrAuto,
     ProgrammableStage, RenderPassColorAttachment as GpuColorAttachment, RenderPassDescriptor as GpuRenderPass,
-    SamplerBindingLayout, SamplerBindingType, ShaderModuleDescriptor, ShaderStage, StorageTextureAccess,
-    StorageTextureBindingLayout, StoreOp, TextureBindingLayout, TextureFormat, TextureOrView, TextureSampleType,
-    TextureViewDescriptor, TextureViewDimension,
+    SamplerBindingLayout, SamplerBindingType, ShaderModuleDescriptor, ShaderStage, StorageTextureBindingLayout,
+    StoreOp, TextureBindingLayout, TextureOrView, TextureSampleType, TextureViewDescriptor, TextureViewDimension,
 };
 use webmetal_host::gpu::num::Float64;
 use webmetal_host::gpu::scope::{Granularity, Policy};
@@ -240,33 +239,10 @@ fn read_texture(binding: u32, index: u64, sample_type: TextureSampleType, dimens
     }
 }
 
-/// A write-only storage texture of `format`, in a view of `dimension`.
-fn write_texture(binding: u32, index: u64, format: TextureFormat, dimension: TextureViewDimension) -> Binding {
-    Binding {
-        binding,
-        resource: Resource::StorageTexture {
-            access: StorageTextureAccess::WriteOnly,
-            format,
-            view_dimension: dimension,
-        },
-        source: Source::Texture { index },
-    }
-}
-
 /// The bindings of the read kernels of textures.metal: the texture, the queries (`device const uint4 *q
 /// [[buffer(0)]]`) and the results (`device uint4 *out [[buffer(1)]]`).
 fn read_bindings(sample_type: TextureSampleType, dimension: TextureViewDimension) -> Vec<Binding> {
     vec![read_texture(0, 0, sample_type, dimension), storage_of(1, 0, false, 16), storage_of(2, 1, true, 16)]
-}
-
-/// The bindings of the write kernels of textures.metal: the texture, the queries and the values (`device const uint4
-/// *values [[buffer(1)]]`).
-fn write_bindings(dimension: TextureViewDimension) -> Vec<Binding> {
-    vec![
-        write_texture(0, 0, TextureFormat::R32uint, dimension),
-        storage_of(1, 0, false, 16),
-        storage_of(2, 1, false, 16),
-    ]
 }
 
 fn sampler(binding: u32, index: u64, ty: SamplerBindingType) -> Binding {
@@ -598,49 +574,6 @@ fn main(@builtin(global_invocation_id) id: vec3u) {{
 fn main(@builtin(global_invocation_id) id: vec3u) {{
     let i = id.x;
     out[i] = textureLoad(t, q[2u * i].xy, q[2u * i].z, q[2u * i + 1u].x);
-}}",
-                    wg = workgroup(k)
-                ))
-            },
-        },
-        // tex_write_2d: `t.write(values[i], q[2 * i].xy, q[2 * i + 1].x)` of a `texture2d<uint, access::write>` of
-        // R32Uint. A WebGPU storage binding is one level, the first of the bound texture; a write to another level is
-        // not made.
-        "tex_write_2d" => Kernel {
-            bindings: write_bindings(TextureViewDimension::D2),
-            static_memory: 0,
-            wgsl: |k| {
-                Ok(format!(
-                    "@group(0) @binding(0) var t: texture_storage_2d<r32uint, write>;
-@group(0) @binding(1) var<storage, read> q: array<vec4u>;
-@group(0) @binding(2) var<storage, read> values: array<vec4u>;
-{wg}
-fn main(@builtin(global_invocation_id) id: vec3u) {{
-    let i = id.x;
-    if (q[2u * i + 1u].x == 0u) {{
-        textureStore(t, q[2u * i].xy, values[i]);
-    }}
-}}",
-                    wg = workgroup(k)
-                ))
-            },
-        },
-        // tex_write_2d_array: `t.write(values[i], q[2 * i].xy, q[2 * i].z, q[2 * i + 1].x)` of a
-        // `texture2d_array<uint, access::write>` of R32Uint, one level as above.
-        "tex_write_2d_array" => Kernel {
-            bindings: write_bindings(TextureViewDimension::D2Array),
-            static_memory: 0,
-            wgsl: |k| {
-                Ok(format!(
-                    "@group(0) @binding(0) var t: texture_storage_2d_array<r32uint, write>;
-@group(0) @binding(1) var<storage, read> q: array<vec4u>;
-@group(0) @binding(2) var<storage, read> values: array<vec4u>;
-{wg}
-fn main(@builtin(global_invocation_id) id: vec3u) {{
-    let i = id.x;
-    if (q[2u * i + 1u].x == 0u) {{
-        textureStore(t, q[2u * i].xy, q[2u * i].z, values[i]);
-    }}
 }}",
                     wg = workgroup(k)
                 ))

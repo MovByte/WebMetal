@@ -93,6 +93,9 @@ pub struct TextureSlot {
     pub sample_count: u64,
     /// The `MTLTextureSwizzle` channels reads apply ([`crate::mem::view::read_swizzle`]).
     pub swizzle: [u8; 4],
+    /// `mipmapLevelCount` (a view's own): a function that writes the texture at a level computed at run time has a
+    /// binding for each level.
+    pub mipmap_level_count: u32,
 }
 
 /// A compiled variant: the WebGPU pipeline and its bind groups.
@@ -140,6 +143,9 @@ pub enum Source {
     Buffer { index: u64 },
     /// The texture at a texture argument table index.
     Texture { index: u64 },
+    /// One level of the texture at a texture argument table index, viewed alone: `level` counts from a view's first
+    /// level (AirWgsl `MetalTextureLevel`, the storage bindings of a written texture).
+    TextureLevel { index: u64, level: u32 },
     /// The sampler at a sampler argument table index.
     Sampler { index: u64 },
     /// A uniform block the encoder fills for each dispatch.
