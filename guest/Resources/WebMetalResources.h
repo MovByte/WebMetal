@@ -139,7 +139,28 @@ MTLHazardTrackingMode HazardTrackingMode(const ResourceState &state);
 // -[IOGPUMetalResource isComplete] and -waitUntilComplete for a resource whose kernel resource has the state `kernel`
 // (the parent's, buffer's or heap's for a resource that shares one): returns for a kernel resource made untracked,
 // LOUD otherwise (WebMetalResource.mm).
-void CheckEventComplete(id self, SEL _cmd, const ResourceState &kernel, bool iosurface);
+// For a tracked kernel resource it consults the stamps the command path registers (QueryStamps): `wait` blocks
+// -waitUntilComplete until the traced stamps have completed. Returns whether event 0 has completed.
+bool CheckEventComplete(id self, SEL _cmd, uint64_t key, const ResourceState &kernel, bool iosurface, bool wait);
+
+// The kernel resource a plugin buffer, texture or heap reaches, as the key the stamps are registered under: the handle
+// of the heap, of the buffer a texture lies over, or of the root texture or buffer whose kernel resource it shares
+// (-[IOGPUMetalResource initWithResource:]). 0 for any other object.
+uint64_t KernelResourceKey(id resource);
+
+// The stamps of a kernel resource that committed command buffers have pending (guest/Commands/WebMetalCommandBuffer.mm):
+// `stamped` when an encoder that has not completed lists it where the A10X driver is traced to stamp event 0,
+// `deferred` when such an encoder follows an event wait that may not be passed yet (its command buffer is not scheduled),
+// `untraced` when an
+// encoder names it where the driver's listing is not traced (or a record outside any encoder names it).
+struct PendingStamps {
+    bool stamped = false;
+    bool deferred = false;
+    bool untraced = false;
+};
+PendingStamps QueryStamps(uint64_t key);
+// Blocks while a traced stamp of `key` is pending, and returns what is pending then.
+PendingStamps WaitStamps(uint64_t key);
 MTLResourceOptions ResourceOptions(const ResourceState &state);
 NSUInteger HeapOffset(const ResourceState &state);
 NSString *RetainedLabel(ResourceState &state);

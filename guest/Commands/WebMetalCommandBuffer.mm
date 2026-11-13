@@ -12,6 +12,8 @@
 #import <objc/runtime.h>
 
 #include <algorithm>
+#include <condition_variable>
+#include <unordered_map>
 
 #pragma clang diagnostic ignored "-Wprotocol"
 #pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
@@ -30,9 +32,22 @@ void Stream::use(id object, uint64_t handle)
     }
 }
 
-void Stream::splice(Stream &other)
+void Stream::beginEncoder(uint64_t handle, bool topLevel)
+{
+    current_ = handle;
+    if (topLevel) {
+        segments_.push_back(handle);
+        afterWait_.push_back(waited_);
+    }
+}
+
+void Stream::splice(Stream &other, uint64_t parent)
 {
     writer_.out.insert(writer_.out.end(), other.writer_.out.begin(), other.writer_.out.end());
+    for (Use use : other.uses_) {
+        use.encoder = parent;
+        uses_.push_back(use);
+    }
     for (uint64_t handle : other.resources_)
         if (named_.insert(handle).second)
             resources_.push_back(handle);
@@ -75,6 +90,33 @@ void PendingRelease::bound(const std::vector<uint64_t> &handles, Connection *con
         ReleaseHandle(connection, handle);
 }
 
+// Whether the A10X driver is traced to list the resource that `cmd` of encoder `self` names in the encoder's IOGPU
+// resource list (IOGPUResourceListAddResource) with flags whose per-flag sets the kernel stamps on submission
+// (AGXAllocationList2, kernelcache 0xfffffff005bf1914; IOGPUResource's stamp 0xfffffff005bc4e68). Render
+// -useResource:usage: (AGXMetalA10 0x21c960e94), -useResources:count:usage: (0x21c960ef0), -useHeap: (0x21c961088) and
+// -useHeaps:count: (0x21c961190) list the resource, or the heap's, with flags 5; the indexed draws list the index buffer
+// with 1 (0x21c963d78, 0x21c964048, 0x21c964330, 0x21c9647b4) and the indirect draws the indirect buffer with 0x41
+// (0x21c964570, 0x21c9647f0). Every other use is untraced.
+Stream::UseKind useKind(id self, SEL cmd)
+{
+    static const std::vector<SEL> render = {
+        @selector(useResource:usage:),
+        @selector(useResources:count:usage:),
+        @selector(useHeap:),
+        @selector(useHeaps:count:),
+        @selector(drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:),
+        @selector(drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:),
+        @selector(drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:
+                      baseInstance:),
+        @selector(drawPrimitives:indirectBuffer:indirectBufferOffset:),
+        @selector(drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:),
+    };
+    if ([self isKindOfClass:[WebMetalRenderCommandEncoder class]] &&
+        std::find(render.begin(), render.end(), cmd) != render.end())
+        return Stream::UseKind::Stamped;
+    return Stream::UseKind::Untraced;
+}
+
 uint64_t Reference(Stream &stream, id self, SEL cmd, id object)
 {
     if (!object)
@@ -86,7 +128,144 @@ uint64_t Reference(Stream &stream, id self, SEL cmd, id object)
         WMLoudMethod(self, cmd, detail.c_str());
     }
     stream.use(object, handle);
+    if (const uint64_t key = KernelResourceKey(object))
+        stream.noteUse(key, useKind(self, cmd));
     return handle;
+}
+
+// The stamps committed command buffers have pending, by kernel resource ----------------------------------------------
+
+namespace {
+
+std::mutex gStampsLock;
+std::condition_variable gStampsChanged;
+
+struct StampEntry {
+    std::shared_ptr<StampCompletion> commandBuffer;
+    // Index into the command buffer's segments; SIZE_MAX for a use outside any encoder.
+    size_t encoder;
+    Stream::UseKind kind;
+};
+std::unordered_map<uint64_t, std::vector<StampEntry>> gStamps;
+
+bool pending(const StampEntry &entry)
+{
+    const StampCompletion &c = *entry.commandBuffer;
+    return !c.done && (entry.encoder == SIZE_MAX || entry.encoder >= c.completed);
+}
+
+// Called with gStampsLock held: what `key` has pending, dropping the entries that have completed.
+PendingStamps pendingLocked(uint64_t key)
+{
+    PendingStamps out;
+    auto found = gStamps.find(key);
+    if (found == gStamps.end())
+        return out;
+    std::vector<StampEntry> &entries = found->second;
+    entries.erase(std::remove_if(entries.begin(), entries.end(), [](const StampEntry &e) { return !pending(e); }),
+                  entries.end());
+    for (const StampEntry &e : entries) {
+        switch (e.kind) {
+        case Stream::UseKind::Stamped:
+            out.stamped = true;
+            break;
+        case Stream::UseKind::Deferred:
+            // Once the command buffer is scheduled, its waits and the earlier ones of its queue are passed.
+            (e.commandBuffer->scheduled ? out.stamped : out.deferred) = true;
+            break;
+        case Stream::UseKind::Untraced:
+            out.untraced = true;
+            break;
+        }
+    }
+    if (entries.empty())
+        gStamps.erase(found);
+    return out;
+}
+
+}  // namespace
+
+// An encoder an event wait precedes is processed by the kernel once the wait is passed (measured on Apple M4, macOS
+// 27.0.1: a tracked buffer only such an encoder uses reports complete while the command buffer waits) or, if the A10X
+// kernel turns the wait into a fence later work depends on (IOGPUCommandQueue::processKernelCommand, kernelcache
+// 0xfffffff005bd8a90 to 0xfffffff005bd8bb4, merges the wait's event into the queue's), already at submission; which
+// the A10X does is not established, so its traced uses are Deferred until it completes.
+std::shared_ptr<StampCompletion> RegisterStamps(const Stream &stream, bool behindWait)
+{
+    auto completion = std::make_shared<StampCompletion>();
+    completion->segments = stream.segments();
+    completion->waits = stream.waited();
+    std::lock_guard<std::mutex> guard(gStampsLock);
+    for (const Stream::Use &use : stream.uses()) {
+        size_t index = SIZE_MAX;
+        if (use.encoder) {
+            auto at = std::find(completion->segments.begin(), completion->segments.end(), use.encoder);
+            if (at != completion->segments.end())
+                index = static_cast<size_t>(at - completion->segments.begin());
+        }
+        Stream::UseKind kind = use.kind;
+        if (kind == Stream::UseKind::Stamped &&
+            (behindWait || (index != SIZE_MAX && stream.segmentsAfterWait()[index])))
+            kind = Stream::UseKind::Deferred;
+        gStamps[use.key].push_back(StampEntry{completion, index, kind});
+    }
+    return completion;
+}
+
+bool StampsWaiting(const std::shared_ptr<StampCompletion> &completion)
+{
+    std::lock_guard<std::mutex> guard(gStampsLock);
+    return completion && completion->waits && !completion->done;
+}
+
+void EncoderStampsCompleted(const std::shared_ptr<StampCompletion> &completion, uint64_t encoder)
+{
+    if (!completion)
+        return;
+    auto at = std::find(completion->segments.begin(), completion->segments.end(), encoder);
+    if (at == completion->segments.end())
+        return;
+    {
+        std::lock_guard<std::mutex> guard(gStampsLock);
+        completion->completed = std::max(completion->completed, static_cast<size_t>(at - completion->segments.begin()) + 1);
+    }
+    gStampsChanged.notify_all();
+}
+
+void CommandBufferStampsScheduled(const std::shared_ptr<StampCompletion> &completion)
+{
+    if (!completion)
+        return;
+    std::lock_guard<std::mutex> guard(gStampsLock);
+    completion->scheduled = true;
+}
+
+void CommandBufferStampsCompleted(const std::shared_ptr<StampCompletion> &completion)
+{
+    if (!completion)
+        return;
+    {
+        std::lock_guard<std::mutex> guard(gStampsLock);
+        completion->done = true;
+    }
+    gStampsChanged.notify_all();
+}
+
+PendingStamps QueryStamps(uint64_t key)
+{
+    std::lock_guard<std::mutex> guard(gStampsLock);
+    return pendingLocked(key);
+}
+
+PendingStamps WaitStamps(uint64_t key)
+{
+    std::unique_lock<std::mutex> guard(gStampsLock);
+    for (;;) {
+        const PendingStamps p = pendingLocked(key);
+        if (!p.stamped)
+            return p;
+        gStampsChanged.wait(guard);
+    }
 }
 
 template <class Record> void EmitCommandBufferRecord(WebMetalCommandBuffer *buffer, SEL cmd, const Record &record)
@@ -145,6 +324,7 @@ std::shared_ptr<EncoderState> NewEncoderState(WebMetalCommandBuffer *buffer, Str
     state->releases = buffer->_state->releases;
     state->handle = buffer->_state->connection->NewHandle();
     state->stream->encoders().push_back(state->handle);
+    state->stream->beginEncoder(state->handle, subStream == nullptr);
     return state;
 }
 
@@ -288,6 +468,7 @@ using namespace webmetal;
     record.event = eventReference(self, _cmd, event);
     record.value = value;
     EmitCommandBufferRecord(self, _cmd, record);
+    _state->stream.noteWait();
 }
 
 - (void)encodeSignalEvent:(id<MTLEvent>)event value:(uint64_t)value agentMask:(uint64_t)agentMask
@@ -316,6 +497,7 @@ using namespace webmetal;
     static Class sharedEventClass = objc_getClass("_MTLSharedEvent");
     record.timeout = [(id)event isKindOfClass:sharedEventClass] ? std::min<uint32_t>(timeout, 0xffff) : timeout;
     EmitCommandBufferRecord(self, _cmd, record);
+    _state->stream.noteWait();
 }
 
 - (void)encodeSignalEventScheduled:(id<MTLEvent>)event value:(uint64_t)value

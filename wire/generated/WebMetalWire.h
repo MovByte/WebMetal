@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: 4cf8b85db802cb9aef652a565f4c19bd894f3241e7debcc52f5adb2a60b13c87
+// Schema SHA-256: 1dd6f29882ec566216b93ac05882793c6c968bc6d0f256c8f9ecd9b91d90aed9
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0x4c, 0xf8, 0xb8, 0x5d, 0xb8, 0x02, 0xcb, 0x9a, 0xef, 0x65, 0x2a, 0x56, 0x5f, 0x4c, 0x19, 0xbd, 0x89, 0x4f, 0x32, 0x41, 0xe7, 0xde, 0xbc, 0xc5, 0x2f, 0x5a, 0xdb, 0x2a, 0x60, 0xb1, 0x3c, 0x87};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0x1d, 0xd6, 0xf2, 0x98, 0x82, 0xec, 0x56, 0x62, 0x16, 0xb9, 0x3a, 0xc0, 0x58, 0x82, 0x79, 0x3c, 0x6c, 0x96, 0x8b, 0xc6, 0xd0, 0xf2, 0x56, 0xc8, 0xf9, 0xec, 0xd9, 0xb9, 0x1d, 0x90, 0xae, 0xd9};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -686,6 +686,7 @@ constexpr uint16_t kParallelSetStencilStoreAction = 0x1605;
 constexpr uint16_t kParallelSetStencilStoreActionOptions = 0x1606;
 constexpr uint16_t kCommandBufferScheduled = 0x7001;
 constexpr uint16_t kCommandBufferCompleted = 0x7002;
+constexpr uint16_t kEncoderCompleted = 0x7005;
 constexpr uint16_t kSharedEventListener = 0x7003;
 constexpr uint16_t kDeviceLost = 0x7004;
 }  // namespace opcode
@@ -12387,6 +12388,28 @@ inline bool decodeFields(Reader& r, CommandBufferCompleted& v) {
     return true;
 }
 
+// 0x7005 event record. The GPU work of one encoder of the command buffer has finished, and its writes to CPU-visible
+// memory are in guest memory: the host submits each encoder's work on its own and posts this once that submission's
+// work is done. The A10X kernel stamps the resources an encoder lists with the GPU channel stamp of that encoder's
+// work (IOGPUResource's stamp, kernelcache 0xfffffff005bc4e68), so a resource's -isComplete follows its encoders,
+// not its command buffer. encoder is the handle of the encoder's Begin record (a parallel render encoder's, for the
+// work of its sub-encoders). Posted in encoder order, before the command buffer's CommandBufferCompleted; an encoder
+// the command buffer did not run (it failed or stopped at a timed-out wait earlier) gets none, and
+// CommandBufferCompleted ends them all.
+struct EncoderCompleted {
+    static constexpr uint16_t kOpcode = 0x7005;
+    uint64_t commandBuffer = 0;  // wire type `CommandBuffer`.
+    uint64_t encoder = 0;  // wire type `Encoder`.
+};
+
+inline bool decodeFields(Reader& r, EncoderCompleted& v) {
+    if (!r.u64(v.commandBuffer)) return false;
+    if (v.commandBuffer == 0) return r.fail(DecodeError::NullHandle);
+    if (!r.u64(v.encoder)) return false;
+    if (v.encoder == 0) return r.fail(DecodeError::NullHandle);
+    return true;
+}
+
 // 0x7003 event record. A NotifyListener registration was reached; value is the event's signaled value at that time.
 struct SharedEventListener {
     static constexpr uint16_t kOpcode = 0x7003;
@@ -12416,7 +12439,7 @@ inline bool decodeFields(Reader& r, DeviceLost& v) {
 }
 
 // One decoded event record.
-using Event = std::variant<CommandBufferScheduled, CommandBufferCompleted, SharedEventListener, DeviceLost>;
+using Event = std::variant<CommandBufferScheduled, CommandBufferCompleted, EncoderCompleted, SharedEventListener, DeviceLost>;
 
 // Decode the event record at the start of data; stores its length in *consumed.
 inline bool decodeEvent(const uint8_t* data, size_t size, Event& out, size_t* consumed, DecodeError* error = nullptr) {
@@ -12435,6 +12458,12 @@ inline bool decodeEvent(const uint8_t* data, size_t size, Event& out, size_t* co
     }
     case CommandBufferCompleted::kOpcode: {
         CommandBufferCompleted v;
+        if (!decodeFields(r, v) || !r.finish()) return false;
+        out = std::move(v);
+        break;
+    }
+    case EncoderCompleted::kOpcode: {
+        EncoderCompleted v;
         if (!decodeFields(r, v) || !r.finish()) return false;
         out = std::move(v);
         break;

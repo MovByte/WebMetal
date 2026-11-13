@@ -103,6 +103,7 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
             // The kernel's scheduled notification carries the start and the end of its submission and the status of
             // processing the command buffer, and IOGPU passes the times and the error it makes of the status. The
             // failure is reported once, with the completion that carries it again.
+            webmetal::CommandBufferStampsScheduled(buffer->_state->stamps);
             NSError *error = scheduled->failure.status == 0
                                  ? nil
                                  : webmetal::CommandBufferError(scheduled->failure, "-[MTLCommandBuffer commit]", false);
@@ -126,16 +127,31 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
             NSError *error = nil;
             if (completed->failure.status != 0)
                 error = webmetal::CommandBufferError(completed->failure, "-[MTLCommandBuffer commit]");
+            // Every encoder of a completed command buffer has completed, the ones the host ran no work of included.
+            webmetal::CommandBufferStampsCompleted(buffer->_state->stamps);
             [queue commandBufferDidComplete:buffer
                                   startTime:webmetal::MachTicksFromNanoseconds(completed->gpuStartTime)
                              completionTime:webmetal::MachTicksFromNanoseconds(completed->gpuEndTime)
                                       error:error];
             std::lock_guard<std::mutex> guard(state->lock);
             [state->retained removeObjectIdenticalTo:buffer];
+        } else if (auto *encoder = std::get_if<webmetal::wire::EncoderCompleted>(&event)) {
+            WebMetalCommandBuffer *buffer = nil;
+            {
+                std::lock_guard<std::mutex> guard(state->lock);
+                auto found = state->inFlight.find(encoder->commandBuffer);
+                buffer = found == state->inFlight.end() ? nil : found->second;
+            }
+            if (!buffer) {
+                WMReport("EncoderCompleted", "the host completed an encoder of a command buffer this queue has not "
+                                             "committed");
+                continue;
+            }
+            webmetal::EncoderStampsCompleted(buffer->_state->stamps, encoder->encoder);
         } else {
             WMReport("-[WebMetalCommandQueue dispatchAvailableCompletionNotifications]",
-                     "not implemented: an event record other than CommandBufferScheduled or CommandBufferCompleted "
-                     "arrived on a command queue");
+                     "not implemented: an event record other than CommandBufferScheduled, EncoderCompleted or "
+                     "CommandBufferCompleted arrived on a command queue");
         }
     }
 }
@@ -427,11 +443,15 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
         request.stream = (uint64_t)(uintptr_t)cb.stream.bytes().data();
         request.streamLength = cb.stream.bytes().size();
         request.resources = {cb.stream.resources().data(), cb.stream.resources().size()};
+        bool behindWait = false;
         {
             std::lock_guard<std::mutex> guard(state->lock);
+            for (const auto &other : state->inFlight)
+                behindWait = behindWait || webmetal::StampsWaiting(other.second->_state->stamps);
             state->inFlight[cb.handle] = buffer;
             [state->retained addObject:buffer];
         }
+        cb.stamps = webmetal::RegisterStamps(cb.stream, behindWait);
         webmetal::wire::Reply<webmetal::wire::CommitReply> reply;
         std::string problem;
         const bool delivered = _connection->TryCall(request, &reply, &problem);
@@ -453,6 +473,7 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
             std::lock_guard<std::mutex> guard(state->lock);
             state->inFlight.erase(cb.handle);
         }
+        webmetal::CommandBufferStampsCompleted(cb.stamps);
         NSError *error = webmetal::CommandBufferError(failure, "-[MTLCommandBuffer commit]");
         dispatch_async(completionDispatch(self), ^{
             [buffer didScheduleWithStartTime:0 endTime:0 error:error];

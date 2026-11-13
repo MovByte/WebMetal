@@ -73,6 +73,7 @@ void endEncoder(id self, SEL cmd, EncoderState &encoder)
 {
     EmitEncoderRecord(self, cmd, encoder, wire::EncoderEndEncoding{});
     encoder.ended = true;
+    encoder.stream->endEncoder();
 }
 
 void setEncoderLabel(id self, SEL cmd, EncoderState &encoder, NSString *label)
@@ -593,7 +594,7 @@ using namespace webmetal;
     {
         std::lock_guard<std::mutex> guard(_subStreamsLock);
         for (const auto &stream : _subStreams)
-            _encoder->stream->splice(*stream);
+            _encoder->stream->splice(*stream, _encoder->handle);
         _subStreams.clear();
     }
     endEncoder(self, _cmd, *_encoder);

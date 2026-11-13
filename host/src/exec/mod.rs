@@ -28,6 +28,11 @@
 //! events of one queue are posted in commit order. The framework's `_MTLCommandBuffer` runs the status machine and
 //! the handlers from these events on the guest side (the schema's guest-local annotations).
 //!
+//! Each encoder segment's work is a WebGPU submission of its own. Once it is done and its writes to CPU-visible memory
+//! are in guest memory, an EncoderCompleted event names the encoder, before the command buffer's CommandBufferCompleted:
+//! the A10X kernel stamps the resources an encoder lists with that encoder's GPU work, and the guest answers a
+//! resource's `-isComplete` from these events.
+//!
 //! # Events
 //!
 //! A wait (`encodeWaitForEvent:value:`) holds its queue until the event's value is at least the value; the work before

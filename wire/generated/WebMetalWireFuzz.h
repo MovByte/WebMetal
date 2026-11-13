@@ -4368,6 +4368,16 @@ inline bool same(const CommandBufferCompleted& a, const CommandBufferCompleted& 
            a.gpuEndTime == b.gpuEndTime;
 }
 
+inline void random(Gen& g, EncoderCompleted& v) {
+    v.commandBuffer = g.handle();
+    v.encoder = g.handle();
+}
+
+inline bool same(const EncoderCompleted& a, const EncoderCompleted& b) {
+    return a.commandBuffer == b.commandBuffer &&
+           a.encoder == b.encoder;
+}
+
 inline void random(Gen& g, SharedEventListener& v) {
     v.event = g.handle();
     v.token = g.u64();
@@ -5189,7 +5199,7 @@ inline bool checkRandomReply(Gen& g, const uint8_t* data, size_t size, size_t* c
 inline bool checkRandomEvent(Gen& g, const uint8_t* data, size_t size, size_t* consumed) {
     Event got;
     if (!decodeEvent(data, size, got, consumed)) return false;
-    switch (g.below(4)) {
+    switch (g.below(5)) {
     case 0: {
         CommandBufferScheduled expected;
         random(g, expected);
@@ -5203,12 +5213,18 @@ inline bool checkRandomEvent(Gen& g, const uint8_t* data, size_t size, size_t* c
         return v && same(*v, expected);
     }
     case 2: {
+        EncoderCompleted expected;
+        random(g, expected);
+        const EncoderCompleted* v = std::get_if<EncoderCompleted>(&got);
+        return v && same(*v, expected);
+    }
+    case 3: {
         SharedEventListener expected;
         random(g, expected);
         const SharedEventListener* v = std::get_if<SharedEventListener>(&got);
         return v && same(*v, expected);
     }
-    case 3: {
+    case 4: {
         DeviceLost expected;
         random(g, expected);
         const DeviceLost* v = std::get_if<DeviceLost>(&got);

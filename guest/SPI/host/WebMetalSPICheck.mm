@@ -319,7 +319,7 @@ void checkResources(id<MTLDevice> device)
           "a sub-allocated texture and its view answer the primary's size");
     // -[IOGPUMetalResource isComplete] and -waitUntilComplete: the submissions of the A10X driver never stamp event 0 of
     // an untracked kernel resource (IOGPUResource's stamp, kernelcache 0xfffffff005bc4e68), so it stays clear; a
-    // heap's resource is untracked unless its descriptor says otherwise. Event 0 of a tracked one is LOUD.
+    // heap's resource is untracked unless its descriptor says otherwise.
     auto complete = [](id resource) {
         __block BOOL done = NO;
         NSString *reason = loudReason(^{
@@ -341,15 +341,9 @@ void checkResources(id<MTLDevice> device)
     check(complete(untracked) && complete(untrackedSmall) && complete(heapBuffer) && complete(heapTexture) &&
               complete(untrackedTexture) && complete(untrackedView) && complete(overUntracked),
           "untracked kernel resources are complete");
-    NSString *trackedReason = loudReason(^{
-        (void)[(id<SPIResources>)buffer isComplete];
-    });
-    NSString *trackedWait = loudReason(^{
-        [(id<SPIResources>)bufferTexture waitUntilComplete];
-    });
-    check([trackedReason containsString:@"tracked kernel resource"] &&
-              [trackedWait containsString:@"tracked kernel resource"],
-          "a tracked kernel resource's event is LOUD");
+    // A tracked kernel resource no committed command buffer uses has an event 0 the kernel has not stamped.
+    check(complete(buffer) && complete(bufferTexture) && complete(texture) && complete(view),
+          "tracked kernel resources no command buffer uses are complete");
     // A texture over memory a texture layout filled (-[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:
     // deallocator:]): its texels are the memory's, its deallocator receives the memory, and the size of its kernel
     // resource is LOUD.

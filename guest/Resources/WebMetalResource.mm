@@ -55,14 +55,18 @@ MTLHazardTrackingMode HazardTrackingMode(const ResourceState &state)
 // private event pair at +0x58; IOGPUResource's stamp (0xfffffff005bc4e68) then stamps the private pair instead of event
 // 0 unless its flags carry bit 1, and every call of it in the A10X driver (AGXG9G) passes 0 or 1. Event 0 of an
 // untracked kernel resource therefore stays clear: the test passes and the wait returns at once.
-static const char kTrackedEvent[] =
-    "event 0 of a tracked kernel resource takes the GPU channel stamps of submitted encoders whose IOGPU resource "
-    "lists name it, by the flags each names it with (AGXAllocationList2 0xfffffff005bf1914 and IOGPUResource's stamp "
-    "0xfffffff005bc4e68, kernelcache); which uses the A10X driver lists is read only for render useResource:usage: and useHeap: (flags 5), "
-    "indexed draws' index buffers (1) and indirect draws' argument buffers (0x41), while its draw-time helpers list "
-    "bound buffers and textures by masks of the bound pipeline (0x21c96ad3c) and the attachment, blit and compute "
-    "paths are not read; and the host reports completion per command buffer, where the stamps complete per encoder";
-void CheckEventComplete(id self, SEL _cmd, const ResourceState &kernel, bool iosurface)
+static const char kUntracedUse[] =
+    "a command buffer that has not completed names the resource in a use whose listing in the A10X driver's IOGPU resource "
+    "list, which decides whether the kernel stamps event 0 (AGXAllocationList2 0xfffffff005bf1914, IOGPUResource's stamp "
+    "0xfffffff005bc4e68, kernelcache), is not traced: the draw-time vertex and fragment binds the driver lists by masks of "
+    "the bound pipeline (0x21c96ad3c), which come from its compiler (packages G4 and G5), and the uses not read yet";
+static const char kDeferredStamp[] =
+    "an encoder that lists the resource follows an event wait that has not been passed (in its command buffer, or an "
+    "earlier one of its queue): on the Apple M4 the kernel processes, and stamps, such an encoder only after the wait "
+    "(spi.resource-complete-per-encoder), while the A10X's IOGPUCommandQueue::processKernelCommand (kernelcache "
+    "0xfffffff005bd8a90 to 0xfffffff005bd8bb4) turns the wait into an event that later work depends on, and whether it "
+    "stamps the later encoders at submission is not established";
+bool CheckEventComplete(id self, SEL _cmd, uint64_t key, const ResourceState &kernel, bool iosurface, bool wait)
 {
     if (kernel.storageMode == MTLStorageModeMemoryless)
         WMLoudMethod(self, _cmd, "a memoryless resource has no kernel resource, and IOGPU passes its null resourceRef to "
@@ -71,9 +75,20 @@ void CheckEventComplete(id self, SEL _cmd, const ResourceState &kernel, bool ios
         WMLoudMethod(self, _cmd, "the kernel resource of an IOSurface texture (type 0x82) has its submissions stamp the "
                                  "surface's shared resource (IOGPUResource's stamp, kernelcache 0xfffffff005bc4e94); "
                                  "what its own event 0 holds is not read yet");
-    if ((kernel.options & kHazardTrackingModeMask) !=
+    if ((kernel.options & kHazardTrackingModeMask) ==
         (uint64_t(MTLHazardTrackingModeUntracked) << kHazardTrackingModeShift))
-        WMLoudMethod(self, _cmd, kTrackedEvent);
+        return true;
+    // A tracked kernel resource: event 0 holds the stamps of the encoders that list it, each complete once the host
+    // reports that encoder's work done (EncoderCompleted) or its command buffer completed. A pending traced stamp
+    // decides the answer; without one, a pending use whose stamp is not established leaves it open.
+    const PendingStamps pending = wait ? WaitStamps(key) : QueryStamps(key);
+    if (pending.stamped)
+        return false;
+    if (pending.untraced)
+        WMLoudMethod(self, _cmd, kUntracedUse);
+    if (pending.deferred)
+        WMLoudMethod(self, _cmd, kDeferredStamp);
+    return true;
 }
 
 // -[IOGPUMetalResource resourceOptions] (0x1fcb26168): the CPU cache mode, the storage mode and the resolved hazard

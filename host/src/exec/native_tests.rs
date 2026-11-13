@@ -629,7 +629,7 @@ fn queue_events(
 ) -> Vec<(Handle, &'static str, Option<CommandBufferCompleted>)> {
     posted
         .iter()
-        .filter(|(_, q, _)| *q == Some(queue))
+        .filter(|(_, q, e)| *q == Some(queue) && !matches!(e, Event::EncoderCompleted(_)))
         .map(|(_, _, e)| match e {
             Event::CommandBufferScheduled(s) => (s.command_buffer, "scheduled", None),
             Event::CommandBufferCompleted(c) => (c.command_buffer, "completed", Some(c.clone())),
@@ -1058,6 +1058,59 @@ fn labels_and_debug_groups() {
 
 // Events --------------------------------------------------------------------------------------------------------------
 
+/// The encoders of a command buffer complete on their own: the work of an encoder before a wait completes, is written
+/// back and is reported with EncoderCompleted while the command buffer waits; the encoder after the wait is reported once
+/// the wait is satisfied, before CommandBufferCompleted.
+#[test]
+fn encoders_complete_before_their_command_buffer() {
+    let x = Harness::new();
+    x.open(T1);
+    let (waiting_q, signalling_q) = (x.queue(T1), x.queue(T1));
+    let event = x.event(T1);
+    let (first, first_addr) = x.buffer(T1, 1024);
+    let (second, second_addr) = x.buffer(T1, 1024);
+    let (before, after) = (x.handle(), x.handle());
+    let waiting = x.commit(
+        T1,
+        waiting_q,
+        &[
+            blit(before, vec![fill(first, 1024, 0x11)]),
+            vec![wait(event, 1)],
+            blit(after, vec![fill(second, 1024, 0x22)]),
+        ]
+        .concat(),
+        &[event, first, second],
+    );
+    x.idle();
+    let encoders = |posted: &[(TaskId, Option<Handle>, Event)]| -> Vec<Handle> {
+        posted
+            .iter()
+            .filter_map(|(_, q, e)| match e {
+                Event::EncoderCompleted(c) if c.command_buffer == waiting && *q == Some(waiting_q) => Some(c.encoder),
+                _ => None,
+            })
+            .collect()
+    };
+    let posted = x.em.take_posted();
+    assert_eq!(encoders(&posted), vec![before], "{posted:?}");
+    assert!(!posted.iter().any(|p| matches!(&p.2, Event::CommandBufferCompleted(_))));
+    assert_eq!(x.guest(T1, first_addr, 1024), vec![0x11; 1024]);
+    assert_eq!(x.guest(T1, second_addr, 1024), vec![0; 1024]);
+
+    x.commit(T1, signalling_q, &[signal(event, 1)], &[event]);
+    x.idle();
+    let posted = x.em.take_posted();
+    assert_eq!(encoders(&posted), vec![after], "{posted:?}");
+    let encoder_at = posted.iter().position(|p| matches!(&p.2, Event::EncoderCompleted(_))).expect("posted");
+    let completed_at = posted
+        .iter()
+        .position(|p| matches!(&p.2, Event::CommandBufferCompleted(c) if c.command_buffer == waiting))
+        .expect("posted");
+    assert!(encoder_at < completed_at, "{posted:?}");
+    assert_completed(&completion(&posted, waiting));
+    assert_eq!(x.guest(T1, second_addr, 1024), vec![0x22; 1024]);
+}
+
 /// Reference case `event.cross-queue-signal-wait`: a command buffer waiting on an MTLEvent does not complete before a
 /// buffer on another queue signals it, then runs after the signalling work.
 #[test]
@@ -1168,7 +1221,12 @@ fn waits_time_out() {
     let cb = x.commit(T1, q, &records, &[target, e]);
     let next = x.commit(T1, q, &blit(x.handle(), vec![fill(target, 4, 0x33)]), &[target]);
     x.idle();
-    assert!(x.em.take_posted().is_empty(), "the queue waits");
+    // The work before the wait completes on its own (EncoderCompleted); the command buffer waits.
+    let posted = x.em.take_posted();
+    assert!(
+        posted.len() == 1 && matches!(&posted[0].2, Event::EncoderCompleted(c) if c.command_buffer == cb),
+        "{posted:?}"
+    );
     let deadline = x.exec.next_deadline().expect("a wait is blocked").0;
     assert!(deadline > x.em.now().0 + 4 * SECOND && deadline <= x.em.now().0 + 5 * SECOND, "5 s from the wait");
     x.em.skipped.set(x.em.skipped.get() + 4 * SECOND);

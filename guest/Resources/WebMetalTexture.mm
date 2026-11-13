@@ -632,6 +632,28 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
 
 }  // namespace webmetal
 
+namespace webmetal {
+
+uint64_t KernelResourceKey(id resource)
+{
+    if ([resource isKindOfClass:[WebMetalHeap class]])
+        return HeapHandle(static_cast<WebMetalHeap *>(resource));
+    if ([resource isKindOfClass:[WebMetalTexture class]]) {
+        WebMetalTexture *root = static_cast<WebMetalTexture *>(resource);
+        while (root->_parentTexture)
+            root = root->_parentTexture;
+        if (root->_buffer)
+            return KernelResourceKey(root->_buffer);
+        resource = root;
+    }
+    const ResourceState *state = StateOf(resource);
+    if (!state)
+        return 0;
+    return state->heap ? HeapHandle(static_cast<WebMetalHeap *>(state->heap)) : state->handle;
+}
+
+}  // namespace webmetal
+
 @implementation WebMetalTexture
 
 // -[IOGPUMetalTexture dealloc] (IOGPU 0x1fcb2b634) releases the parent and the buffer, runs a no-copy deallocator with
@@ -729,24 +751,24 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
 // texture's state carries the heap's options; a sub-allocated texture's own kernel resource takes the hazard-tracking
 // mode of its primary buffer (-[IOGPUMetalTexture initWithBuffer:...isStrideTexture:] 0x1fcb2e508), untracked exactly
 // when the texture's options are.
-static void checkTextureEvent(WebMetalTexture *self, SEL _cmd)
+static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
 {
     WebMetalTexture *root = self;
     while (root->_parentTexture)
         root = root->_parentTexture;
     const webmetal::ResourceState *kernel = root->_buffer ? webmetal::StateOf(root->_buffer) : &root->_state;
-    webmetal::CheckEventComplete(self, _cmd, *kernel, root->_state.iosurface != nullptr);
+    return webmetal::CheckEventComplete(self, _cmd, webmetal::KernelResourceKey(self), *kernel,
+                                        root->_state.iosurface != nullptr, wait);
 }
 
 - (BOOL)isComplete
 {
-    checkTextureEvent(self, _cmd);
-    return YES;
+    return checkTextureEvent(self, _cmd, false);
 }
 
 - (void)waitUntilComplete
 {
-    checkTextureEvent(self, _cmd);
+    checkTextureEvent(self, _cmd, true);
 }
 
 - (void)makeAliasable

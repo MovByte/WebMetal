@@ -356,14 +356,13 @@ WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, M
 // pools by them, clearing only the tracked mode) or, for a heap buffer, the heap's.
 - (BOOL)isComplete
 {
-    webmetal::CheckEventComplete(self, _cmd, _state, false);
-    return YES;
+    return webmetal::CheckEventComplete(self, _cmd, webmetal::KernelResourceKey(self), _state, false, false);
 }
 
 // -[IOGPUMetalResource waitUntilComplete] (0x1fcb39964).
 - (void)waitUntilComplete
 {
-    webmetal::CheckEventComplete(self, _cmd, _state, false);
+    webmetal::CheckEventComplete(self, _cmd, webmetal::KernelResourceKey(self), _state, false, true);
 }
 
 - (void)makeAliasable

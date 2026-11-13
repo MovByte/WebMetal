@@ -7,8 +7,8 @@ use std::rc::{Rc, Weak};
 
 use webmetal_wire::{
     Command, CommandBufferCompleted, CommandBufferScheduled, Commit, CommitReply, CreateCommandQueueReply,
-    CreateCommandQueueWithDescriptorReply, CreateEventReply, CreateFenceReply, DeviceLost, Event, Failure, Handle,
-    OpenReply, RegisterSharedEventReply, ReleaseReply, Reply, Request, SetLabelReply, opcode, status,
+    CreateCommandQueueWithDescriptorReply, CreateEventReply, CreateFenceReply, DeviceLost, EncoderCompleted, Event,
+    Failure, Handle, OpenReply, RegisterSharedEventReply, ReleaseReply, Reply, Request, SetLabelReply, opcode, status,
 };
 
 use super::failure::{self, GpuCause, NO_RECORD, command_buffer_status};
@@ -97,6 +97,8 @@ struct TaskState<E: Embedder> {
 enum ActionKind<E: Embedder> {
     /// Set a shared event's value once the work before the signal has completed and been written back.
     SignalShared(Rc<SharedEvent<E>>, u64, u64),
+    /// Post EncoderCompleted for the encoder with this handle: its work has completed and been written back.
+    EncoderComplete(Handle),
     /// Post CommandBufferCompleted (in queue order).
     Complete,
 }
@@ -786,7 +788,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
                 .flat_map(|(_, r)| r.actions.iter())
                 .filter_map(|a| match &a.kind {
                     ActionKind::SignalShared(e, ..) => Some(e.id),
-                    ActionKind::Complete => None,
+                    ActionKind::EncoderComplete(_) | ActionKind::Complete => None,
                 })
                 .collect()
         };
@@ -831,6 +833,41 @@ impl<A: Api, E: Embedder> Core<A, E> {
                         run.cursor = run.steps.len();
                         break;
                     }
+                    // Each encoder's work is a submission of its own, written back and reported when it is done: the
+                    // A10X kernel stamps the resources an encoder lists with the GPU channel stamp of that encoder's
+                    // work (IOGPUResource's stamp, kernelcache 0xfffffff005bc4e68), so -isComplete follows encoders.
+                    let mut wb = None;
+                    if let Some(co) = self.services.coherence.as_mut() {
+                        let mut cx = EncodeCx {
+                            task: run.task,
+                            info: &info,
+                            gpu: gpu!(self),
+                            embedder: &*self.embedder,
+                            objects: &state.table,
+                            recording: &mut run.recording,
+                        };
+                        match co.write_back(&mut cx, &info) {
+                            Ok(f) => wb = f,
+                            Err(f) => {
+                                run.recording.discard();
+                                run.fail(f, NO_RECORD);
+                                run.cursor = run.steps.len();
+                                break;
+                            }
+                        }
+                    }
+                    if run.recording.submit(&gpu) {
+                        run.gpu_start.get_or_insert(now);
+                    }
+                    if let Some(f) = settle(&self.scopes, &self.calls) {
+                        add_job(&mut self.jobs, run, id, settled(f));
+                    }
+                    add_job(&mut self.jobs, run, id, work_done(self.queue.on_submitted_work_done()));
+                    if let Some(f) = wb {
+                        add_job(&mut self.jobs, run, id, written_back(f));
+                    }
+                    let after = run.next_job;
+                    run.actions.push_back(Action { after, kind: ActionKind::EncoderComplete(segment.encoder) });
                 }
                 Step::Wait { event, value, timeout, offset } => {
                     let shared = match run.events.get(&event).expect("event") {
@@ -1059,6 +1096,18 @@ impl<A: Api, E: Embedder> Core<A, E> {
                             && let Err(e) = self.embedder.shared_event_signal(event.id, value)
                         {
                             run.fail(failure::invalid(format!("EncodeSignalEvent: {e}")), offset);
+                        }
+                    }
+                    ActionKind::EncoderComplete(encoder) => {
+                        if self.lost.is_none() {
+                            self.embedder.post(
+                                run.task,
+                                Some(run.queue),
+                                Event::EncoderCompleted(EncoderCompleted {
+                                    command_buffer: run.info.command_buffer,
+                                    encoder,
+                                }),
+                            );
                         }
                     }
                     ActionKind::Complete => {

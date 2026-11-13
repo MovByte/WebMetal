@@ -3385,6 +3385,13 @@ args = ["command_buffer: CommandBuffer", "status: u64 (MTLCommandBufferStatus)",
 doc = "The command buffer finished: status is MTLCommandBufferStatusCompleted or MTLCommandBufferStatusError. failure.status is 0 on success; failed_offset is the stream byte offset of the record that failed, 0xffffffffffffffff when no single record did. All writes the command buffer made to CPU-visible memory are in guest memory before this event is posted."
 
 [[op]]
+code = 0x7005
+name = "EncoderCompleted"
+channel = "event"
+args = ["command_buffer: CommandBuffer", "encoder: Encoder"]
+doc = "The GPU work of one encoder of the command buffer has finished, and its writes to CPU-visible memory are in guest memory: the host submits each encoder's work on its own and posts this once that submission's work is done. The A10X kernel stamps the resources an encoder lists with the GPU channel stamp of that encoder's work (IOGPUResource's stamp, kernelcache 0xfffffff005bc4e68), so a resource's -isComplete follows its encoders, not its command buffer. encoder is the handle of the encoder's Begin record (a parallel render encoder's, for the work of its sub-encoders). Posted in encoder order, before the command buffer's CommandBufferCompleted; an encoder the command buffer did not run (it failed or stopped at a timed-out wait earlier) gets none, and CommandBufferCompleted ends them all."
+
+[[op]]
 code = 0x7003
 name = "SharedEventListener"
 channel = "event"
