@@ -1,0 +1,51 @@
+# The system clients of the Metal driver on iPadOS 17.7.11 (21H461) whose driver selectors this package classifies.
+#
+# UniXNU's scripts/audit-target-web-metal-surface.py writes guest/SPI/clients/<name>.tsv for each client: the rows of
+# guest/Generated/surface.tsv whose selector one of the client's images references in its __objc_selrefs (the messages
+# it sends, tests with respondsToSelector: or sends to super), each with the plugin's status and, for a LOUD row or a
+# row of a driver class no plugin class stands in for, the note that says why (guest/SPI/notes.toml, or the detail a
+# hand-written LOUD method reports). The images are paths in the 21H461 dyld shared cache.
+
+[[client]]
+name = "QuartzCore"
+# CoreAnimation, with the render server's CA::OGL::MetalContext (backboardd) and CAMetalLayer.
+images = ["/System/Library/Frameworks/QuartzCore.framework/QuartzCore"]
+
+[[client]]
+name = "CoreImage"
+images = ["/System/Library/Frameworks/CoreImage.framework/CoreImage"]
+
+[[client]]
+name = "CoreVideo"
+# CVMetalTextureCache and CVMetalBufferCache.
+images = ["/System/Library/Frameworks/CoreVideo.framework/CoreVideo"]
+
+[[client]]
+name = "MetalPerformanceShaders"
+# The umbrella framework and every framework it embeds.
+images = [
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/MetalPerformanceShaders",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSBenchmarkLoop.framework/MPSBenchmarkLoop",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSCore.framework/MPSCore",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSFunctions.framework/MPSFunctions",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSImage.framework/MPSImage",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSMatrix.framework/MPSMatrix",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSNDArray.framework/MPSNDArray",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSNeuralNetwork.framework/MPSNeuralNetwork",
+    "/System/Library/Frameworks/MetalPerformanceShaders.framework/Frameworks/MPSRayIntersector.framework/MPSRayIntersector",
+]
+
+[[client]]
+name = "AppleMetalGLRenderer"
+# OpenGL ES on Metal: the IOGLESBundleName of the A10X's accelerator.
+images = ["/System/Library/Extensions/AppleMetalGLRenderer.bundle/AppleMetalGLRenderer"]
+
+[[client]]
+name = "WebKit"
+# WebKit, WebCore, WebGPU (WebGPU on Metal) and WebCore's ANGLE (WebGL on Metal).
+images = [
+    "/System/Library/Frameworks/WebKit.framework/WebKit",
+    "/System/Library/PrivateFrameworks/WebCore.framework/WebCore",
+    "/System/Library/PrivateFrameworks/WebCore.framework/Frameworks/libANGLE-shared.dylib",
+    "/System/Library/PrivateFrameworks/WebGPU.framework/WebGPU",
+]

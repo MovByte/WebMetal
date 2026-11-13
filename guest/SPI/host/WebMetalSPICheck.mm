@@ -4,7 +4,8 @@
 //
 // Each check calls a driver selector the plugin implements on the shim's device or on an object of the plugin class
 // that answers it, and compares the answer with what 21H461's driver answers (the address of the driver method is
-// given with each check). This Mac's Metal device is no reference for these answers: they are the A10X driver's. Prints one line per failure and PASS or FAIL.
+// given with each check); LOUD stubs that guest/SPI/notes.toml annotates must report their note. This Mac's Metal
+// device is no reference for these answers: they are the A10X driver's. Prints one line per failure and PASS or FAIL.
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -26,6 +27,7 @@
 - (void)setDisableComputeEncoderCoalescing:(BOOL)disable;
 - (id)newVisibleFunctionTableWithDescriptor:(id)descriptor;
 - (id)newIndirectComputeCommandEncoderWithBuffer:(id)buffer;
+- (NSUInteger)gpuCoreCount;
 @end
 
 @protocol SPIQueue
@@ -176,6 +178,12 @@ void checkDevice(id<MTLDevice> device)
     check([spi newVisibleFunctionTableWithDescriptor:[MTLVisibleFunctionTableDescriptor new]] == nil,
           "newVisibleFunctionTableWithDescriptor: is nil");
     check([spi newIndirectComputeCommandEncoderWithBuffer:nil] == nil, "newIndirectComputeCommandEncoderWithBuffer: is nil");
+    // A LOUD stub reports the note guest/SPI/notes.toml gives it.
+    NSString *reason = loudReason(^{
+        (void)[spi gpuCoreCount];
+    });
+    check([reason containsString:@"GPU core count its kernel driver reported"],
+          "gpuCoreCount is LOUD with its note (" + std::string(reason ? reason.UTF8String : "no report") + ")");
 }
 
 void checkQueue(id<MTLDevice> device)
