@@ -1519,9 +1519,14 @@ impl<A: Api> Run<'_, A> {
         let split_faces = matches!(faces, FacePlan::Split(..));
         if per_primitive || split_faces {
             let DrawKind::Direct { start, count, instances, base_instance } = kind else {
+                let (what, source) = match kind {
+                    DrawKind::Patches(_) | DrawKind::PatchesIndirect => {
+                        ("a patch draw", "the triangles the tessellator generates on the GPU are")
+                    }
+                    _ => ("an indexed or indirect draw", "the primitive list of index data is"),
+                };
                 return Err(RenderError::unimplemented(format!(
-                    "an indexed or indirect draw drawn one primitive at a time ({}): the primitive list of index data \
-                     is not read on the CPU",
+                    "{what} drawn one primitive at a time ({}): {source} not read on the CPU",
                     if per_primitive { "framebuffer fetch" } else { "separate front and back stencil values" }
                 )));
             };
