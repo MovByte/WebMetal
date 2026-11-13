@@ -48,6 +48,10 @@ struct EncoderState {
     id<MTLDevice> _device;
     webmetal::Connection *_connection;
     uint64_t _handle;
+    // IOGPUMetalCommandQueue._priority and _backgroundPriority: the priorities the kernel last applied
+    // (guest/SPI/WebMetalQueueSPI.mm).
+    uint64_t _gpuPriority;
+    uint64_t _backgroundGPUPriority;
 }
 @end
 

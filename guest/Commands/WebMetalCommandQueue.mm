@@ -8,6 +8,7 @@
 
 #import "WebMetalCommandState.h"
 #import "../Plugin/WebMetalReport.h"
+#import "../SPI/WebMetalSPI.h"
 
 #import <objc/runtime.h>
 
@@ -313,6 +314,12 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
     }
     if (!watchQueue(self, completionDispatch(self)))
         return nil;
+    // -[IOGPUMetalCommandQueue initWithDevice:descriptor:] (0x1fcb26578) starts with priority 1 and background priority
+    // 3; -[AGXA10FamilyCommandQueue initWithDevice:descriptor:] (0x21c8ca504) then sets priority 1 on internal builds.
+    _gpuPriority = 1;
+    _backgroundGPUPriority = 3;
+    if (webmetal::InternalBuild(self, _cmd))
+        [(id<WebMetalQueuePriority>)self setGPUPriority:1];
     return self;
 }
 
