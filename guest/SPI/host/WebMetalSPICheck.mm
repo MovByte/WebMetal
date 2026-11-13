@@ -190,7 +190,7 @@ void checkDevice(id<MTLDevice> device)
     NSString *reason = loudReason(^{
         (void)[spi gpuCoreCount];
     });
-    check([reason containsString:@"GPU core count its kernel driver reported"],
+    check([reason containsString:@"It needs a measurement on a real A10X (decision D-4)"],
           "gpuCoreCount is LOUD with its note (" + std::string(reason ? reason.UTF8String : "no report") + ")");
 }
 
@@ -283,6 +283,13 @@ void checkResources(id<MTLDevice> device)
           "a texture answers its kernel resource size and its view the same");
     check(size(bufferTexture) == size(buffer) && size(buffer) == buffer.allocatedSize,
           "a texture over a buffer answers the buffer's kernel resource size");
+    // -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] fails: no host reads the layout.
+    void *bytes = calloc(1, 65536);
+    NSString *reason = loudReason(^{
+        (void)[(id<SPIDevice>)device newTextureWithBytesNoCopy:bytes length:65536 descriptor:td deallocator:nil];
+    });
+    free(bytes);
+    check([reason containsString:@"has no reader at the host"], "newTextureWithBytesNoCopy: is LOUD");
 }
 
 void checkConstants()

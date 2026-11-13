@@ -2819,7 +2819,7 @@ AGXA10XDevice	instance	newSharedTextureWithDescriptor:	MTLDevice	framework	frame
 AGXA10XDevice	instance	newSharedTextureWithHandle:	MTLDevice	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	newStructTypeWithSerializedData:	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited
 AGXA10XDevice	instance	newTextureLayoutWithDescriptor:isHeapOrBufferBacked:	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented
-AGXA10XDevice	instance	newTextureWithBytesNoCopy:length:descriptor:deallocator:	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented
+AGXA10XDevice	instance	newTextureWithBytesNoCopy:length:descriptor:deallocator:	MTLDeviceSPI	agx	driver	WebMetalDevice	loud
 AGXA10XDevice	instance	newTextureWithDescriptor:	MTLDevice	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	newTextureWithDescriptor:iosurface:plane:	MTLDevice,MTLDeviceSPI	agx	driver	WebMetalDevice	implemented
 AGXA10XDevice	instance	newTextureWithDescriptor:iosurface:plane:slice:	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented

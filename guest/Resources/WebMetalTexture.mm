@@ -92,9 +92,6 @@ constexpr uint64_t kKernelPageSize = 0x4000;
     NSUInteger _bufferOffset;            // _bufferOffset
     NSUInteger _bufferBytesPerRow;       // _bufferBytesPerRow
     bool _allowGPUOptimizedContents;     // _allowGPUOptimizedContents
-    void *_pointer;                      // _pointer: caller memory of a no-copy texture
-    void (^_deallocator)(void *pointer, NSUInteger length);  // _deallocator
-    NSUInteger _noCopyLength;
     // AGXTexture's layout answers and AGXA10FamilyTexture's layout object (_impl), for device, heap and view textures
     // (_hasLayout).
     bool _hasLayout;
@@ -344,28 +341,6 @@ WebMetalTexture *NewSurfaceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureD
     request.iosurface = IOSurfaceGetID(iosurface);
     request.plane = plane;
     create<wire::CreateTextureWithIOSurface, wire::CreateTextureWithIOSurfaceReply>(device, _cmd, texture, request);
-    return texture;
-}
-
-// -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] (AGXMetalA10 0x21c8d62cc) wraps
-// caller memory laid out in the AGX format; the deallocator runs when the texture is deallocated.
-WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes, NSUInteger length,
-                                  MTLTextureDescriptor *descriptor, void (^deallocator)(void *pointer, NSUInteger length))
-{
-    if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
-        return nil;
-    const wire::TextureDescriptor d = WireTextureDescriptor(device, _cmd, descriptor);
-    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
-    texture->_pointer = bytes;
-    texture->_noCopyLength = length;
-    texture->_deallocator = [deallocator copy];
-    wire::CreateTextureNoCopy request;
-    request.texture = texture->_state.handle;
-    request.bytes = reinterpret_cast<uint64_t>(bytes);
-    request.length = length;
-    request.descriptor = d;
-    request.deallocator = deallocator != nil;
-    create<wire::CreateTextureNoCopy, wire::CreateTextureNoCopyReply>(device, _cmd, texture, request);
     return texture;
 }
 
@@ -637,10 +612,6 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
             [(WebMetalHeap *)_state.heap deallocHeapSubResource];
     }
     ReleaseObject(_state, "-[WebMetalTexture dealloc]");
-    if (_deallocator) {
-        _deallocator(_pointer, _noCopyLength);
-        _deallocator = nil;
-    }
 }
 
 // MTLResource ----------------------------------------------------------------------------------------------------------
