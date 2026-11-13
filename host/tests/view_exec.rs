@@ -229,14 +229,17 @@ fn levels_and_slices() {
     let reads = run_reads(&h, "tex_read_2d_array", range_view, &q);
     assert_eq!(&reads[..inside * 16], &texel_bytes(&expected[..inside])[..], "{}: in-range reads", h.name());
     let golden = g.bytes("range-view.reads").unwrap();
-    if reads == golden {
+    if h.compiled.borrow().contains("tex_read_2d_array") {
+        // The compiler bounds reads by the bound view's own dimensions, levels and layers (MSL 4.1 section 6.13), so the
+        // reads outside the view are Metal's (0, 0, 0, 1).
         t.exact(&g, "range-view.reads", &reads);
         t.exact_bool(&g, "range-view.reads.match-specification", reads == texel_bytes(&expected));
     } else {
-        // The in-range reads are Metal's; what a read outside a WebGPU view returns is the kernel's bounds handling.
+        // The hand translation reads with textureLoad, whose out-of-range result WebGPU leaves to the implementation:
+        // only the in-range reads are Metal's.
         assert_eq!(&reads[..inside * 16], &golden[..inside * 16], "{}: range-view.reads", h.name());
         eprintln!(
-            "{}: range-view.reads: out-of-range reads differ from Metal's: {:x?}",
+            "{}: range-view.reads: the hand translation's out-of-range reads: {:x?}",
             h.name(),
             &reads[inside * 16..]
         );
