@@ -102,6 +102,9 @@ states that the value is not compared.
 | Framebuffer fetch and raster order groups | `render.framebuffer-fetch`, `render.raster-order-groups` |
 | Memory barriers between draws | `render.memory-barrier` |
 | Tessellation | `pass.tessellation` |
+| Tessellated points and triangle order, every partition mode over a factor sweep | `tessellation.quad`, `tessellation.triangle` |
+| Tessellation factor culling, clamping, rounding, scale, maximum factor, winding | `tessellation.factors`, `tessellation.misuse` |
+| Factor step functions, instance strides, patch start, patch index buffers, instance and patch order | `tessellation.draws`, `tessellation.misuse` |
 | Layered rendering | `pass.layered-rendering`, `texture.type-2d-multisample-array` |
 | Pipelines with rasterization disabled | `draw.rasterization-disabled`, `pipeline.rasterization-disabled` |
 | Misuse | `draw.error.index-offset-unaligned`, `render.error.memory-barrier-after-fragment` |

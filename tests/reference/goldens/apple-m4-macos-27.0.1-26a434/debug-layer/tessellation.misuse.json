@@ -1,0 +1,19 @@
+{
+  "area": "pass.tessellation",
+  "case": "tessellation.misuse",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "assertion": "-[MTLDebugRenderCommandEncoder setTessellationFactorScale:]:8137: failed assertion `scale(-1) must be a normal floating point value (not denormal, infinite, nor NaN) and must be > 0.0f.'",
+    "kind": "signal",
+    "signal": 6
+  },
+  "records": [
+    {"kind":"require","name":"family.apple3","value":true},
+    {"kind":"require","name":"supportsShaderBarycentricCoordinates","value":true},
+    {"kind":"step","name":"scale-negative"},
+    {"count":21,"elem":"u32","hex":"0100000002000000100000000000000001000000000080bf000000000000000000000000000000000100000001000000000000000600000000000000004200000044000000450000004600000040000000420000","kind":"data","name":"scale-negative.input","rule":{"compare":"exact"}}
+  ],
+  "status": "terminated",
+  "title": "Patch draws the API validation layer rejects: a factor scale that is not a positive normal value, and an instance stride with a step function that has no instances",
+  "variant": "debug-layer"
+}
