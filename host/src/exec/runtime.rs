@@ -422,11 +422,22 @@ impl<A: Api, E: Embedder> Core<A, E> {
                 // MTLCommandQueueDescriptorInternal SPI state. maxCommandBufferCount is the guest's (the plugin blocks
                 // commandBuffer at capacity); qosLevel, commitSynchronously and disableAsyncCompletionDispatch govern
                 // how the guest submits and runs handlers; disabling cross-queue hazard tracking or IO fencing allows
-                // less ordering than the executor's single in-order queue gives, and the low-latency shared-event
-                // options change timing only. What the remaining three do is not established, so only their
-                // default (zero) is accepted.
+                // less ordering than the executor's single in-order queue gives. The low-latency shared-event options
+                // set the A10X queue's flags (-[AGXA10FamilyCommandQueue setCommandQueueConfig:...] 0x21c8ca170, AGX
+                // user client selector 264, kernelcache 0xfffffff005c02014: queue bytes 0x843 and 0x844) under which
+                // the AGX kernel's processKernelCommand (0xfffffff005bf83cc) hands a shared event's waits and signals
+                // to the GPU: a wait then no longer holds the kernel's processing of the queue, and on a queue with
+                // only the signal option a wait fails its command buffer (status 10). The executor implements the
+                // kernel's own waits only, and what the remaining three do is not established, so only the default
+                // (zero) of these is accepted.
                 let d = &r.descriptor;
                 let mut unknown = Vec::new();
+                if d.enable_low_latency_signal_shared_event {
+                    unknown.push("enableLowLatencySignalSharedEvent".to_string());
+                }
+                if d.enable_low_latency_wait_shared_event {
+                    unknown.push("enableLowLatencyWaitSharedEvent".to_string());
+                }
                 if d.device_partition != 0 {
                     unknown.push(format!("devicePartition {}", d.device_partition));
                 }

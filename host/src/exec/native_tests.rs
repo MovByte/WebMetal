@@ -1539,6 +1539,23 @@ fn requests_obey_the_protocol() {
     );
     assert_eq!(r.status, status::UNIMPLEMENTED);
     desc.is_open_gl_queue = false;
+    // The low-latency shared-event options hand the queue's shared-event waits and signals to the GPU, which the
+    // executor does not implement.
+    for (signal, wait) in [(true, false), (false, true), (true, true)] {
+        desc.enable_low_latency_signal_shared_event = signal;
+        desc.enable_low_latency_wait_shared_event = wait;
+        let r = x.status(
+            T1,
+            Request::CreateCommandQueueWithDescriptor(CreateCommandQueueWithDescriptor {
+                queue: x.handle(),
+                descriptor: desc.clone(),
+            }),
+        );
+        assert_eq!(r.status, status::UNIMPLEMENTED);
+        assert!(r.message.contains("enableLowLatency"), "{}", r.message);
+    }
+    desc.enable_low_latency_signal_shared_event = false;
+    desc.enable_low_latency_wait_shared_event = false;
     x.ok(
         T1,
         Request::CreateCommandQueueWithDescriptor(CreateCommandQueueWithDescriptor {
