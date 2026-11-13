@@ -8,10 +8,11 @@
 //    process (executor/lib.rs) instead of the service's user client.
 //  - Device state the kernel supplies. On the target the device reads the GPU's configuration from the service's IOGPU
 //    device client as IOGPU.framework does (WebMetalIOGPUDevice.h): maxBufferLength, recommendedMaxWorkingSetSize,
-//    sharedMemorySize and supportPriorityBand come from it. The shim's device has no such client, and those getters are
-//    LOUD here, except maxBufferLength, which Metal.framework's -initLimits copies into the device's limits during
-//    MTLAddDevice. The shim stands in for the kernel there: it replaces -maxBufferLength with a sentinel value the caller
-//    chooses, so the checks can show that the limits carry exactly that input.
+//    sharedMemorySize, supportPriorityBand and the event class come from it. The shim's device has no such client; the
+//    shim stands in for the kernel and gives the device the configuration the A10X's client answers (kA10XConfig),
+//    except its largest resource, maxBufferLength, which is a sentinel value the caller chooses, so the checks can show
+//    that the limits Metal.framework's -initLimits copies during MTLAddDevice carry exactly that input. It serves no
+//    trace object (selector 4), so the device's global trace object ID is 0, as where the selector fails.
 //  - Shared events. The target's kernel resolves a shared event's port for the executor; here the shim does, with this
 //    process's IOSurface shared events (Metal.framework's _MTLSharedEvent), and tells the executor about CPU-side
 //    signals it observes.
@@ -169,6 +170,20 @@ static const uint64_t kDefaultMaxBufferLength = 0x5e5e1000;
 static id<MTLDevice> gDevice;
 static uint64_t gMaxBufferLength;
 
+// What the A10X's IOGPU device client answers for selector 0 in the 21H461 kernel, apart from the largest resource:
+// the AGXG9G configuration's bits 0x404340 (0xfffffff00531a9c0), reported as bits 0-15 with bit 21 into bit 12; no
+// device bits, texture or video memory; IOSurface accelerator 1; and the wired limit of the iPad's memory, 0xAAAAC000
+// (the configuration gex's accelerator service serves, crates/gex-kernel/src/darwin/accel/iogpu.rs).
+static webmetal::IOGPUConfig a10xConfig(uint64_t maxResourceSize)
+{
+    webmetal::IOGPUConfig config = {};
+    config.configBits = (0x404340 & 0xffff) | ((0x404340 >> 9) & 0x1000);
+    config.accelID = 1;
+    config.sharedMemorySize = 0xAAAAC000;
+    config.maxResourceSize = maxResourceSize;
+    return config;
+}
+
 // Creates a WebMetalDevice, registers it with MTLAddDevice and returns it, or returns nil after a report. Once per
 // process; a later call returns the same device when it asks for the same sentinel.
 extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShimRegister(uint64_t maxBufferLength)
@@ -182,19 +197,13 @@ extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShim
             return gDevice;
         }
         gMaxBufferLength = maxBufferLength;
-        // The device's own -maxBufferLength reads the IOGPU device client this process does not have.
-        IMP fixture = imp_implementationWithBlock(^NSUInteger(id) { return maxBufferLength; });
-        if (!class_replaceMethod([WebMetalDevice class], sel_registerName("maxBufferLength"), fixture, "Q16@0:8")) {
-            WMReport("WebMetalHostShimRegister", "refused: WebMetalDevice does not implement maxBufferLength");
-            return nil;
-        }
         char error[512];
         if (!webmetal_shim_executor_start(error, sizeof error)) {
             WMReport("WebMetalHostShimRegister", (std::string("refused: the host executor did not start: ") + error).c_str());
             return nil;
         }
         webmetal::SetTransportOverride(executorTransport, nullptr);
-        webmetal::SetNoIOGPUDevice();
+        webmetal::SetShimIOGPUConfig(a10xConfig(maxBufferLength));
         webmetal_shim_executor_set_doorbell(executorDoorbell, nullptr);
         gListener = [[MTLSharedEventListener alloc] init];
         webmetal_shim_executor_set_shared_events(&kSharedEvents);

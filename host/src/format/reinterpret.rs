@@ -5,8 +5,9 @@
 //! becomes a second texture kept equal to the first. Its contents move by texel copies through a buffer, which are
 //! bit-preserving only when both formats are: WebGPU texel copies keep only finite, non-subnormal values of float
 //! formats and may change the representation of snorm and packed formats (WebGPU section 11.2, quoted in
-//! `tables/formats.toml` question `6.3-texel-copy-bit-exactness`). Such views are refused (row
-//! `float-view-reinterpretation` of `tables/refusals.md`).
+//! `tables/formats.toml` question `6.3-texel-copy-bit-exactness`), unless the host's copies of the format are proven
+//! to keep every bit pattern (`crate::mem::proof`). Views between formats whose copies are not so proven are refused
+//! (row `float-view-reinterpretation` of `tables/refusals.md`).
 //!
 //! Views of compressed textures are filled from the blocks the executor keeps for every compressed texture: decoded
 //! with the view's scheme on hosts without the format, uploaded as blocks on hosts with it.
@@ -66,14 +67,21 @@ fn is_compressed(r: Resolution) -> bool {
 const FLOAT_VIEW: Refusal = Refusal {
     id: "float-view-reinterpretation",
     reason: "WebGPU texel copies preserve only finite, non-subnormal values of float formats and may change snorm and \
-             packed representations, so no bit-exact copy connects the texture and the view.",
+             packed representations, and this host's copies of the format are not proven to keep its bits, so no \
+             bit-exact copy connects the texture and the view.",
     source: "tables/refusals.md, float-view-reinterpretation",
 };
 
-/// How a view in Metal format `view` of a texture in Metal format `texture` is provided on a host with `features`.
-/// Metal's own rules for which views are valid (the `pixelFormatView` usage, equal texel sizes) are the guest's to
-/// enforce; a pair whose stored texel sizes differ is refused here as well.
-pub fn view_plan(texture: u32, view: u32, features: HostFeatures) -> Result<ViewPlan, Unavailable> {
+/// How a view in Metal format `view` of a texture in Metal format `texture` is provided on a host with `features`,
+/// whose texel copies keep every bit of a WebGPU format `f` when `proven(f)` (a bit-exact format, or one whose copies
+/// the host proved). Metal's own rules for which views are valid (the `pixelFormatView` usage, equal texel sizes) are
+/// the guest's to enforce; a pair whose stored texel sizes differ is refused here as well.
+pub fn view_plan(
+    texture: u32,
+    view: u32,
+    features: HostFeatures,
+    proven: &dyn Fn(WebGpuFormat) -> bool,
+) -> Result<ViewPlan, Unavailable> {
     let t = resolve(texture, features)?;
     if texture == view {
         return Ok(ViewPlan::Same);
@@ -134,7 +142,7 @@ pub fn view_plan(texture: u32, view: u32, features: HostFeatures) -> Result<View
             source: "tables/formats.toml, Texel block copy footprint of the stored formats",
         }));
     }
-    if !ts.texel_copy_exact(None) || !vs.texel_copy_exact(None) {
+    if !proven(ts) || !proven(vs) {
         return Err(Unavailable::Refused(FLOAT_VIEW));
     }
     let (Some(to_metal), Some(from_metal)) = (to_metal, from_metal) else {
@@ -147,6 +155,11 @@ pub fn view_plan(texture: u32, view: u32, features: HostFeatures) -> Result<View
 mod tests {
     use super::*;
     use crate::format::webgpu::Feature;
+
+    /// The plan on a host whose texel copies keep the bits of the bit-exact formats only.
+    fn view_plan(texture: u32, view: u32, features: HostFeatures) -> Result<ViewPlan, Unavailable> {
+        super::view_plan(texture, view, features, &|f| f.texel_copy_exact(None))
+    }
 
     #[test]
     fn plans() {
@@ -163,11 +176,19 @@ mod tests {
                 from_metal: Transform::None
             })
         );
-        // R32Float as R32Uint: the float side is not bit-exact.
+        // R32Float as R32Uint: the float side is not bit-exact, unless the host's copies of r32float are proven.
         assert!(matches!(
             view_plan(55, 53, none),
             Err(Unavailable::Refused(Refusal { id: "float-view-reinterpretation", .. }))
         ));
+        assert_eq!(
+            super::view_plan(55, 53, none, &|_| true),
+            Ok(ViewPlan::Copy {
+                storage: WebGpuFormat::R32uint,
+                to_metal: Transform::None,
+                from_metal: Transform::None
+            })
+        );
         // R8Unorm as R8Unorm_sRGB: the same r8unorm storage.
         assert_eq!(view_plan(10, 11, none), Ok(ViewPlan::SharedStorage));
         // BGR10A2Unorm (stored swapped) as RGB10A2Uint.

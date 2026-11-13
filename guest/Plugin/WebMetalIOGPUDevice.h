@@ -53,18 +53,26 @@ public:
     // IOGPUDeviceGetMaxResourceSize read it from IOGPUDevice +0xa0).
     const IOGPUConfig &Config() const { return config_; }
 
+    // IOGPUDeviceGetGlobalTraceObjectID (IOGPU 0x1fcb2f608): IOGPUDevice +0x58, which selector 4 set (0 when it failed).
+    uint64_t GlobalTraceObjectID() const { return traceObjectID_; }
+
 private:
     explicit IOGPUDevice(io_connect_t connect) : connect_(connect) {}
 
     io_connect_t connect_;
     IOGPUConfig config_ = {};
+    // Selector 4's answers: the device's global trace object ID (+0x58), the task's trace page (+0x60) and the device's
+    // client-shared block (+0x68).
+    uint64_t traceObjectID_ = 0;
+    uint64_t tracePage_ = 0;
+    uint64_t traceSharedBlock_ = 0;
 };
 
-// For a process with no accelerator service (the macOS test shim): devices created afterwards have no IOGPU device, and
-// what its configuration feeds is LOUD. Set before the first device is created.
-void SetNoIOGPUDevice();
+// For a process with no accelerator service (the macOS test shim), which stands in for the kernel: devices created
+// afterwards open no IOGPU device client and take `config` as its configuration. Set before the first device is created.
+void SetShimIOGPUConfig(const IOGPUConfig &config);
 
-// Whether devices created now open an IOGPU device.
-bool ProcessHasIOGPUDevice();
+// The configuration SetShimIOGPUConfig set, or null when devices open an IOGPU device client.
+const IOGPUConfig *ShimIOGPUConfig();
 
 }  // namespace webmetal

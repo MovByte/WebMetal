@@ -52,7 +52,7 @@ states that the value is not compared.
 | Behavior | Cases |
 | --- | --- |
 | Texture types 1D, 1D array, 2D, 2D array, 3D, cube, cube array, 2D multisample, 2D multisample array, texture buffer, with out-of-bounds reads | `texture.type-1d`, `texture.type-1d-array`, `texture.type-2d`, `texture.type-2d-array`, `texture.type-3d`, `texture.type-cube`, `texture.cube-sample-axes`, `texture.type-cube-array`, `texture.type-2d-multisample`, `texture.type-2d-multisample-array`, `texture.type-texture-buffer`, `texture.type-texture-buffer-device` |
-| Writes, including out-of-bounds writes | `texture.write-out-of-bounds` |
+| Writes, including out-of-bounds writes and writes at every level and at levels out of range of textures and views | `texture.write-out-of-bounds`, `texture.write-levels` |
 | Views: format reinterpretation, sRGB, level and slice ranges, type changes, swizzle | `texture.view-format-reinterpret`, `texture.view-srgb-without-usage`, `texture.view-levels-slices`, `texture.view-swizzle` |
 | Mipmap generation | `texture.generate-mipmaps` |
 | Descriptor defaults and texture properties | `texture.properties` |

@@ -748,6 +748,30 @@ fn mipmap_generation() {
     h.assert_no_errors();
 }
 
+/// A blit from a buffer into part of a level a GPU pass wrote: an RGBA16Float texture keeps its bytes in a twin, which
+/// the mipmap pass leaves stale; the blit brings the twin up to date before writing its region, so the level keeps the
+/// pass's texels around the region.
+#[test]
+fn partial_blit_after_a_gpu_write() {
+    let h = Harness::new();
+    let d = texture_descriptor(T2D, fmt("RGBA16Float"), (4, 4, 1), 1, 2, PRIVATE, SHADER_READ | RENDER_TARGET, 1);
+    let tex = h.texture(d.clone());
+    // binary16 1.0 in every channel of level 0; level 1 made from it by the mipmap pass.
+    let one = 0x3c00u16.to_le_bytes();
+    let texel: Vec<u8> = one.repeat(4);
+    let (src, _) = h.buffer_with(&texel.repeat(16));
+    h.blit(vec![copy_b2t(src, 0, 32, 0, size(4, 4, 1), tex, 0, 0, origin(0, 0, 0))]);
+    h.blit(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(tex) })]);
+    // binary16 2.0 into texel (1, 0) of level 1.
+    let two: Vec<u8> = 0x4000u16.to_le_bytes().repeat(4);
+    let (src, _) = h.buffer_with(&two);
+    h.blit(vec![copy_b2t(src, 0, 8, 0, size(1, 1, 1), tex, 0, 1, origin(1, 0, 0))]);
+    let mut expect = texel.repeat(4);
+    expect[8..16].copy_from_slice(&two);
+    assert_eq!(h.read_texture(tex, &d, 1, 0, 16), expect, "{}", h.name());
+    h.assert_no_errors();
+}
+
 /// Blits Metal does not define, or that the host cannot serve yet, complete with status 2 and the reason.
 #[test]
 fn blit_refusals() {

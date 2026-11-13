@@ -20,7 +20,7 @@ use crate::gpu::idl::{Extent3D, Extent3DDict, Origin3D, Origin3DDict, TexelCopyT
 use crate::gpu::{Api, CommandEncoder as _, Texture as _};
 use crate::mem::calls::Calls;
 use crate::mem::layout::TextureType;
-use crate::mem::texture::{Prepare, Texture, idl_format};
+use crate::mem::texture::{Alias, Prepare, Texture, idl_format};
 use crate::mem::{MemError, Memory};
 
 use super::kernels::{MipLevel, encode_mip_level, encode_texture_copy_staged};
@@ -239,7 +239,7 @@ pub fn copy_region<A: Api>(
 
 /// The part of a texture `generateMipmapsForTexture:` makes: a texture's, or a view's levels and slices of its root,
 /// in the view's format.
-pub struct MipWindow {
+pub struct MipWindow<A: Api> {
     /// `MTLPixelFormat` of the texture or view.
     pub format: u32,
     pub resolution: Resolution,
@@ -247,6 +247,8 @@ pub struct MipWindow {
     pub levels: std::ops::Range<u32>,
     /// The root's array slices (ignored for a 3D texture, whose levels are made whole).
     pub slices: std::ops::Range<u32>,
+    /// The root's alias that holds a `Copy` view's texels, which the levels are then made in.
+    pub alias: Option<Rc<Alias<A>>>,
 }
 
 /// `generateMipmapsForTexture:`: every level from the one above it. Metal requires "A `mipmapLevelCount` property
@@ -261,7 +263,7 @@ pub fn generate_mipmaps<A: Api>(
     g: &impl Calls<A>,
     encoder: &A::CommandEncoder,
     t: &Texture<A>,
-    w: &MipWindow,
+    w: &MipWindow<A>,
 ) -> Result<(), MemError> {
     const CALL: &str = "-[MTLBlitCommandEncoder generateMipmapsForTexture:]";
     if w.levels.end - w.levels.start < 2 {
@@ -295,14 +297,20 @@ pub fn generate_mipmaps<A: Api>(
         Cond::Never => false,
         Cond::Feature(feature) => features.has(feature),
     };
-    if !filterable || !renders || t.gpu().usage() & crate::gpu::idl::TextureUsage::RENDER_ATTACHMENT == 0 {
+    let gpu = w.alias.as_ref().map_or(t.gpu(), |a| a.gpu());
+    if !filterable || !renders || gpu.usage() & crate::gpu::idl::TextureUsage::RENDER_ATTACHMENT == 0 {
         return Err(MemError::host(format!(
             "{CALL}: {} textures cannot be filtered and rendered on this host",
             caps.name
         )));
     }
-    if mem.prepare_texture(g, encoder, t)? == Prepare::Decode {
-        unreachable!("native formats are not decoded");
+    match &w.alias {
+        Some(a) => mem.prepare_alias(g, encoder, t, a, (w.levels.clone(), w.slices.clone()))?,
+        None => {
+            if mem.prepare_texture(g, encoder, t)? == Prepare::Decode {
+                unreachable!("native formats are not decoded");
+            }
+        }
     }
     let format = idl_format(f);
     let three_d = t.geometry.kind == TextureType::D3;
@@ -310,10 +318,14 @@ pub fn generate_mipmaps<A: Api>(
         let size = t.geometry.level_extent(level);
         let layers = if three_d { 0..size.2 } else { w.slices.clone() };
         for layer in layers {
-            let m = MipLevel { texture: t.gpu(), format, level, layer, three_d, size };
+            let m = MipLevel { texture: gpu, format, level, layer, three_d, size };
             encode_mip_level(mem, g, encoder, &m)?;
         }
     }
-    mem.note_texture_write(t, w.levels.start + 1..w.levels.end, w.slices.clone());
+    let (levels, slices) = (w.levels.start + 1..w.levels.end, w.slices.clone());
+    match &w.alias {
+        Some(a) => mem.note_alias_write(t, a, levels, slices),
+        None => mem.note_texture_write(t, levels, slices),
+    }
     Ok(())
 }

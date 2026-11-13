@@ -20,22 +20,33 @@ constexpr uint32_t kSelectorStamps = 2;
 constexpr size_t kStampsSize = 0x218;
 constexpr uint32_t kSelectorSetAPIProperty = 6;
 constexpr size_t kAPIPropertySize = 0x10;
+constexpr uint32_t kSelectorTraceObject = 4;
+constexpr size_t kTraceObjectSize = 0x20;
 
 // The API IOGPUMetalDevice names (IOGPU 0x1fcb2f054).
 constexpr char kAPI[] = "Metal";
 
-bool gNoIOGPUDevice;
+bool gShim;
+IOGPUConfig gShimConfig;
+
+uint64_t u64At(const uint8_t *bytes, size_t offset)
+{
+    uint64_t v;
+    memcpy(&v, bytes + offset, sizeof v);
+    return v;
+}
 
 }  // namespace
 
-void SetNoIOGPUDevice()
+void SetShimIOGPUConfig(const IOGPUConfig &config)
 {
-    gNoIOGPUDevice = true;
+    gShimConfig = config;
+    gShim = true;
 }
 
-bool ProcessHasIOGPUDevice()
+const IOGPUConfig *ShimIOGPUConfig()
 {
-    return !gNoIOGPUDevice;
+    return gShim ? &gShimConfig : nullptr;
 }
 
 std::unique_ptr<IOGPUDevice> IOGPUDevice::Create(io_service_t service, uint16_t options, std::string *problem)
@@ -82,9 +93,19 @@ std::unique_ptr<IOGPUDevice> IOGPUDevice::Create(io_service_t service, uint16_t 
         *problem = text;
         return nullptr;
     }
-    // IOGPU then asks selector 4 for the device's global trace object ID and the task's trace page (0x1fcb2fb68),
-    // ignoring a failure; they serve IOGPU's kdebug tracing (_MTLDevice._globalTraceObjectID, IOGPUDeviceTraceEvent),
-    // which the plugin does not implement, so the device does not ask.
+    // Then the trace object (0x1fcb2fb68), 32 bytes, whose failure IOGPU ignores: on success the device's global trace
+    // object ID (+0x58 from the answer's +0x0), the task's trace page (+0x60 from +0x8, only when the page's length at
+    // +0x18 is at least 4) and the client-shared block (+0x68 from +0x10) (0x1fcb2fb70-0x1fcb2fb90).
+    uint8_t trace[kTraceObjectSize] = {};
+    size = sizeof trace;
+    if (IOConnectCallStructMethod(connect, kSelectorTraceObject, nullptr, 0, trace, &size) == KERN_SUCCESS) {
+        device->traceObjectID_ = u64At(trace, 0x0);
+        uint32_t pageLength;
+        memcpy(&pageLength, trace + 0x18, sizeof pageLength);
+        if (pageLength >= 4)
+            device->tracePage_ = u64At(trace, 0x8);
+        device->traceSharedBlock_ = u64At(trace, 0x10);
+    }
     return device;
 }
 

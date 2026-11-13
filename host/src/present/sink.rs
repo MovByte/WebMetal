@@ -704,13 +704,22 @@ impl<A: Api, E: Embedder + 'static> Shared<A, E> {
                 Box::pin(async move { r }) as GpuFuture<_>
             }
             Source::Texture { texture, format } => {
-                // Level 0 of a texture whose stored copy is not current holds its contents only in the twin, which
-                // these formats never need (`crate::mem::texture`); refuse rather than show stale texels.
+                // Level 0 of a texture whose stored copy is not current holds its contents in the twin, which these
+                // formats never need, or in the alias of a view in another pixel format that wrote it
+                // (`crate::mem::texture`); refuse rather than show stale texels.
                 if !texture.stored_current(0, 0) {
-                    let f = PresentFailure::defect(format!(
-                        "the stored copy of texture \"{}\" is not current",
-                        texture.label
-                    ));
+                    let f = if texture.any_alias_current(0, 0) {
+                        PresentFailure::unimplemented(format!(
+                            "texture \"{}\" was last written through a view in another pixel format, whose texels a \
+                             second texture holds; frames are read from the texture's own",
+                            texture.label
+                        ))
+                    } else {
+                        PresentFailure::defect(format!(
+                            "the stored copy of texture \"{}\" is not current",
+                            texture.label
+                        ))
+                    };
                     return Box::pin(async move { Err(f) });
                 }
                 let (x, y) = (c.rect.x as u32, c.rect.y as u32);

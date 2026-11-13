@@ -848,6 +848,9 @@ fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflecti
         BindingSource::MetalTexture { stage: s, index } => {
             Source::MetalTexture { stage: stage(call, *s)?, index: *index }
         }
+        BindingSource::MetalTextureLevel { stage: s, index, level } => {
+            Source::MetalTextureLevel { stage: stage(call, *s)?, index: *index, level: *level }
+        }
         BindingSource::MetalSampler { stage: s, index } => {
             Source::MetalSampler { stage: stage(call, *s)?, index: *index }
         }
@@ -875,7 +878,7 @@ fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflecti
     };
     // The function's texture argument the binding stands for (vertex functions reflect as type 1, fragment as 2).
     let texture = match &source {
-        Source::MetalTexture { stage, index } => {
+        Source::MetalTexture { stage, index } | Source::MetalTextureLevel { stage, index, .. } => {
             let function_type = if *stage == MetalStage::Vertex { 1 } else { 2 };
             reflection
                 .stages

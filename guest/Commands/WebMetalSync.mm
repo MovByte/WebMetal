@@ -14,6 +14,7 @@
 - (void)_incrementCommandQueueCount;
 - (void)_decrementCommandQueueCount;
 - (void)_purgeDevice;
+- (id<MTLEvent>)newEvent;
 @end
 
 namespace webmetal {
@@ -209,8 +210,13 @@ using namespace webmetal;
     return MTLCommandBufferErrorOptionEncoderExecutionStatus;
 }
 
+// -[IOGPUMetalDevice newEvent] (IOGPU 0x1fcb359f8): an IOGPU event (_IOGPUMetalMTLEvent, which WebMetalEvent stands in
+// for) when bit 14 of the configuration's bits is set, as the A10X's is (the AGXG9G configuration 0x404340 at
+// 0xfffffff00531a9c0 of the 21H461 kernel); otherwise _MTLDevice's.
 - (id<MTLEvent>)newEvent
 {
+    if (!(DeviceConfigBits(self) >> 14 & 1))
+        return [super newEvent];
     return [[WebMetalEvent alloc] initWithDevice:self];
 }
 

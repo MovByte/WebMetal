@@ -56,6 +56,7 @@ use webmetal_wire::{
 };
 
 use super::buffer::{Buffer, Readbacks};
+use super::calls::Calls;
 use super::error::MemError;
 use super::heap::Heap;
 use super::layout::RegionArgs;
@@ -247,7 +248,7 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     slices: None,
                     swizzle: None,
                 };
-                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                attach = self.view(g, objects, task, r.texture, r.view, &a)?;
                 ok!(CreateTextureView, CreateTextureViewReply)
             }
             Request::CreateTextureViewLevelsSlices(r) => {
@@ -259,7 +260,7 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     slices: Some(&r.slice_range),
                     swizzle: None,
                 };
-                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                attach = self.view(g, objects, task, r.texture, r.view, &a)?;
                 ok!(CreateTextureViewLevelsSlices, CreateTextureViewLevelsSlicesReply)
             }
             Request::CreateTextureViewLevelsSlicesSwizzle(r) => {
@@ -271,7 +272,7 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     slices: Some(&r.slice_range),
                     swizzle: Some(&r.swizzle),
                 };
-                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                attach = self.view(g, objects, task, r.texture, r.view, &a)?;
                 ok!(CreateTextureViewLevelsSlicesSwizzle, CreateTextureViewLevelsSlicesSwizzleReply)
             }
             Request::CreateTextureViewResourceIndex(r) => {
@@ -283,7 +284,7 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     slices: None,
                     swizzle: None,
                 };
-                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                attach = self.view(g, objects, task, r.texture, r.view, &a)?;
                 ok!(CreateTextureViewResourceIndex, CreateTextureViewResourceIndexReply)
             }
             Request::CreateTextureViewLevelsSlicesResourceIndex(r) => {
@@ -295,7 +296,7 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     slices: Some(&r.slices),
                     swizzle: None,
                 };
-                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                attach = self.view(g, objects, task, r.texture, r.view, &a)?;
                 ok!(CreateTextureViewLevelsSlicesResourceIndex, CreateTextureViewLevelsSlicesResourceIndexReply)
             }
             Request::CreateTextureViewLevelsSlicesSwizzleResourceIndex(r) => {
@@ -307,7 +308,7 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     slices: Some(&r.slices),
                     swizzle: Some(&r.swizzle),
                 };
-                attach = self.view(objects, task, r.texture, r.view, &a)?;
+                attach = self.view(g, objects, task, r.texture, r.view, &a)?;
                 ok!(
                     CreateTextureViewLevelsSlicesSwizzleResourceIndex,
                     CreateTextureViewLevelsSlicesSwizzleResourceIndexReply
@@ -505,6 +506,7 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
     /// A view of the texture or view `texture`.
     fn view(
         &self,
+        g: &impl Calls<A>,
         objects: &Table,
         task: TaskId,
         texture: Handle,
@@ -513,10 +515,10 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
     ) -> Result<Rc<dyn Any>, MemError> {
         let mem = &*self.memory;
         if let Some(t) = payload::<Texture<A>>(objects, texture) {
-            return Ok(mem.create_texture_view((task, view), Parent::Texture(&t), a)?);
+            return Ok(mem.create_texture_view(g, (task, view), Parent::Texture(&t), a)?);
         }
         if let Some(v) = payload::<TextureView<A>>(objects, texture) {
-            return Ok(mem.create_texture_view((task, view), Parent::View(&v), a)?);
+            return Ok(mem.create_texture_view(g, (task, view), Parent::View(&v), a)?);
         }
         if payload::<LinearTexture<A>>(objects, texture).is_some() {
             return Err(MemError::unimplemented(format!(

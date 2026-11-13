@@ -8,6 +8,7 @@
 #import "../Resources/WebMetalDepthStencilCache.h"
 
 #import <objc/message.h>
+#import <objc/runtime.h>
 
 #include <dispatch/dispatch.h>
 
@@ -96,8 +97,10 @@ DeviceOptions gatherDeviceOptions()
     // The AGX device's depth-stencil state cache (AGX::Device +0x800).
     webmetal::DepthStencilCache _depthStencilStates;
     // IOGPUMetalDevice._deviceRef: the IOGPU device (WebMetalIOGPUDevice.h). None in a process without an accelerator
-    // service (the macOS test shim).
+    // service (the macOS test shim), whose shim supplies the configuration instead.
     std::unique_ptr<webmetal::IOGPUDevice> _iogpuDevice;
+    // The IOGPU device's configuration (IOGPUDevice +0xa0).
+    webmetal::IOGPUConfig _iogpuConfig;
     // IOGPUMetalDevice._configBits, _videoRam and _sharedMemorySize, from the IOGPU device's configuration.
     uint32_t _configBits;
     uint64_t _videoRam;
@@ -105,15 +108,21 @@ DeviceOptions gatherDeviceOptions()
 }
 @end
 
+// IOSurface.framework (exported, no SDK declaration).
+extern "C" void *IOSurfaceGetGraphicsCommPageAddress(void);
+
 namespace {
 
-// The IOGPU device a getter reads. A device has none in a process without an accelerator service (the macOS test shim),
-// where the getter is LOUD.
-const webmetal::IOGPUDevice &iogpuDevice(WebMetalDevice *device, SEL cmd)
+// IOGPU's kdebug trace gate: the word at the graphics commpage IOSurfaceGetGraphicsCommPageAddress gives, or a zeroed
+// word where there is none (the once block of IOGPUDeviceCreateWithAPIProperty, 0x1fcb30374).
+bool kdebugTracing()
 {
-    if (!device->_iogpuDevice)
-        WMLoudMethod(device, cmd, "the process has no IOGPU device client to supply it (the macOS test shim)");
-    return *device->_iogpuDevice;
+    static const uint32_t *word = [] {
+        const uint32_t *page = static_cast<const uint32_t *>(IOSurfaceGetGraphicsCommPageAddress());
+        static const uint32_t zero = 0;
+        return page ? page : &zero;
+    }();
+    return *word != 0;
 }
 
 }  // namespace
@@ -150,6 +159,11 @@ uint64_t DeviceCreationFlags(WebMetalDevice *device)
     return device->_creationFlags;
 }
 
+uint32_t DeviceConfigBits(WebMetalDevice *device)
+{
+    return device->_configBits;
+}
+
 DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
 {
     return device->_depthStencilStates;
@@ -174,20 +188,38 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
     if (!self || !ready)
         return nil;
     std::string problem;
-    if (webmetal::ProcessHasIOGPUDevice()) {
+    if (const webmetal::IOGPUConfig *shim = webmetal::ShimIOGPUConfig()) {
+        _iogpuConfig = *shim;
+    } else {
         _iogpuDevice = webmetal::IOGPUDevice::Create(service, options.iogpuOptions, &problem);
         if (!_iogpuDevice) {
             WMReport("-[WebMetalDevice initWithAcceleratorPort:]", ("refused: " + problem).c_str());
             return nil;
         }
-        // IOGPUDeviceGetConfig64 (IOGPU 0x1fcb2f128) copies the configuration's bits, device bits, texture and video
-        // memory sizes and accelerator ID, and IOGPUDeviceGetSharedMemorySize (0x1fcb2f13c) its shared memory size; the
-        // initializer then clears the video and texture memory sizes (0x1fcb2f140). Nothing in IOGPU, AGXMetalA10 or
-        // Metal.framework reads the device bits, texture memory size or accelerator ID, or writes the others again.
-        const webmetal::IOGPUConfig &config = _iogpuDevice->Config();
-        _configBits = config.configBits;
-        _sharedMemorySize = config.sharedMemorySize;
-        _videoRam = 0;
+        _iogpuConfig = _iogpuDevice->Config();
+    }
+    // IOGPUDeviceGetConfig64 (IOGPU 0x1fcb2f128) copies the configuration's bits, device bits, texture and video memory
+    // sizes and accelerator ID, and IOGPUDeviceGetSharedMemorySize (0x1fcb2f13c) its shared memory size; the initializer
+    // then clears the video and texture memory sizes (0x1fcb2f140). Nothing in IOGPU, AGXMetalA10 or Metal.framework
+    // reads the device bits, texture memory size or accelerator ID, or writes the others again.
+    _configBits = _iogpuConfig.configBits;
+    _sharedMemorySize = _iogpuConfig.sharedMemorySize;
+    _videoRam = 0;
+    // _MTLDevice._globalTraceObjectID takes IOGPUDeviceGetGlobalTraceObjectID (0x1fcb2f308): the trace object selector 4
+    // answered, or 0 where it did not (the shim's kernel stand-in serves no selector 4).
+    Ivar traceObject = class_getInstanceVariable([_MTLDevice class], "_globalTraceObjectID");
+    if (!traceObject || strcmp(ivar_getTypeEncoding(traceObject), "Q") != 0) {
+        WMReport("-[WebMetalDevice initWithAcceleratorPort:]", "refused: _MTLDevice has no _globalTraceObjectID");
+        return nil;
+    }
+    *reinterpret_cast<uint64_t *>(reinterpret_cast<uint8_t *>((__bridge void *)self) + ivar_getOffset(traceObject)) =
+        _iogpuDevice ? _iogpuDevice->GlobalTraceObjectID() : 0;
+    // With kdebug tracing on, IOGPU records the device's creation as a trace event (IOGPUDeviceTraceEvent with class 8,
+    // code 0xb, 0x1fcb2f31c-0x1fcb2f358), which the plugin does not implement.
+    if (_iogpuDevice && kdebugTracing()) {
+        WMReport("-[WebMetalDevice initWithAcceleratorPort:]",
+                 "not implemented: IOGPU's kdebug trace events (IOGPUDeviceTraceEvent) while kdebug tracing is on");
+        return nil;
     }
     uint64_t registryID = 0;
     const kern_return_t status = IORegistryEntryGetRegistryEntryID(service, &registryID);
@@ -237,13 +269,12 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
 // the device's limits during MTLAddDevice.
 - (NSUInteger)maxBufferLength
 {
-    return iogpuDevice(self, _cmd).Config().maxResourceSize;
+    return _iogpuConfig.maxResourceSize;
 }
 
 // -[IOGPUMetalDevice sharedMemorySize] (IOGPU 0x1fcb30c80).
 - (uint64_t)sharedMemorySize
 {
-    iogpuDevice(self, _cmd);
     return _sharedMemorySize;
 }
 
@@ -259,14 +290,12 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
 {
     if (_videoRam)
         return _videoRam;
-    iogpuDevice(self, _cmd);
     return _sharedMemorySize;
 }
 
 // -[IOGPUMetalDevice supportPriorityBand] (IOGPU 0x1fcb359e4): bit 6 of the configuration's bits.
 - (BOOL)supportPriorityBand
 {
-    iogpuDevice(self, _cmd);
     return (_configBits >> 6) & 1;
 }
 

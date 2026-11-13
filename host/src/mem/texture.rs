@@ -27,6 +27,24 @@
 //! Moving bytes between the CPU or a buffer and a stored texture of a format whose copies are not bit-exact needs the
 //! host's texel copies of that format to be proven exact first ([`super::proof`]); without that the transfer is
 //! refused, never approximated.
+//!
+//! **Aliases.** A view in a pixel format the stored texture cannot be viewed in (`ViewPlan::Copy`, [`super::view`])
+//! keeps the texture's contents in an [`Alias`]: a second WebGPU texture of the same geometry in the view's stored
+//! format, holding Metal's bytes through the view format's transform. Views of one texture in formats stored alike
+//! share an alias. Each subresource records which aliases are current besides the stored texture and the twin, and
+//! the copies move between them by texel copies through a buffer, exact for bit-exact formats and for formats whose
+//! texel copies are proven on this host:
+//!
+//! - before a GPU use of the stored texture, [`Memory::prepare_texture`] brings it up to date from the twin or from a
+//!   current alias; before a GPU use of an alias, [`Memory::prepare_alias`] brings that alias up to date;
+//! - a GPU write through an alias ([`Memory::note_alias_write`]) leaves every other copy stale, and every other write
+//!   leaves the aliases stale;
+//! - a CPU upload writes every current copy, and reads take the twin, the stored texture or an alias, whichever is
+//!   current; a blit from a buffer first brings the copy it writes up to date when it writes only part of a
+//!   subresource.
+//!
+//! The copies are made between WebGPU passes, so a pass may not write a subresource through one copy and use it
+//! through another (`super::view::PassCopies`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -35,6 +53,7 @@ use crate::embed::{Embedder, TaskId};
 use crate::format::handling::{self, Dimension, Emulation, Resolution, Unavailable, Upload, Usage};
 use crate::format::packed;
 use crate::format::pvrtc;
+use crate::format::reinterpret::Transform;
 use crate::format::storage;
 use crate::format::webgpu::{Aspect, Feature, WebGpuFormat};
 use crate::gpu::idl::{
@@ -58,6 +77,7 @@ use super::memory::Memory;
 use super::options::{ResourceOptions, StorageMode};
 use super::purgeable::Purgeable;
 use super::surface::SurfacePlane;
+use super::view::IDENTITY_SWIZZLE;
 
 /// `MTLTextureUsage` bits (`MTLTexture.h`).
 pub mod usage {
@@ -108,6 +128,8 @@ struct State {
     stored: Vec<bool>,
     /// Per subresource: the twin holds the current contents.
     twin: Vec<bool>,
+    /// Per alias (in the order of `Texture::aliases`), per subresource: the alias holds the current contents.
+    aliases: Vec<Vec<bool>>,
     purgeable: Purgeable,
     /// For an IOSurface texture: the plane version the texture holds, and whether GPU work wrote it since its last
     /// write-back.
@@ -115,11 +137,90 @@ struct State {
     surface_written: bool,
 }
 
+/// A second texture that holds a texture's contents in another WebGPU format: the storage of the texture's views in
+/// a pixel format its stored texture cannot be viewed in (`ViewPlan::Copy`, [`super::view`]).
+pub struct Alias<A: Api> {
+    /// Its position in the texture's aliases, under which the texture records where it is current.
+    index: usize,
+    /// The WebGPU format of its texels.
+    pub storage: WebGpuFormat,
+    /// Metal's bytes to its texels, and back (its own inverse).
+    pub transform: Transform,
+    texture: A::Texture,
+}
+
+impl<A: Api> Alias<A> {
+    /// The WebGPU texture of the alias.
+    pub fn gpu(&self) -> &A::Texture {
+        &self.texture
+    }
+
+    /// Its position in its texture's aliases.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+}
+
+/// Where a texture's contents are held: the stored texture, the twin, or an alias.
+enum Holder<'a, A: Api> {
+    Stored,
+    Twin,
+    Alias(&'a Alias<A>),
+}
+
+// Not derived: a derive would require `A: Copy`.
+impl<A: Api> Clone for Holder<'_, A> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<A: Api> Copy for Holder<'_, A> {}
+
+/// The holder of a texture's contents [`Memory::current_holder`] finds.
+enum HolderRef<A: Api> {
+    Stored,
+    Twin,
+    Alias(Rc<Alias<A>>),
+}
+
+impl<A: Api> HolderRef<A> {
+    fn holder(&self) -> Holder<'_, A> {
+        match self {
+            HolderRef::Stored => Holder::Stored,
+            HolderRef::Twin => Holder::Twin,
+            HolderRef::Alias(a) => Holder::Alias(a),
+        }
+    }
+}
+
+/// The one view dimension a device without core-features-and-limits binds a texture of `kind` in, fixed at its
+/// creation (WebGPU section 6.1.3).
+fn binding_view_dimension(kind: TextureType) -> TextureViewDimension {
+    match kind {
+        TextureType::Cube => TextureViewDimension::Cube,
+        TextureType::CubeArray => TextureViewDimension::CubeArray,
+        TextureType::D3 => TextureViewDimension::D3,
+        TextureType::D1Array | TextureType::D2Array => TextureViewDimension::D2Array,
+        _ => TextureViewDimension::D2,
+    }
+}
+
+/// The transform between Metal's bytes and a stored texture's texels.
+fn stored_transform(r: Resolution) -> Transform {
+    match r {
+        Resolution::Emulated(Emulation { upload: Upload::SwapRedBlue10, .. }) => Transform::SwapRedBlue10,
+        _ => Transform::None,
+    }
+}
+
 /// A Metal texture: the payload of a texture handle in the executor's object table.
 pub struct Texture<A: Api> {
     /// `MTLPixelFormat`.
     pub format: u32,
     pub resolution: Resolution,
+    /// The descriptor's `MTLTextureSwizzle` channels (red, green, blue, alpha), which shader reads and samples apply.
+    pub swizzle: [u8; 4],
     pub geometry: Geometry,
     pub storage: StorageMode,
     /// `MTLTextureUsage`.
@@ -135,6 +236,8 @@ pub struct Texture<A: Api> {
     /// The formats the stored texture can be viewed in besides its own (`viewFormats`).
     view_formats: Vec<WebGpuFormat>,
     twins: Vec<A::Texture>,
+    /// The aliases of the texture's views in formats its stored texture cannot be viewed in.
+    aliases: RefCell<Vec<Rc<Alias<A>>>>,
     state: RefCell<State>,
 }
 
@@ -185,16 +288,45 @@ impl<A: Api> Texture<A> {
         if self.geometry.kind.is_3d() { 0 } else { slice }
     }
 
+    /// Does `alias` hold the current contents of `(level, layer)`?
+    pub fn alias_current(&self, alias: &Alias<A>, level: u32, layer: u32) -> bool {
+        self.state.borrow().aliases[alias.index][self.sub(level, layer)]
+    }
+
+    /// Does some alias hold the current contents of `(level, layer)`?
+    pub fn any_alias_current(&self, level: u32, layer: u32) -> bool {
+        let i = self.sub(level, layer);
+        self.state.borrow().aliases.iter().any(|a| a[i])
+    }
+
+    /// An alias other than `except` that holds the current contents of subresource `i`.
+    fn current_alias(&self, i: usize, except: Option<usize>) -> Option<Rc<Alias<A>>> {
+        let st = self.state.borrow();
+        self.aliases.borrow().iter().find(|a| Some(a.index) != except && st.aliases[a.index][i]).cloned()
+    }
+
     /// Record which copies of `(level, layer)` hold the current contents after a blit wrote them: the stored texture,
-    /// the twin, or both. A texture over an IOSurface plane is marked written.
+    /// the twin, or both; the aliases are stale. A texture over an IOSurface plane is marked written.
     pub(crate) fn set_current(&self, level: u32, layer: u32, stored: bool, twin: bool) {
         debug_assert!(stored || (twin && self.has_twin()), "a subresource keeps a current copy");
         let i = self.sub(level, layer);
         let mut st = self.state.borrow_mut();
         st.stored[i] = stored;
         st.twin[i] = twin && self.has_twin();
+        for a in &mut st.aliases {
+            a[i] = false;
+        }
         if self.surface.is_some() {
             st.surface_written = true;
+        }
+    }
+
+    /// The WebGPU texture, mipmap level and transform of a holder of the contents.
+    fn holder(&self, h: Holder<'_, A>, level: u32) -> (A::Texture, u32, Transform) {
+        match h {
+            Holder::Stored => (self.stored.clone(), level, stored_transform(self.resolution)),
+            Holder::Twin => (self.twins[level as usize].clone(), 0, Transform::None),
+            Holder::Alias(a) => (a.texture.clone(), level, a.transform),
         }
     }
 
@@ -349,13 +481,19 @@ impl<A: Api> Memory<A> {
         if multisampled != (geometry.sample_count > 1) || (multisampled && geometry.mip_levels != 1) {
             return Err(MemError::undefined(call, "sample count and texture type disagree"));
         }
-        // MTLTextureSwizzle red 2, green 3, blue 4, alpha 5: the identity. A descriptor swizzle changes what every read
-        // of the texture returns; nothing here applies one yet.
+        // The swizzle is the "channel swizzle to use when reading or sampling from the texture" (MTLTexture.h,
+        // MTLTextureDescriptor.swizzle): the shader bindings apply it (`super::view::read_swizzle`), and writes, render
+        // targets, blits and CPU transfers move the texture's own channels. The SPI's write swizzle would apply it to
+        // writes as well, which nothing here does.
         let sw = &d.swizzle;
-        if (sw.red, sw.green, sw.blue, sw.alpha) != (2, 3, 4, 5) {
+        let swizzle = [sw.red, sw.green, sw.blue, sw.alpha];
+        if let Some(c) = swizzle.iter().find(|&&c| c > 5) {
+            return Err(MemError::undefined(call, format!("{c} is not an MTLTextureSwizzle value (MTLTexture.h)")));
+        }
+        if d.write_swizzle_enabled && swizzle != IDENTITY_SWIZZLE {
             return Err(MemError::unimplemented(format!(
-                "{call}: texture swizzle ({}, {}, {}, {}) is not applied by the host yet",
-                sw.red, sw.green, sw.blue, sw.alpha
+                "{call}: writeSwizzleEnabled with swizzle {swizzle:?}: writes through the swizzle are not applied by the \
+                 host"
             )));
         }
         let format = u32::try_from(d.pixel_format).map_err(|_| MemError::undefined(call, "pixel format"))?;
@@ -425,15 +563,7 @@ impl<A: Api> Memory<A> {
             view_formats.push(sibling);
         }
         if !self.features.has(Feature::CoreFeaturesAndLimits) {
-            // A device without core-features-and-limits binds a texture only in the view dimension fixed at creation
-            // (WebGPU section 6.1.3).
-            desc.texture_binding_view_dimension = Some(match kind {
-                TextureType::Cube => TextureViewDimension::Cube,
-                TextureType::CubeArray => TextureViewDimension::CubeArray,
-                TextureType::D3 => TextureViewDimension::D3,
-                TextureType::D1Array | TextureType::D2Array => TextureViewDimension::D2Array,
-                _ => TextureViewDimension::D2,
-            });
+            desc.texture_binding_view_dimension = Some(binding_view_dimension(kind));
         }
         let stored = g
             .call("GPUDevice.createTexture", &desc.label, |d| d.create_texture(&desc))
@@ -463,6 +593,7 @@ impl<A: Api> Memory<A> {
         let state = State {
             stored: vec![true; subs],
             twin: vec![!twins.is_empty(); subs],
+            aliases: Vec::new(),
             purgeable: Purgeable::NonVolatile,
             surface_version: 0,
             surface_written: false,
@@ -471,6 +602,7 @@ impl<A: Api> Memory<A> {
         Ok(Rc::new(Texture {
             format,
             resolution,
+            swizzle,
             geometry,
             storage,
             usage: d.usage,
@@ -481,6 +613,7 @@ impl<A: Api> Memory<A> {
             stored,
             view_formats,
             twins,
+            aliases: RefCell::new(Vec::new()),
             state: RefCell::new(state),
         }))
     }
@@ -648,6 +781,15 @@ impl<A: Api> Memory<A> {
             // have the same numeric value in the destination").
             return Ok(());
         }
+        self.check_format_copies(f, call)
+    }
+
+    /// Do texel copies of `f` keep its bits on this host: a bit-exact format, or one whose copies are proven here
+    /// ([`super::proof`])?
+    pub(crate) fn check_format_copies(&self, f: WebGpuFormat, call: &'static str) -> Result<(), MemError> {
+        if f.texel_copy_exact(None) {
+            return Ok(());
+        }
         match self.proof(f) {
             Some(Ok(())) => Ok(()),
             Some(Err(why)) => {
@@ -657,6 +799,170 @@ impl<A: Api> Memory<A> {
                 "{call}: texel copies of {} must be proven exact on this host first (Memory::prove_texel_copies)",
                 f.name()
             ))),
+        }
+    }
+
+    /// The alias of `t` that holds its contents for views whose format resolves to `view`: an existing one stored
+    /// alike, or a new WebGPU texture of the stored texture's geometry in the view's stored format, with the usages the
+    /// Metal descriptor permits and that format allows (as [`Memory::build_texture`] gives them). A new alias holds
+    /// nothing current: [`Memory::prepare_alias`] fills each subresource before its first use.
+    pub(crate) fn alias(&self, g: &impl Calls<A>, t: &Texture<A>, view: Resolution) -> Result<Rc<Alias<A>>, MemError> {
+        let (storage, transform) = (view.storage(), stored_transform(view));
+        if let Some(a) = t.aliases.borrow().iter().find(|a| a.storage == storage && a.transform == transform) {
+            return Ok(a.clone());
+        }
+        let caps = storage.caps();
+        let unknown = t.usage == usage::UNKNOWN;
+        let wants = |bit: u64| unknown || t.usage & bit != 0;
+        let can_render = self.features.allows(caps.render)
+            && !matches!(
+                view,
+                Resolution::Emulated(Emulation {
+                    write: handling::Write::NotWritable | handling::Write::Refused(_),
+                    ..
+                })
+            );
+        let mut gpu_usage = TextureUsage::TEXTURE_BINDING | TextureUsage::COPY_SRC | TextureUsage::COPY_DST;
+        if (wants(usage::RENDER_TARGET) || t.geometry.mip_levels > 1) && can_render {
+            gpu_usage |= TextureUsage::RENDER_ATTACHMENT;
+        }
+        if wants(usage::SHADER_WRITE) && self.features.allows(caps.storage_wo) {
+            gpu_usage |= TextureUsage::STORAGE_BINDING;
+        }
+        let geometry = &t.geometry;
+        let mut desc = GpuTextureDescriptor::new(
+            extent(geometry.width, geometry.height, geometry.layers()),
+            idl_format(storage),
+            gpu_usage,
+        );
+        desc.label = format!("{} as {}", t.label, storage.name());
+        desc.mip_level_count = geometry.mip_levels;
+        desc.dimension = if geometry.kind.is_3d() { TextureDimension::D3 } else { TextureDimension::D2 };
+        if !self.features.has(Feature::CoreFeaturesAndLimits) {
+            desc.texture_binding_view_dimension = Some(binding_view_dimension(geometry.kind));
+        }
+        let texture = g
+            .call("GPUDevice.createTexture", &desc.label, |d| d.create_texture(&desc))
+            .map_err(gpu_err("GPUDevice.createTexture"))?;
+        let mut aliases = t.aliases.borrow_mut();
+        let alias = Rc::new(Alias { index: aliases.len(), storage, transform, texture });
+        aliases.push(alias.clone());
+        let mut st = t.state.borrow_mut();
+        let subs = st.stored.len();
+        st.aliases.push(vec![false; subs]);
+        Ok(alias)
+    }
+
+    /// Encode the copy of subresource `(level, layer)` of `t` from one holder of its contents to another: a texel copy
+    /// into a buffer, the channel swap when one side stores BGR10A2 swapped and the other does not, and a texel copy
+    /// into the destination. Each side's copies must keep its bits on this host.
+    fn encode_move(
+        &self,
+        g: &impl Calls<A>,
+        encoder: &A::CommandEncoder,
+        t: &Texture<A>,
+        (from, to): (Holder<'_, A>, Holder<'_, A>),
+        (level, layer): (u32, u32),
+    ) -> Result<(), MemError> {
+        const CALL: &str = "a copy between two holders of a texture's contents";
+        for (h, upload) in [(from, false), (to, true)] {
+            match h {
+                Holder::Stored => self.check_stored_transfer(t, CALL, upload)?,
+                Holder::Twin => {}
+                Holder::Alias(a) => self.check_format_copies(a.storage, CALL)?,
+            }
+        }
+        let b = t.blocks.expect("textures with more than one holder have blocks");
+        let (width, height, depth) = t.geometry.level_extent(level);
+        let (bx, by) = b.count(width, height);
+        let images = if t.geometry.kind.is_3d() { depth } else { 1 };
+        let pitch = StagingPitch::new(u64::from(bx) * u64::from(b.bytes), u64::from(by), u64::from(images));
+        let staging = self.copy_staging(g, pitch.size())?;
+        // The twin's texels are blocks; the others' are texels, whole blocks of them for a compressed format.
+        let size = |holder: Holder<'_, A>| match holder {
+            Holder::Twin => extent(bx, by, images),
+            _ if b.compressed() => extent(bx * b.width, by * b.height, images),
+            _ => extent(width, height, images),
+        };
+        let (src_texture, src_level, src_transform) = t.holder(from, level);
+        let (dst_texture, dst_level, dst_transform) = t.holder(to, level);
+        let mut src = TexelCopyTextureInfo::<A>::new(&src_texture);
+        src.mip_level = src_level;
+        src.origin = origin(0, 0, layer);
+        let mut sd = TexelCopyBufferInfo::<A>::new(&staging);
+        sd.bytes_per_row = Some(pitch.bytes_per_row as u32);
+        sd.rows_per_image = Some(by);
+        g.call("GPUCommandEncoder.copyTextureToBuffer", "", |_| encoder.copy_texture_to_buffer(&src, &sd, &size(from)))
+            .map_err(gpu_err("GPUCommandEncoder.copyTextureToBuffer"))?;
+        if src_transform != dst_transform {
+            // One side holds BGR10A2's red and blue fields exchanged: the swap is its own inverse.
+            encode_swap10(self, g, encoder, &staging, 0, pitch.size() / 4)?;
+        }
+        let mut dst = TexelCopyTextureInfo::<A>::new(&dst_texture);
+        dst.mip_level = dst_level;
+        dst.origin = origin(0, 0, layer);
+        g.call("GPUCommandEncoder.copyBufferToTexture", "", |_| encoder.copy_buffer_to_texture(&sd, &dst, &size(to)))
+            .map_err(gpu_err("GPUCommandEncoder.copyBufferToTexture"))
+    }
+
+    /// A holder of the current contents of subresource `i` of `t` other than the alias `except`: the twin, the stored
+    /// texture, or another alias.
+    fn current_holder(&self, t: &Texture<A>, i: usize, except: Option<usize>) -> Option<HolderRef<A>> {
+        let st = t.state.borrow();
+        if t.has_twin() && st.twin[i] {
+            return Some(HolderRef::Twin);
+        }
+        if st.stored[i] {
+            return Some(HolderRef::Stored);
+        }
+        drop(st);
+        t.current_alias(i, except).map(HolderRef::Alias)
+    }
+
+    /// Bring `alias` up to date in the subresources of `t` at `levels` and `slices` (array slices; a 3D texture's
+    /// levels whole) before a GPU use of it, from a current holder of each.
+    pub fn prepare_alias(
+        &self,
+        g: &impl Calls<A>,
+        encoder: &A::CommandEncoder,
+        t: &Texture<A>,
+        alias: &Alias<A>,
+        (levels, slices): (std::ops::Range<u32>, std::ops::Range<u32>),
+    ) -> Result<(), MemError> {
+        let layers = if t.geometry.kind.is_3d() { 0..1 } else { slices };
+        for level in levels {
+            for layer in layers.clone() {
+                let i = t.sub(level, layer);
+                if t.state.borrow().aliases[alias.index][i] {
+                    continue;
+                }
+                let source = self.current_holder(t, i, Some(alias.index)).expect("a subresource keeps a current copy");
+                self.encode_move(g, encoder, t, (source.holder(), Holder::Alias(alias)), (level, layer))?;
+                t.state.borrow_mut().aliases[alias.index][i] = true;
+            }
+        }
+        Ok(())
+    }
+
+    /// GPU work encoded next writes `alias` in the subresources of `t` at `levels` and `layers` (array slices, or the
+    /// whole of a 3D level): every other holder of them becomes stale.
+    pub fn note_alias_write(
+        &self,
+        t: &Texture<A>,
+        alias: &Alias<A>,
+        levels: std::ops::Range<u32>,
+        layers: std::ops::Range<u32>,
+    ) {
+        let mut st = t.state.borrow_mut();
+        for level in levels {
+            for layer in layers.clone() {
+                let i = t.sub(level, t.layer_of(layer));
+                st.stored[i] = false;
+                st.twin[i] = false;
+                for (k, a) in st.aliases.iter_mut().enumerate() {
+                    a[i] = k == alias.index;
+                }
+            }
         }
     }
 
@@ -755,7 +1061,8 @@ impl<A: Api> Memory<A> {
         Ok(())
     }
 
-    /// Write a region's tight bytes into every current copy of the subresource.
+    /// Write a region's tight bytes into every current copy of the subresource: the stored texture, the twin and the
+    /// aliases.
     pub(crate) fn upload_region(
         &self,
         g: &impl Calls<A>,
@@ -785,6 +1092,17 @@ impl<A: Api> Memory<A> {
                 }
                 _ => self.write_texture(g, &t.twins[level as usize], &tp, TextureAspect::All, tight)?,
             }
+        }
+        // The aliases hold the texture's own texels in another format of the same size: the stored placement.
+        let current: Vec<Rc<Alias<A>>> =
+            t.aliases.borrow().iter().filter(|a| t.alias_current(a, level, layer)).cloned().collect();
+        for a in current {
+            self.check_format_copies(a.storage, call)?;
+            let mut data = tight.to_vec();
+            if a.transform == Transform::SwapRedBlue10 {
+                packed::swap_red_blue_10_in_place(&mut data);
+            }
+            self.write_texture(g, &a.texture, &sp, TextureAspect::All, &data)?;
         }
         Ok(())
     }
@@ -838,18 +1156,16 @@ impl<A: Api> Memory<A> {
         Ok(read)
     }
 
-    /// Encode the copy of a region into a staging buffer: from the twin when it is current, else from the stored
-    /// texture.
-    /// Which copy a read of a region comes from: the twin when it is current, else the stored texture, which must
-    /// then be exact to read.
-    fn read_source<'t>(
+    /// Which copy a read of a region comes from: the twin when it is current, else the stored texture when it is,
+    /// else the alias a view wrote; the stored texture and the aliases must then be exact to read.
+    fn read_source(
         &self,
         call: &'static str,
-        t: &'t Texture<A>,
+        t: &Texture<A>,
         l: &RegionLayout,
         level: u32,
         slice: u32,
-    ) -> Result<(&'t A::Texture, Placement, Convert), MemError> {
+    ) -> Result<(A::Texture, Placement, Convert), MemError> {
         let layer = if t.geometry.kind.is_3d() { 0 } else { slice };
         let (sp, tp) = self.placements(t, l, level, slice);
         if t.twin_current(level, layer) {
@@ -860,7 +1176,16 @@ impl<A: Api> Memory<A> {
                 }
                 _ => Convert::None,
             };
-            return Ok((&t.twins[level as usize], tp, convert));
+            return Ok((t.twins[level as usize].clone(), tp, convert));
+        }
+        if !t.stored_current(level, layer) {
+            let a = t.current_alias(t.sub(level, layer), None).expect("a subresource keeps a current copy");
+            self.check_format_copies(a.storage, call)?;
+            let convert = match a.transform {
+                Transform::None => Convert::None,
+                Transform::SwapRedBlue10 => Convert::SwapRedBlue10,
+            };
+            return Ok((a.texture.clone(), sp, convert));
         }
         let convert = match t.resolution {
             Resolution::Emulated(e) => match e.upload {
@@ -871,7 +1196,7 @@ impl<A: Api> Memory<A> {
             _ => Convert::None,
         };
         self.check_stored_transfer(t, call, false)?;
-        Ok((&t.stored, sp, convert))
+        Ok((t.stored.clone(), sp, convert))
     }
 
     pub(crate) fn encode_read(
@@ -886,7 +1211,7 @@ impl<A: Api> Memory<A> {
         let (texture, p, convert) = self.read_source(call, t, l, level, slice)?;
         let pitch = StagingPitch::new(p.row_bytes, u64::from(p.rows), u64::from(p.extent.2));
         let staging = self.staging.take(g, pitch.size())?;
-        let mut src = TexelCopyTextureInfo::<A>::new(texture);
+        let mut src = TexelCopyTextureInfo::<A>::new(&texture);
         src.mip_level = p.level;
         src.origin = origin(p.origin.0, p.origin.1, p.origin.2);
         let mut dst = TexelCopyBufferInfo::<A>::new(&staging);
@@ -900,7 +1225,7 @@ impl<A: Api> Memory<A> {
     }
 
     /// GPU work encoded next writes the stored texture's levels `levels` and layers `layers` (array slices, or the
-    /// whole of a 3D level): the twin of those subresources becomes stale.
+    /// whole of a 3D level): the twin and the aliases of those subresources become stale.
     pub fn note_texture_write(&self, t: &Texture<A>, levels: std::ops::Range<u32>, layers: std::ops::Range<u32>) {
         let mut st = t.state.borrow_mut();
         let per_level = t.per_level();
@@ -910,6 +1235,9 @@ impl<A: Api> Memory<A> {
                 st.stored[i] = true;
                 if !t.twins.is_empty() {
                     st.twin[i] = false;
+                }
+                for a in &mut st.aliases {
+                    a[i] = false;
                 }
             }
         }
@@ -956,6 +1284,9 @@ impl<A: Api> Memory<A> {
         st.stored.fill(true);
         let has_twin = !t.twins.is_empty();
         st.twin.fill(has_twin);
+        for a in &mut st.aliases {
+            a.fill(false);
+        }
         Ok(())
     }
 
@@ -1015,14 +1346,29 @@ impl<A: Api> Memory<A> {
             }
             (&t.stored, sp)
         };
+        // The copy the blit writes takes the subresource's current contents first, unless the blit replaces all of
+        // them: a GPU write or a view in another format may have left it stale.
+        let i = t.sub(level, layer);
+        let (target, current) = {
+            let st = t.state.borrow();
+            if t.has_twin() { (Holder::Twin, st.twin[i]) } else { (Holder::Stored, st.stored[i]) }
+        };
+        let (w, h, d) = t.geometry.level_extent(level);
+        let whole = l.origin == (0, 0, 0) && l.size.0 == w && l.size.1 == h && l.images == d;
+        if !current && !whole {
+            let source = self.current_holder(t, i, None).expect("a subresource keeps a current copy");
+            self.encode_move(g, encoder, t, (source.holder(), target), (level, layer))?;
+        }
         self.encode_bytes_to_texture(g, encoder, (src.gpu(), offset), l, texture, &p)?;
         let mut st = t.state.borrow_mut();
-        let i = t.sub(level, layer);
         if t.has_twin() {
             st.twin[i] = true;
             st.stored[i] = false;
         } else {
             st.stored[i] = true;
+        }
+        for a in &mut st.aliases {
+            a[i] = false;
         }
         if t.surface.is_some() {
             st.surface_written = true;
@@ -1126,7 +1472,7 @@ impl<A: Api> Memory<A> {
         let rows = u64::from(l.blocks.1);
         let pitch = StagingPitch::new(l.row_bytes, rows, u64::from(l.images));
         let staging = self.copy_staging(g, pitch.size())?;
-        let mut src = TexelCopyTextureInfo::<A>::new(texture);
+        let mut src = TexelCopyTextureInfo::<A>::new(&texture);
         src.mip_level = p.level;
         src.origin = origin(p.origin.0, p.origin.1, p.origin.2);
         let mut sd = TexelCopyBufferInfo::<A>::new(&staging);
@@ -1185,9 +1531,10 @@ impl<A: Api> Memory<A> {
         Ok(())
     }
 
-    /// Bring the stored texture up to date with the twin where a blit left it stale, before the next GPU use of the
-    /// texture. Formats WebGPU holds natively are copied on the GPU (encoded into `encoder`); decoded formats need the
-    /// blocks on the CPU, which [`Memory::refresh_decoded`] does: this returns [`Prepare::Decode`] for them.
+    /// Bring the stored texture up to date with the twin where a blit left it stale, or with the alias a view wrote,
+    /// before the next GPU use of the texture. Formats WebGPU holds natively are copied on the GPU (encoded into
+    /// `encoder`); decoded formats need the blocks on the CPU, which [`Memory::refresh_decoded`] does: this returns
+    /// [`Prepare::Decode`] for them.
     pub fn prepare_texture(
         &self,
         g: &impl Calls<A>,
@@ -1207,6 +1554,12 @@ impl<A: Api> Memory<A> {
         for i in stale {
             let level = i as u32 / t.per_level();
             let layer = i as u32 % t.per_level();
+            if !t.twin_current(level, layer) {
+                let alias = t.current_alias(i, None).expect("a subresource keeps a current copy");
+                self.encode_move(g, encoder, t, (Holder::Alias(&alias), Holder::Stored), (level, layer))?;
+                t.state.borrow_mut().stored[i] = true;
+                continue;
+            }
             let (w, h, d) = t.geometry.level_extent(level);
             let (bx, by) = b.count(w, h);
             let images = if t.geometry.kind.is_3d() { d } else { 1 };

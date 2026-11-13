@@ -26,7 +26,10 @@
 //! section 5.9); `attachments` describes how the store and resolve actions then apply.
 //!
 //! **Views.** A texture view binds as a WebGPU view of its root texture over the view's levels and slices, in its
-//! format ([`crate::mem::view`]); its writes are noted on the root's subresources it covers.
+//! format ([`crate::mem::view`]); its writes are noted on the root's subresources it covers. A view in a format the
+//! root's stored texture cannot be viewed in binds through the root's alias, brought up to date before the pass and
+//! noted written in its place; a pass that writes subresources through the one and uses them through the other is
+//! refused.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -36,6 +39,7 @@ use webmetal_wire::{Command, Handle, RenderPassDescriptor, Viewport};
 use crate::embed::Embedder;
 use crate::exec::{EncodeCx, EncoderKind, EncoderService, RecordFailure, Segment, Table, failure};
 use crate::format::handling::{Read, Resolution};
+use crate::format::webgpu::Feature;
 use crate::gpu::idl::{
     BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, BufferBindingType, BufferDescriptor,
     BufferUsage, Color, ColorDict, Extent3D, Extent3DDict, IndexFormat, Origin3D, Origin3DDict, TexelCopyTextureInfo,
@@ -47,6 +51,7 @@ use crate::gpu::{
 };
 use crate::mem::buffer::Buffer;
 use crate::mem::texture::{Prepare, Texture};
+use crate::mem::view::{IDENTITY_SWIZZLE, PassCopies, read_swizzle, swizzle_string};
 use crate::mem::{MemError, Memory};
 use crate::state::SamplerObject;
 
@@ -638,6 +643,8 @@ struct Run<'r, A: Api> {
     draws: usize,
     snapshots: HashMap<u32, A::Texture>,
     notes: Notes<A>,
+    /// The stored textures and aliases the pass's draws bind.
+    copies: PassCopies,
 }
 
 impl<A: Api, E: Embedder> EncoderService<A, E> for RenderEncoder<A> {
@@ -749,6 +756,7 @@ fn run<A: Api>(
         draws: 0,
         snapshots: HashMap::new(),
         notes: Notes::default(),
+        copies: PassCopies::default(),
     };
     r.before(&s, begin_offset)?;
     r.begin_pass(true).map_err(at(begin_offset))?;
@@ -781,6 +789,12 @@ impl<A: Api> Run<'_, A> {
         for (o, t) in &textures {
             if let Tex::Linear(lt) = t {
                 self.memory.prepare_linear(self.g, &self.encoder, lt).map_err(mem_at(*o))?;
+            }
+            if let Some(a) = t.alias() {
+                self.memory
+                    .prepare_alias(self.g, &self.encoder, t.texture(), a, t.root_window())
+                    .map_err(mem_at(*o))?;
+                continue;
             }
             match self.memory.prepare_texture(self.g, &self.encoder, t.texture()).map_err(mem_at(*o))? {
                 Prepare::Ready => {}
@@ -1160,7 +1174,10 @@ impl<A: Api> Run<'_, A> {
         for (t, level, layer) in &self.notes.textures {
             let tex = t.texture();
             let layers = if tex.geometry.kind.is_3d() { 0..1 } else { *layer..layer + 1 };
-            self.memory.note_texture_write(tex, *level..level + 1, layers);
+            match t.alias() {
+                Some(a) => self.memory.note_alias_write(tex, a, *level..level + 1, layers),
+                None => self.memory.note_texture_write(tex, *level..level + 1, layers),
+            }
             if let Tex::Linear(lt) = t {
                 self.memory.note_linear_write(lt);
             }
@@ -1701,7 +1718,15 @@ impl<A: Api> Run<'_, A> {
                         }
                         buffers.push((b.binding, binding));
                     }
-                    (Source::MetalTexture { stage, index }, resource) => {
+                    (
+                        source @ (Source::MetalTexture { stage, index }
+                        | Source::MetalTextureLevel { stage, index, .. }),
+                        resource,
+                    ) => {
+                        let level = match source {
+                            Source::MetalTextureLevel { level, .. } => Some(*level),
+                            _ => None,
+                        };
                         let tex = self.state.slots_ref(*stage).textures.get(index).cloned().ok_or_else(|| {
                             RenderError::undefined(
                                 DRAW,
@@ -1723,12 +1748,13 @@ impl<A: Api> Run<'_, A> {
                                 ));
                             }
                         }
-                        let view = self.texture_view(&tex, resource, *stage, *index)?;
+                        self.copies.add(tex.texture(), tex.alias().map(|a| &**a), tex.root_window(), b.writable())?;
+                        let view = self.texture_view(&tex, resource, *stage, *index, level)?;
                         if b.writable() {
-                            // A storage binding is the first level of the texture or view.
+                            // A storage binding is one level of the texture or view.
                             let (levels, slices) = tex.root_window();
                             for layer in slices {
-                                self.notes.textures.push((tex.clone(), levels.start, layer));
+                                self.notes.textures.push((tex.clone(), levels.start + level.unwrap_or(0), layer));
                             }
                         }
                         views.push((b.binding, view));
@@ -1850,8 +1876,16 @@ impl<A: Api> Run<'_, A> {
         Ok(())
     }
 
-    /// The view of a bound texture for a binding.
-    fn texture_view(&self, tex: &Tex<A>, resource: &Resource, stage: MetalStage, index: u64) -> Result<A::TextureView> {
+    /// The view of a bound texture for a binding: `level` is a storage binding's level (counted from a view's first
+    /// level), `None` a binding of the texture itself.
+    fn texture_view(
+        &self,
+        tex: &Tex<A>,
+        resource: &Resource,
+        stage: MetalStage,
+        index: u64,
+        level: Option<u32>,
+    ) -> Result<A::TextureView> {
         let t: &Texture<A> = tex.texture();
         // The root's subresources the binding sees: every level and slice of a texture, a view's own.
         let (levels, slices) = tex.root_window();
@@ -1878,7 +1912,8 @@ impl<A: Api> Run<'_, A> {
         match tex.resolution() {
             // An X32_Stencil8 view reads the stencil aspect, a WebGPU view of its own.
             Resolution::Native(_) | Resolution::StencilAspect => {}
-            Resolution::Emulated(e) if e.read == Read::Native => {}
+            // A format read with its components rearranged: the view's swizzle below.
+            Resolution::Emulated(e) if matches!(e.read, Read::Native | Read::Swizzle(_)) => {}
             _ => {
                 return Err(RenderError::unimplemented(format!(
                     "{} texture {index}: a texture whose format is emulated with a shader conversion; the conversion \
@@ -1908,15 +1943,28 @@ impl<A: Api> Run<'_, A> {
                 );
             }
             Resource::StorageTexture { view_dimension, .. } => {
+                // Render pipelines are compiled without the textures a draw binds, so a written texture is compiled
+                // as one of one level: its write at a level computed at run time selects level 0 alone, and a level
+                // out of a texture's range is not known to be out of range. Only a texture of one level, written at
+                // level 0, is written as Metal writes it.
                 if tex.geometry().mip_levels != 1 {
                     return Err(RenderError::unimplemented(format!(
-                        "{} texture {index}: a read-write or write-only binding of a texture with {} levels (a WebGPU \
-                         storage binding is one level)",
+                        "{} texture {index}: a read-write or write-only binding of a texture with {} levels: render \
+                         pipeline variants are not compiled for the bound textures' level counts, which the levels a \
+                         function writes at run time select among",
                         stage.name(),
                         tex.geometry().mip_levels
                     )));
                 }
-                if t.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 {
+                if level.unwrap_or(0) != 0 {
+                    return Err(RenderError::unimplemented(format!(
+                        "{} texture {index}: the function writes level {} of a texture of one level; Metal ignores \
+                         the write, and render pipeline variants are not compiled for the bound textures' level counts",
+                        stage.name(),
+                        level.unwrap_or(0)
+                    )));
+                }
+                if tex.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 {
                     return Err(RenderError::undefined(
                         DRAW,
                         format!("{} texture {index} was not created with MTLTextureUsageShaderWrite", stage.name()),
@@ -1955,7 +2003,23 @@ impl<A: Api> Run<'_, A> {
         if let (Some(v), Resource::Texture { .. }) = (tex.view(), resource) {
             v.describe(&mut d, 0..v.geometry.mip_levels, TextureUsage::TEXTURE_BINDING);
         }
-        self.call("GPUTexture.createView", |_| t.gpu().create_view(&d))
+        // The swizzle reads and samples apply (writes take none). Render pipelines have no variant per bound texture
+        // to apply it in the shader, so the WebGPU view applies it; depth reads take none, as in the compiler.
+        let swizzle = read_swizzle(tex.resolution(), tex.swizzle());
+        if let Resource::Texture { sample_type, .. } = resource
+            && swizzle != IDENTITY_SWIZZLE
+            && *sample_type != crate::gpu::idl::TextureSampleType::Depth
+        {
+            if !self.memory.features().has(Feature::TextureComponentSwizzle) {
+                return Err(RenderError::unimplemented(format!(
+                    "{} texture {index}: swizzle {swizzle:?} needs texture-component-swizzle on this host; render \
+                     pipelines have no variant per bound texture to apply it in the shader",
+                    stage.name()
+                )));
+            }
+            d.swizzle = swizzle_string(swizzle);
+        }
+        self.call("GPUTexture.createView", |_| tex.gpu().create_view(&d))
             .map_err(|e| RenderError::gpu("GPUTexture.createView", e))
     }
 
@@ -2133,14 +2197,15 @@ impl<A: Api> Run<'_, A> {
                 RenderError::undefined(DRAW, format!("the pipeline reads color attachment {a}, which the pass lacks"))
             })?;
             let t = c.texture.texture();
-            if t.gpu().usage() & TextureUsage::COPY_SRC == 0 {
+            let source = c.texture.gpu();
+            if source.usage() & TextureUsage::COPY_SRC == 0 {
                 return Err(RenderError::unimplemented(format!(
                     "framebuffer fetch of the memoryless color attachment {a}: the snapshot copy needs its contents"
                 )));
             }
             let (w, h, _) = t.geometry.level_extent(c.level);
             // The snapshot reads as the attachment does: in a view's format (an sRGB sibling, copy-compatible).
-            let format = c.texture.view().and_then(|v| v.view_format()).unwrap_or_else(|| t.gpu().format());
+            let format = c.texture.view().and_then(|v| v.view_format()).unwrap_or_else(|| source.format());
             let snapshot = match self.snapshots.get(&a) {
                 Some(s) => s.clone(),
                 None => {
@@ -2161,7 +2226,7 @@ impl<A: Api> Run<'_, A> {
                     s
                 }
             };
-            let mut src = TexelCopyTextureInfo::<A>::new(t.gpu());
+            let mut src = TexelCopyTextureInfo::<A>::new(source);
             src.mip_level = c.level;
             src.origin = Origin3D::Origin3DDict(Origin3DDict { x: 0, y: 0, z: c.depth_slice.unwrap_or(c.slice) });
             src.aspect = TextureAspect::All;

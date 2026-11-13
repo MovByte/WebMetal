@@ -18,7 +18,8 @@
 //!
 //! **Views.** A texture view ([`crate::mem::view`]) is an attachment through its root texture: the attachment's level
 //! and slice are the view's, checked against the view and moved to the root's, and its WebGPU view (one level and one
-//! slice, as WebGPU's render attachments are) is in the view's format. Attachments record the root's level and slice.
+//! slice, as WebGPU's render attachments are) is in the view's format, of the root's stored texture or, for a view the
+//! stored texture cannot give, of the root's alias. Attachments record the root's level and slice.
 
 use std::rc::Rc;
 
@@ -37,7 +38,7 @@ use crate::mem::calls::Calls;
 use crate::mem::layout::Geometry;
 use crate::mem::linear::LinearTexture;
 use crate::mem::options::StorageMode;
-use crate::mem::texture::{Texture, idl_format};
+use crate::mem::texture::{Alias, Texture, idl_format};
 use crate::mem::view::TextureView;
 
 use super::error::{RenderError, Result};
@@ -89,6 +90,30 @@ impl<A: Api> Tex<A> {
             Tex::Plain(t) => t,
             Tex::Linear(lt) => lt.texture.as_ref().expect("checked at lookup"),
             Tex::View(v) => &v.root,
+        }
+    }
+
+    /// The `MTLTextureSwizzle` channels shader reads apply: a view's own, else the texture's descriptor swizzle.
+    pub fn swizzle(&self) -> [u8; 4] {
+        match self {
+            Tex::View(v) => v.swizzle,
+            _ => self.texture().swizzle,
+        }
+    }
+
+    /// The WebGPU texture WebGPU views of it are made of: a `Copy` view's alias, else the root's stored texture.
+    pub fn gpu(&self) -> &A::Texture {
+        match self {
+            Tex::View(v) => v.gpu(),
+            _ => self.texture().gpu(),
+        }
+    }
+
+    /// The root's alias that holds a `Copy` view's texels.
+    pub fn alias(&self) -> Option<&Rc<Alias<A>>> {
+        match self {
+            Tex::View(v) => v.alias.as_ref(),
+            _ => None,
         }
     }
 
@@ -286,7 +311,7 @@ fn attachment_view<A: Api>(
 ) -> Result<(A::TextureView, u32, u32, Option<u32>)> {
     let t = tex.texture();
     let geo = tex.geometry();
-    if t.gpu().usage() & TextureUsage::RENDER_ATTACHMENT == 0 {
+    if tex.gpu().usage() & TextureUsage::RENDER_ATTACHMENT == 0 {
         return Err(RenderError::undefined(
             BEGIN,
             format!("{what}: the texture was not created with MTLTextureUsageRenderTarget"),
@@ -334,7 +359,7 @@ fn attachment_view<A: Api>(
         d.array_layer_count = Some(1);
     }
     let view = g
-        .call("GPUTexture.createView", &d.label, |_| t.gpu().create_view(&d))
+        .call("GPUTexture.createView", &d.label, |_| tex.gpu().create_view(&d))
         .map_err(|e| RenderError::gpu("GPUTexture.createView", e))?;
     Ok((view, level, slice, depth_slice))
 }
