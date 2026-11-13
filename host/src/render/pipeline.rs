@@ -69,6 +69,10 @@ pub enum UniformValue {
     ResidualOffset { stage: MetalStage, index: u64 },
     /// Length in bytes of the buffer bound at the slot, from the offset.
     BufferLength { stage: MetalStage, index: u64 },
+    /// The patch draw's `numberOfPatchControlPoints`.
+    PatchControlPoints,
+    /// Bytes from the control-point index binding's aligned base to the draw's `controlPointIndexBufferOffset`.
+    ControlPointIndexOffset,
 }
 
 /// One field of the per-draw uniform block.
@@ -104,6 +108,10 @@ pub enum Source {
     /// The snapshot of a color attachment taken before each primitive of a framebuffer-fetch draw (plan section
     /// 5.9): a texture of the attachment's format and sample count.
     FetchSnapshot { attachment: u32 },
+    /// The point records the tessellator generated for a patch draw (`crate::tess`).
+    TessellationVertices,
+    /// The control-point index buffer of a `drawIndexedPatches` draw.
+    ControlPointIndices,
 }
 
 /// A binding's resource layout: one of the `GPUBindGroupLayoutEntry` members.
@@ -251,6 +259,15 @@ pub enum PassPlan {
     /// writes: framebuffer fetch reads `fetched` color attachments through [`Source::FetchSnapshot`] bindings, and
     /// raster order groups read and write memory in primitive order (plan section 5.9).
     PerPrimitive { fetched: Vec<u32> },
+    /// The vertex function is a post-tessellation function: each draw is a patch draw, tessellated before the pass
+    /// (`crate::tess`) and drawn as the generated triangles. `control_point_index_type` and `factor_step_function` are
+    /// the pipeline's `MTLTessellationControlPointIndexType` and `MTLTessellationFactorStepFunction`.
+    Tessellation {
+        patch: airwgsl::tess::PatchType,
+        settings: airwgsl::tess::Settings,
+        control_point_index_type: u64,
+        factor_step_function: u64,
+    },
 }
 
 /// What [`RenderPipeline::create`] builds a pipeline from.
@@ -398,6 +415,10 @@ impl<A: Api> RenderPipeline<A> {
                     | (Source::MetalTextureLevel { .. }, Resource::StorageTexture { .. })
                     | (Source::MetalSampler { .. }, Resource::Sampler { .. })
                     | (Source::FetchSnapshot { .. }, Resource::Texture { .. }) => {}
+                    (
+                        Source::TessellationVertices | Source::ControlPointIndices,
+                        Resource::Buffer { ty: BufferBindingType::ReadOnlyStorage, .. },
+                    ) if matches!(desc.passes, PassPlan::Tessellation { .. }) => {}
                     (s, r) => {
                         return Err(invalid(format!("binding {}: source {s:?} with resource {r:?}", b.binding)));
                     }

@@ -74,11 +74,12 @@ use super::visibility::Visibility;
 pub struct RenderEncoder<A: Api> {
     memory: Rc<Memory<A>>,
     helpers: Rc<Helpers<A>>,
+    tessellator: Rc<crate::tess::Tessellator<A>>,
 }
 
 impl<A: Api> RenderEncoder<A> {
     pub fn new(memory: Rc<Memory<A>>) -> RenderEncoder<A> {
-        RenderEncoder { memory, helpers: Rc::new(Helpers::default()) }
+        RenderEncoder { memory, helpers: Rc::new(Helpers::default()), tessellator: Rc::default() }
     }
 }
 
@@ -124,6 +125,7 @@ struct Limits {
     max_storage_binding: u64,
     max_texture_2d: f64,
     max_vertex_stride: u64,
+    max_buffer: u64,
     depth_clip_control: bool,
     indirect_first_instance: bool,
 }
@@ -157,6 +159,11 @@ enum DrawKind {
         indirect: Option<Handle>,
         indirect_offset: u64,
     },
+    /// `drawPatches` and `drawIndexedPatches`: tessellated before the pass (`crate::tess`) and drawn as the
+    /// generated triangles.
+    Patches(crate::tess::PatchDraw),
+    /// The indirect patch draws, which the A10X does not support.
+    PatchesIndirect,
 }
 
 fn draw_of(c: &Command) -> Option<(u64, DrawKind)> {
@@ -222,6 +229,12 @@ fn draw_of(c: &Command) -> Option<(u64, DrawKind)> {
         Command::RenderDrawPrimitivesIndirect(r) => {
             (r.primitive_type, DrawKind::Indirect { buffer: r.indirect_buffer, offset: r.indirect_buffer_offset })
         }
+        // A patch draw rasterizes the tessellator's triangles (MTLPrimitiveTypeTriangle).
+        Command::RenderDrawPatches(r) => (3, DrawKind::Patches(crate::tess::PatchDraw::of(r))),
+        Command::RenderDrawIndexedPatches(r) => (3, DrawKind::Patches(crate::tess::PatchDraw::of_indexed(r))),
+        Command::RenderDrawPatchesIndirect(_) | Command::RenderDrawIndexedPatchesIndirect(_) => {
+            (3, DrawKind::PatchesIndirect)
+        }
         Command::RenderDrawIndexedPrimitivesIndirect(r) => (
             r.primitive_type,
             DrawKind::IndexedIndirect {
@@ -237,6 +250,14 @@ fn draw_of(c: &Command) -> Option<(u64, DrawKind)> {
 }
 
 const DRAW: &str = "-[MTLRenderCommandEncoder draw...]";
+
+/// The tessellation bindings of a patch draw.
+struct PatchBinding<A: Api> {
+    /// The draw's point records.
+    vertices: A::Buffer,
+    /// Its control-point index buffer's binding (`drawIndexedPatches`).
+    indices: Option<crate::tess::IndexWindow<A>>,
+}
 
 /// An indexed list draw to stage before the pass.
 struct Job<A: Api> {
@@ -262,6 +283,8 @@ struct Scan<A: Api> {
     /// Base vertex and base instance of indirect draws, copied from the indirect arguments into the draw's uniform
     /// block: (draw, source buffer, source offset, offset in the block).
     copies: Vec<(usize, Rc<Buffer<A>>, u64, u64)>,
+    /// The patch draws to tessellate before the pass: (draw, record offset, job).
+    tess: Vec<(usize, u64, crate::tess::Job<A>)>,
 }
 
 fn scan<A: Api>(items: &[(u64, &Command)], objects: &Table, uniform_align: u64) -> std::result::Result<Scan<A>, Fail> {
@@ -275,8 +298,10 @@ fn scan<A: Api>(items: &[(u64, &Command)], objects: &Table, uniform_align: u64) 
         splits: false,
         jobs: Vec::new(),
         copies: Vec::new(),
+        tess: Vec::new(),
     };
     let mut current: Option<Rc<RenderPipeline<A>>> = None;
+    let mut tess = crate::tess::EncoderState::<A>::default();
     let mut max_uniform = 0u64;
     let set_color = |s: &mut Scan<A>, index: u64, action: u64| {
         let i = index as usize;
@@ -288,7 +313,22 @@ fn scan<A: Api>(items: &[(u64, &Command)], objects: &Table, uniform_align: u64) 
     for &(offset, c) in items {
         let bytes = |len: u64| len.max(1).next_multiple_of(256);
         match c {
-            Command::BeginParallelSubEncoder(_) => current = None,
+            Command::BeginParallelSubEncoder(_) => {
+                current = None;
+                tess = crate::tess::EncoderState::default();
+            }
+            Command::RenderSetTessellationFactorBuffer(r) => {
+                tess.factors = match r.buffer {
+                    Some(h) => Some((
+                        buffer::<A>(objects, h, "-[MTLRenderCommandEncoder setTessellationFactorBuffer:...]")
+                            .map_err(at(offset))?,
+                        r.offset,
+                        r.instance_stride,
+                    )),
+                    None => None,
+                };
+            }
+            Command::RenderSetTessellationFactorScale(r) => tess.scale = Some(r.scale),
             Command::RenderSetRenderPipelineState(r) => {
                 current = r.pipeline_state.and_then(|h| payload::<RenderPipeline<A>>(objects, h));
                 if let Some(p) = &current {
@@ -325,6 +365,13 @@ fn scan<A: Api>(items: &[(u64, &Command)], objects: &Table, uniform_align: u64) 
                         s.splits = true;
                     }
                     scan_draw(objects, &mut s, current.as_deref(), ordinal, offset, prim, &kind).map_err(at(offset))?;
+                    let plan = current.as_deref().map(|p| &p.passes);
+                    let job = match &kind {
+                        DrawKind::Patches(d) => crate::tess::job(objects, plan, &tess, d, ordinal),
+                        DrawKind::PatchesIndirect => Err(crate::tess::indirect_patch_draw()),
+                        _ => crate::tess::primitive_draw(plan).map(|()| None),
+                    };
+                    s.tess.extend(job.map_err(at(offset))?.map(|j| (ordinal, offset, j)));
                 }
             }
         }
@@ -420,7 +467,8 @@ fn scan_draw<A: Api>(
                 s.copies.push((ordinal, ib, io + 12, f));
             }
         }
-        DrawKind::Direct { .. } => {}
+        // Patch draws: crate::tess::job.
+        DrawKind::Direct { .. } | DrawKind::Patches(_) | DrawKind::PatchesIndirect => {}
     }
     Ok(())
 }
@@ -645,6 +693,12 @@ struct Run<'r, A: Api> {
     notes: Notes<A>,
     /// The stored textures and aliases the pass's draws bind.
     copies: PassCopies,
+    /// The generated geometry of each patch draw, by draw.
+    tessellated: HashMap<usize, crate::tess::Geometry<A>>,
+    /// The tessellation bindings of the patch draw being prepared.
+    patch_binding: Option<PatchBinding<A>>,
+    /// Checks of the tessellated draws' results, for the command buffer.
+    checks: Vec<crate::gpu::GpuFuture<std::result::Result<(), webmetal_wire::Failure>>>,
 }
 
 impl<A: Api, E: Embedder> EncoderService<A, E> for RenderEncoder<A> {
@@ -655,8 +709,13 @@ impl<A: Api, E: Embedder> EncoderService<A, E> for RenderEncoder<A> {
             segment.records.iter().map(|&i| (records[i].0 as u64, &records[i].1)).collect();
         let label = format!("task {} render encoder {:#x}", cx.task().0, segment.encoder.get());
         let parallel = segment.kind == EncoderKind::ParallelRender;
-        run(self, cx.gpu(), cx.objects(), encoder, &items, label, parallel)
-            .map_err(|(offset, e)| RecordFailure { offset, failure: e.failure() })
+        let mut checks = Vec::new();
+        let r = run(self, cx.gpu(), cx.objects(), encoder, &items, label, parallel, &mut checks)
+            .map_err(|(offset, e)| RecordFailure { offset, failure: e.failure() });
+        for c in checks {
+            cx.check(c);
+        }
+        r
     }
 }
 
@@ -671,11 +730,13 @@ fn limits<A: Api>(g: &crate::exec::Gpu<'_, A>) -> Limits {
         max_storage_binding: l.max_storage_buffer_binding_size.unwrap_or(134_217_728),
         max_texture_2d: f64::from(l.max_texture_dimension_2d.unwrap_or(8192)),
         max_vertex_stride: u64::from(l.max_vertex_buffer_array_stride.unwrap_or(2048)),
+        max_buffer: l.max_buffer_size.unwrap_or(268_435_456),
         depth_clip_control: f.contains("depth-clip-control"),
         indirect_first_instance: f.contains("indirect-first-instance"),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run<A: Api>(
     svc: &RenderEncoder<A>,
     g: &crate::exec::Gpu<'_, A>,
@@ -684,6 +745,7 @@ fn run<A: Api>(
     items: &[(u64, &Command)],
     label: String,
     parallel: bool,
+    checks: &mut Vec<crate::gpu::GpuFuture<std::result::Result<(), webmetal_wire::Failure>>>,
 ) -> std::result::Result<(), Fail> {
     let (begin_offset, desc): (u64, &RenderPassDescriptor) = match items.first() {
         Some((o, Command::BeginRenderPass(r))) => (*o, &r.render_pass_descriptor),
@@ -757,8 +819,13 @@ fn run<A: Api>(
         snapshots: HashMap::new(),
         notes: Notes::default(),
         copies: PassCopies::default(),
+        tessellated: HashMap::new(),
+        patch_binding: None,
+        checks: Vec::new(),
     };
-    r.before(&s, begin_offset)?;
+    let before = r.before(&s, begin_offset, &svc.tessellator);
+    checks.append(&mut r.checks);
+    before?;
     r.begin_pass(true).map_err(at(begin_offset))?;
     for &(offset, c) in &items[1..] {
         r.record(offset, c)?;
@@ -771,8 +838,23 @@ impl<A: Api> Run<'_, A> {
         self.g.call(op, &self.label, f)
     }
 
-    /// Work before the first WebGPU pass: bring textures up to date, stage indices, copy indirect draw parameters.
-    fn before(&mut self, s: &Scan<A>, begin: u64) -> std::result::Result<(), Fail> {
+    /// The device limits the tessellator's bindings respect.
+    fn tess_limits(&self) -> crate::tess::Limits {
+        crate::tess::Limits {
+            storage_offset_alignment: self.limits.storage_align,
+            max_storage_binding: self.limits.max_storage_binding,
+            max_buffer: self.limits.max_buffer,
+        }
+    }
+
+    /// Work before the first WebGPU pass: bring textures up to date, stage indices, copy indirect draw parameters,
+    /// tessellate patch draws.
+    fn before(
+        &mut self,
+        s: &Scan<A>,
+        begin: u64,
+        tessellator: &crate::tess::Tessellator<A>,
+    ) -> std::result::Result<(), Fail> {
         let mut textures: Vec<(u64, Tex<A>)> = Vec::new();
         for c in self.targets.colors.iter().flatten() {
             textures.push((begin, c.texture.clone()));
@@ -846,6 +928,15 @@ impl<A: Api> Run<'_, A> {
                 )
             });
             self.notes.read.push(src.clone());
+        }
+        for (draw, offset, job) in &s.tess {
+            let generated = tessellator.encode(self.g, &self.encoder, job, self.tess_limits()).map_err(at(*offset))?;
+            self.notes.read.push(job.factors.clone());
+            if let Some((b, _)) = &job.patch_indices {
+                self.notes.read.push(b.clone());
+            }
+            self.checks.push(generated.check);
+            self.tessellated.insert(*draw, generated.geometry);
         }
         Ok(())
     }
@@ -1097,6 +1188,8 @@ impl<A: Api> Run<'_, A> {
             | Command::RenderUseHeaps(_)
             | Command::RenderUseHeapsStages(_) => {}
 
+            // The tessellation state is read by the scan, which makes each patch draw's job (crate::tess).
+            Command::RenderSetTessellationFactorBuffer(_) | Command::RenderSetTessellationFactorScale(_) => {}
             Command::RenderMemoryBarrierWithScope(r) => self.barrier(r.scope, r.after, r.before)?,
             Command::RenderMemoryBarrierWithResources(r) => {
                 self.barrier(barrier_scope::BUFFERS | barrier_scope::TEXTURES, r.after, r.before)?
@@ -1403,6 +1496,19 @@ impl<A: Api> Run<'_, A> {
             Some((_, f)) => *f,
             None => FacePlan::One(FaceValues { reference: 0, read_mask: 0xff, write_mask: 0xff }),
         };
+        self.patch_binding = None;
+        if let DrawKind::Patches(d) = kind {
+            let Some(geometry) = self.tessellated.get(&ordinal) else {
+                // A draw of no patches or no instances draws nothing.
+                return Ok(());
+            };
+            let vertices = geometry.vertices.clone();
+            let indices = crate::tess::control_point_indices::<A>(self.objects, d, self.tess_limits())?;
+            if let Some(w) = &indices {
+                self.notes.read.push(w.buffer.clone());
+            }
+            self.patch_binding = Some(PatchBinding { vertices, indices });
+        }
         let uniforms = self.uniforms(&p, ordinal, kind)?;
         let per_primitive = matches!(p.passes, PassPlan::PerPrimitive { .. });
         let split_faces = matches!(faces, FacePlan::Split(..));
@@ -1578,6 +1684,8 @@ impl<A: Api> Run<'_, A> {
             // Copied from the indirect arguments before the pass (`before`); non-indexed draws have base vertex 0.
             DrawKind::Indirect { .. } => (Some(0), None),
             DrawKind::IndexedIndirect { .. } => (None, None),
+            DrawKind::Patches(d) => (Some(0), Some(d.base_instance)),
+            DrawKind::PatchesIndirect => (None, None),
         };
         let mut writes: Vec<(u64, u32)> = Vec::new();
         for group in &p.groups {
@@ -1603,6 +1711,18 @@ impl<A: Api> Run<'_, A> {
                             let (_, _, length) = self.buffer_binding(stage, index, BufferBindingType::Storage)?;
                             u32_of(length, "buffer length")?
                         }
+                        UniformValue::PatchControlPoints => match kind {
+                            DrawKind::Patches(d) => u32_of(d.control_points, "control points")?,
+                            _ => return Err(RenderError::invalid("a control-point count for a draw of no patches")),
+                        },
+                        UniformValue::ControlPointIndexOffset => match &self.patch_binding {
+                            Some(PatchBinding { indices: Some(w), .. }) => u32_of(w.residual, "index offset")?,
+                            _ => {
+                                return Err(RenderError::invalid(
+                                    "a control-point index offset for a draw without control-point indices",
+                                ));
+                            }
+                        },
                     };
                     writes.push((base + f.offset, v));
                 }
@@ -1778,6 +1898,18 @@ impl<A: Api> Run<'_, A> {
                         let base = uniforms.expect("a pipeline with a uniform block has a uniform slot");
                         let arena = self.arena.buffer.clone().expect("uniform blocks live in the arena");
                         buffers.push((b.binding, (arena, base, block.size.next_multiple_of(16))));
+                    }
+                    (Source::TessellationVertices, Resource::Buffer { .. }) => {
+                        let PatchBinding { vertices, .. } = self.patch_binding.as_ref().ok_or_else(|| {
+                            RenderError::invalid("tessellated points bound for a draw that is not a patch draw")
+                        })?;
+                        buffers.push((b.binding, (vertices.clone(), 0, vertices.size())));
+                    }
+                    (Source::ControlPointIndices, Resource::Buffer { .. }) => {
+                        let Some(PatchBinding { indices: Some(w), .. }) = self.patch_binding.as_ref() else {
+                            return Err(RenderError::invalid("control-point indices bound for a draw without them"));
+                        };
+                        buffers.push((b.binding, (w.buffer.gpu().clone(), w.base, w.size)));
                     }
                     (Source::FetchSnapshot { attachment }, Resource::Texture { .. }) => {
                         let view = snapshot_views.and_then(|v| v.get(attachment)).cloned().ok_or_else(|| {
@@ -2026,6 +2158,20 @@ impl<A: Api> Run<'_, A> {
     /// Issue one draw record on the current pass.
     fn issue(&mut self, ordinal: usize, kind: &DrawKind, prim: PrimitiveType) -> Result<()> {
         match kind {
+            DrawKind::Patches(_) => {
+                let g = self
+                    .tessellated
+                    .get(&ordinal)
+                    .cloned()
+                    .ok_or_else(|| RenderError::invalid("a patch draw the scan did not tessellate"))?;
+                self.call("GPURenderPassEncoder.setIndexBuffer", |_| {
+                    self.pass().set_index_buffer(&g.indices, IndexFormat::Uint32, Size64::from(0u32), None)
+                });
+                self.call("GPURenderPassEncoder.drawIndexedIndirect", |_| {
+                    self.pass().draw_indexed_indirect(&g.draw, Size64::from(0u32))
+                });
+            }
+            DrawKind::PatchesIndirect => return Err(RenderError::invalid("an indirect patch draw past the scan")),
             DrawKind::Direct { start, count, instances, base_instance } => {
                 let (start, count) = (u32_of(*start, "vertex start")?, u32_of(*count, "vertex count")?);
                 let (instances, base) =
@@ -2142,7 +2288,7 @@ impl<A: Api> Run<'_, A> {
         let base = u32_of(base_instance, "base instance")?;
         let fetched = match &p.passes {
             PassPlan::PerPrimitive { fetched } => Some(fetched.clone()),
-            PassPlan::Direct => None,
+            PassPlan::Direct | PassPlan::Tessellation { .. } => None,
         };
         let n = prim.vertices_per_primitive();
         let primitives = prim.primitives(count);

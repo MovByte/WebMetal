@@ -2159,17 +2159,12 @@ fn unimplemented_records_are_reported() {
     let f = h.run(&render(
         e,
         pass_color(t, clear(0.0, 0.0, 0.0, 0.0)),
-        vec![Command::RenderDrawPatches(RenderDrawPatches {
-            number_of_patch_control_points: 3,
-            patch_start: 0,
-            patch_count: 1,
-            patch_index_buffer: None,
-            patch_index_buffer_offset: 0,
-            instance_count: 1,
-            base_instance: 0,
+        vec![Command::RenderExecuteCommandsInBuffer(RenderExecuteCommandsInBuffer {
+            indirect_command_buffer: None,
+            execution_range: Range { location: 0, length: 1 },
         })],
     ));
-    refused("pass.tessellation (drawPatches)", &f, status::UNIMPLEMENTED, "drawPatches");
+    refused("executeCommandsInBuffer", &f, status::UNIMPLEMENTED, "executeCommandsInBuffer");
 }
 
 // RenderFragment.m ----------------------------------------------------------------------------------------------------

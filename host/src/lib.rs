@@ -18,3 +18,4 @@ pub mod pipeline;
 pub mod present;
 pub mod render;
 pub mod state;
+pub mod tess;

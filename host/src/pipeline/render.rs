@@ -856,6 +856,9 @@ fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflecti
         }
         // Framebuffer fetch: the snapshot the render path takes before each group of primitives (plan section 5.9).
         BindingSource::FetchSnapshot { attachment } => Source::FetchSnapshot { attachment: *attachment },
+        // Tessellation: the patch draw's generated points and its control-point index buffer (crate::tess).
+        BindingSource::TessellationVertices => Source::TessellationVertices,
+        BindingSource::ControlPointIndices => Source::ControlPointIndices,
         BindingSource::Uniforms(block) => {
             let mut fields = Vec::new();
             for f in &block.fields {
@@ -868,6 +871,8 @@ fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflecti
                     airwgsl::UniformValue::BufferLength { stage: s, index } => {
                         UniformValue::BufferLength { stage: stage(call, *s)?, index: *index }
                     }
+                    airwgsl::UniformValue::PatchControlPoints => UniformValue::PatchControlPoints,
+                    airwgsl::UniformValue::ControlPointIndexOffset => UniformValue::ControlPointIndexOffset,
                     other => return Err(what(format!("a uniform field holding {other:?}"))),
                 };
                 fields.push(UniformField { offset: f.offset, value });
@@ -921,6 +926,9 @@ pub fn plan(call: &str, label: &str, settings: &RenderSettings, c: &Compiled) ->
         // Each primitive in a pass of its own is exact for any geometry; the compiler's overlap prover only allows
         // fewer passes, which the render path does not take yet.
         [airwgsl::PassPlan::PerPrimitive { fetched, .. }] => PassPlan::PerPrimitive { fetched: fetched.clone() },
+        [airwgsl::PassPlan::Tessellation { quad }] => {
+            crate::tess::pass_plan(call, settings.state.tessellation.as_ref(), *quad)?
+        }
         other => return Err(failure::unimplemented(format!("{call}: the pass plans {other:?}"))),
     };
     Ok(RenderPipelineDesc {

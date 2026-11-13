@@ -1030,6 +1030,10 @@ impl<A: Api, E: Embedder> Core<A, E> {
             if let Some(f) = wb {
                 add_job(&mut self.jobs, run, id, written_back(f));
             }
+            // The services' checks of the results (EncodeCx::check), now that all the work is submitted.
+            for f in std::mem::take(&mut run.recording.checks) {
+                add_job(&mut self.jobs, run, id, written_back(f));
+            }
         }
         let after = run.next_job;
         run.actions.push_back(Action { after, kind: ActionKind::Complete });

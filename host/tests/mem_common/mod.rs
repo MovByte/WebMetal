@@ -282,9 +282,11 @@ impl Golden {
         }
     }
 
-    /// The bytes of a `data` record, if the case recorded it.
+    /// The bytes of a `data` record, if the case recorded it (a `step` record may carry the same name).
     pub fn bytes(&self, name: &str) -> Option<Vec<u8>> {
-        let hex = Self::field(self.record(name)?, "hex")?;
+        let key = format!("\"name\":\"{name}\"");
+        let line = self.text.lines().find(|l| l.contains(&key) && l.contains("\"kind\":\"data\""))?;
+        let hex = Self::field(line, "hex")?;
         Some((0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect())
     }
 

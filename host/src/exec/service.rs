@@ -156,11 +156,13 @@ pub(crate) struct Recording<A: Api> {
     pub(crate) debug: Vec<String>,
     /// Submissions made so far.
     pub(crate) submits: u64,
+    /// Checks of the command buffer's results, run once its work has completed ([`EncodeCx::check`]).
+    pub(crate) checks: Vec<GpuFuture<Result<(), Failure>>>,
 }
 
 impl<A: Api> Recording<A> {
     pub(crate) fn new(label: String) -> Recording<A> {
-        Recording { label, encoder: None, debug: Vec::new(), submits: 0 }
+        Recording { label, encoder: None, debug: Vec::new(), submits: 0, checks: Vec::new() }
     }
 
     /// The current command encoder, created with the command buffer's open debug groups pushed on it.
@@ -248,6 +250,12 @@ impl<'a, A: Api, E: Embedder> EncodeCx<'a, A, E> {
 
     pub fn objects(&self) -> &'a Table {
         self.objects
+    }
+
+    /// A check of what the recorded work produced, polled once the command buffer's work has been submitted: an
+    /// error fails the command buffer with it, as a failed write-back does.
+    pub fn check(&mut self, check: GpuFuture<Result<(), Failure>>) {
+        self.recording.checks.push(check);
     }
 
     /// The WebGPU command encoder to record into. Passes begun on it must end before the service returns.
