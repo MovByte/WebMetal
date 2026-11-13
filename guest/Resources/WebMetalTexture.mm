@@ -103,9 +103,6 @@ constexpr uint64_t kKernelPageSize = 0x4000;
     // is its CPU size, which it adds to the device total (_accounted).
     bool _suballocated;
     int64_t _accounted;
-    // _res.info.resourceSize has no source: the kernel resource of a sub-allocated texture (a texture over the
-    // sub-allocator's buffer), which the texture's views share.
-    bool _resourceSizeUnknown;
 }
 @end
 
@@ -291,11 +288,14 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
                              layout.cpuSizeBytes < PageSize() && !(layout.textureData58 & 1) &&
                              !SuballocationDisabled() && SuballocatorServes(layout.cpuSizeBytes, options) &&
                              layout.alignment <= 0x20000;
-    texture->_resourceSizeUnknown = texture->_suballocated;
-    // Otherwise -[IOGPUMetalTexture initWithDevice:descriptor:sysMemSize:...] creates the kernel resource with the CPU
-    // size as its system memory (IOGPU 0x1fcb2c870), whose resident size is that size rounded up to the kernel page;
-    // a memoryless texture has no kernel resource and a resident size of 0 (IOGPU 0x1fcb2bbe8).
-    if (!texture->_suballocated)
+    // A sub-allocated texture is a texture over the primary buffer with a kernel resource of its own
+    // (-[IOGPUMetalTexture initWithPrimaryBuffer:...] 0x1fcb2e244), whose resident size is the primary's. Otherwise
+    // -[IOGPUMetalTexture initWithDevice:descriptor:sysMemSize:...] creates the kernel resource with the CPU size as its
+    // system memory (IOGPU 0x1fcb2c870), whose resident size is that size rounded up to the kernel page; a memoryless
+    // texture has no kernel resource and a resident size of 0 (IOGPU 0x1fcb2bbe8).
+    if (texture->_suballocated)
+        texture->_state.residentSize = kSuballocatedResourceSize;
+    else
         texture->_state.residentSize = d.storageMode == MTLStorageModeMemoryless
                                            ? 0
                                            : (layout.cpuSizeBytes + kKernelPageSize - 1) & ~(kKernelPageSize - 1);
@@ -479,7 +479,6 @@ static WebMetalTexture *newView(WebMetalTexture *parent, SEL _cmd, const ViewArg
                                                 a.levels.length, a.slices.location, a.slices.length, NO);
     WebMetalTexture *view = [WebMetalTexture new];
     setLayout(view, layout);
-    view->_resourceSizeUnknown = parent->_resourceSizeUnknown;
 
     // -[IOGPUMetalResource initWithResource:] (IOGPU 0x1fcb2acc8) takes the parent's device and shares its kernel
     // resource (_res.resourceRef, retained), whose info it copies (the IOSurface and the resource size; the kernel
@@ -691,9 +690,6 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
         return _cpuSizeBytes;
     if (_state.heap)
         return _state.heapLength;
-    if (_parentTexture && _resourceSizeUnknown)
-        WMLoudMethod(self, _cmd, "the kernel resource size of a sub-allocated texture (a texture over the sub-allocator's "
-                                 "buffer), which its views report, is not established for 21H461");
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
     return _state.residentSize;
@@ -702,7 +698,8 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
 // -[IOGPUMetalResource resourceSize] (0x1fcb2e758): _res.info.resourceSize, its low 56 bits. A view, a texture over a
 // buffer and a heap texture take their parent's, their buffer's and the heap's backing resource's _res, info included
 // (-[IOGPUMetalResource initWithResource:] 0x1fcb2acc8, from -[IOGPUMetalTexture initWithTextureInternal:...],
-// initWithBuffer:... and initWithHeap:...); a sub-allocated texture's kernel resource is the sub-allocator's buffer.
+// initWithBuffer:descriptor:offset:bytesPerRow: and initWithHeap:...); a sub-allocated texture's own kernel resource
+// has its primary buffer's resident size (kSuballocatedResourceSize).
 - (NSUInteger)resourceSize
 {
     if (_parentTexture)
@@ -711,9 +708,6 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
         return [(id<WebMetalResourceSize>)_buffer resourceSize];
     if (_state.heap)
         return [_state.heap currentAllocatedSize] & 0x00ffffffffffffffull;
-    if (_resourceSizeUnknown)
-        WMLoudMethod(self, _cmd, "the kernel resource size of a sub-allocated texture (a texture over the sub-allocator's "
-                                 "buffer) is not established for 21H461");
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
     return _state.residentSize & 0x00ffffffffffffffull;

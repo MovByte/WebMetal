@@ -283,6 +283,22 @@ void checkResources(id<MTLDevice> device)
           "a texture answers its kernel resource size and its view the same");
     check(size(bufferTexture) == size(buffer) && size(buffer) == buffer.allocatedSize,
           "a texture over a buffer answers the buffer's kernel resource size");
+    // A sub-allocated buffer or texture has a kernel resource of its own whose resident size is the primary buffer's,
+    // 0x20000 (IOGPUResource::newResourceWithParentResourceID, kernelcache 0xfffffff005bc42d8); its allocated size is
+    // its length (-[IOGPUMetalBuffer allocatedSize] 0x1fcb31bfc, -[IOGPUMetalTexture allocatedSize] 0x1fcb3a7bc). A view
+    // shares its parent's kernel resource and answers its size as its allocated size.
+    id<MTLBuffer> small = [device newBufferWithLength:256 options:MTLResourceStorageModeShared];
+    MTLTextureDescriptor *tiny = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                    width:4 height:4 mipmapped:NO];
+    tiny.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
+    tiny.storageMode = MTLStorageModeShared;
+    id<MTLTexture> tinyTexture = [device newTextureWithDescriptor:tiny];
+    id<MTLTexture> tinyView = [tinyTexture newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm_sRGB];
+    check(small && tinyTexture && tinyView && tinyTexture.allocatedSize < 0x4000,
+          "a small buffer and a small texture are made and the texture is sub-allocated");
+    check(size(small) == 0x20000 && small.allocatedSize == 256, "a sub-allocated buffer answers its primary's size");
+    check(size(tinyTexture) == 0x20000 && size(tinyView) == 0x20000 && tinyView.allocatedSize == 0x20000,
+          "a sub-allocated texture and its view answer the primary's size");
     // -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] fails: no host reads the layout.
     void *bytes = calloc(1, 65536);
     NSString *reason = loudReason(^{

@@ -77,6 +77,17 @@ uint64_t PageSize();
 bool SuballocatorServes(uint64_t length, uint64_t options);
 bool SuballocationDisabled();
 
+// _res.info.resourceSize of a buffer or texture the sub-allocator places. Each has a kernel resource of its own, made
+// with the primary buffer's as its parent (flag 0x800 and the primary's resource id: -[IOGPUMetalBuffer
+// initWithPrimaryBuffer:...] IOGPU 0x1fcb2a1a8, -[IOGPUMetalTexture initWithBuffer:...isStrideTexture:NO] 0x1fcb2e300).
+// IOGPUResource::newResourceWithParentResourceID (kernelcache 0xfffffff005bc42d8) gives it the parent's resident size
+// (+0x78, stored at 0xfffffff005bc4468), which IOGPUDevice::new_resource returns as its resident size
+// (0xfffffff005bd07b8 through 0xfffffff005bc3a8c). The plugin's sub-allocations take the ordinary path, whose primaries
+// are dedicated buffers of 0x20000 bytes (IOGPU 0x1fcb2876c), a page multiple and so their resident size
+// (IOGPUResource::newResourceWithOptions rounds the system memory size up to the page, 0xfffffff005bc3f94). The pinned
+// path, whose primary has the caller's parent length, is reachable only through initializers the plugin answers LOUD.
+constexpr uint64_t kSuballocatedResourceSize = 0x20000;
+
 // The device's connection, and the device's live-allocation total (currentAllocatedSize).
 Connection *DeviceConnection(WebMetalDevice *device);
 void DeviceAddAllocation(WebMetalDevice *device, int64_t bytes);
