@@ -1,7 +1,9 @@
 // Records the layouts of this Mac's Metal.framework base classes for the macOS test shim: for every base class and
 // selector of the 21H461 tables (guest/Generated/WebMetalTargetSurface.h), what the running classes have. Writes a C++
 // source that defines webmetal::kExpectedLayouts with them; the shim's guard then refuses a Metal.framework that
-// differs from the one it was built on.
+// differs from the one it was built on. Selectors are looked up as the guard looks them up (FrameworkMethod). The
+// runtime answers only the word-aligned instance size (class_getInstanceSize), which is recorded as the size: the guard
+// compares sizes rounded up to a word, and an aligned size rounds to itself.
 //
 //     WebMetalLayoutProbe <output.mm>
 
@@ -66,9 +68,7 @@ int main(int argc, char **argv)
                 const BaseSelector &s = base.selectors[i];
                 if (!s.name)
                     continue;
-                SEL selector = sel_registerName(s.name);
-                Method method = s.kind == SelectorKind::Class ? class_getClassMethod(cls, selector)
-                                                              : class_getInstanceMethod(cls, selector);
+                Method method = FrameworkMethod(cls, s.kind, s.name);
                 out += std::string("    {SelectorKind::") + (s.kind == SelectorKind::Class ? "Class" : "Instance") +
                        ", " + literal(s.name) + ", " + literal(method ? method_getTypeEncoding(method) : nullptr) +
                        "},\n";

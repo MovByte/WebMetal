@@ -43,15 +43,18 @@ bool checkIvars(Class cls, const BaseLayout &base, std::string *difference)
     return same;
 }
 
+bool sameImage(const char *a, const char *b)
+{
+    return a == b || (a && b && strcmp(a, b) == 0);
+}
+
 bool checkSelectors(Class cls, const BaseLayout &base, std::string *difference)
 {
     for (size_t i = 0; i < base.selectorCount; i++) {
         const BaseSelector &want = base.selectors[i];
         if (!want.name)
             continue;
-        SEL selector = sel_registerName(want.name);
-        Method method = want.kind == SelectorKind::Class ? class_getClassMethod(cls, selector)
-                                                         : class_getInstanceMethod(cls, selector);
+        Method method = FrameworkMethod(cls, want.kind, want.name);
         const char *sign = want.kind == SelectorKind::Class ? "+" : "-";
         if (!method != !want.types) {
             *difference = describe(base, std::string(sign) + want.name + (method ? " is implemented" : " is missing") +
@@ -70,6 +73,24 @@ bool checkSelectors(Class cls, const BaseLayout &base, std::string *difference)
 
 }  // namespace
 
+Method FrameworkMethod(Class cls, SelectorKind kind, const char *name)
+{
+    const char *image = class_getImageName(cls);
+    SEL selector = sel_registerName(name);
+    for (Class link = cls; link && sameImage(class_getImageName(link), image); link = class_getSuperclass(link)) {
+        unsigned count = 0;
+        Method *methods = class_copyMethodList(kind == SelectorKind::Class ? object_getClass(link) : link, &count);
+        Method found = nullptr;
+        for (unsigned i = 0; !found && i < count; i++)
+            if (method_getName(methods[i]) == selector)
+                found = methods[i];
+        free(methods);
+        if (found)
+            return found;
+    }
+    return nullptr;
+}
+
 bool CheckLayouts(const LayoutSet &layouts, std::string *difference)
 {
     for (size_t i = 0; i < layouts.count; i++) {
@@ -86,9 +107,10 @@ bool CheckLayouts(const LayoutSet &layouts, std::string *difference)
             return false;
         }
         const size_t size = class_getInstanceSize(cls);
-        if (size != base.instanceSize) {
+        if (size != AlignedInstanceSize(base.instanceSize)) {
             *difference = describe(base, "instance size " + std::to_string(size) + ", expected " +
-                                             std::to_string(base.instanceSize));
+                                             std::to_string(AlignedInstanceSize(base.instanceSize)) + " (" +
+                                             std::to_string(base.instanceSize) + " rounded up to a word)");
             return false;
         }
         if (!checkIvars(cls, base, difference) || !checkSelectors(cls, base, difference))
