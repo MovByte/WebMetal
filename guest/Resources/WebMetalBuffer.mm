@@ -194,9 +194,10 @@ WebMetalBuffer *NewDeviceBuffer(WebMetalDevice *device, SEL _cmd, NSUInteger len
 }
 
 // -[AGXA10FamilyDevice newBufferWithBytesNoCopy:length:options:deallocator:] (AGXMetalA10 0x21c8d5ffc):
-// -[AGXBuffer initWithDevice:bytes:length:alignment:options:deallocator:pinnedGPUAddress:] with alignment 1, which
-// asks IOGPU for a kernel resource over the caller's memory of exactly `length` bytes and keeps the deallocator, run when
-// the buffer is deallocated.
+// -[AGXBuffer initWithDevice:bytes:length:alignment:options:deallocator:pinnedGPUAddress:] (0x21c8a45f4) with alignment
+// 1, which asks IOGPU for a kernel resource over the caller's memory with the length as its system memory size, and
+// keeps the deallocator, run when the buffer is deallocated. The kernel resource's resident size is the caller's pages
+// under the length (ClientMemoryResidentSize).
 WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer, NSUInteger length,
                                 MTLResourceOptions options, void (^deallocator)(void *pointer, NSUInteger length))
 {
@@ -209,7 +210,7 @@ WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer,
     InitResourceState(buffer->_state, device, options);
     buffer->_length = length;
     buffer->_contents = pointer;
-    buffer->_state.residentSize = length;
+    buffer->_state.residentSize = memoryless ? length : ClientMemoryResidentSize(device, _cmd, pointer, length);
     buffer->_deallocator = [deallocator copy];
     Connection *connection = DeviceConnection(device);
     buffer->_state.handle = connection->NewHandle();

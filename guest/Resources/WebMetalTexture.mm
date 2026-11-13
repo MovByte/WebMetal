@@ -57,14 +57,6 @@ namespace {
 
 constexpr char kLayout[] = "the A10X texture layout (AGX::TextureGen2 in AGXMetalA10) of a texture over an IOSurface or "
                            "a buffer is not ported";
-constexpr char kNoCopySize[] = "the size of the kernel resource IOGPU makes over caller memory for a texture "
-                               "(sysMemSize: the layout's size) is not established for 21H461";
-
-// The kernel's page size on 21H461 (page_size, set to 0x4000 at 0xfffffff007339070 of kernelcache.release.ipad7).
-// IOGPUResource::newResourceWithOptions (0xfffffff005bc3f94) rounds a resource's system memory up to it, and the
-// rounded size is the resident size new_resource returns (IOGPUDevice::new_resource, 0xfffffff005bd07b4).
-constexpr uint64_t kKernelPageSize = 0x4000;
-
 }  // namespace
 
 @interface WebMetalTexture () {
@@ -107,7 +99,6 @@ constexpr uint64_t kKernelPageSize = 0x4000;
     int64_t _accounted;
     // A texture over caller memory (newTextureWithBytesNoCopy:length:descriptor:deallocator:): IOGPUMetalTexture's
     // _pointer, _length and _deallocator.
-    bool _noCopy;
     void *_pointer;
     NSUInteger _length;
     void (^_deallocator)(void *pointer, NSUInteger length);
@@ -254,7 +245,7 @@ static void create(WebMetalDevice *device, SEL _cmd, WebMetalTexture *texture, c
     if (!reply.ok)
         WMLoudMethod(device, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
     texture->_state.created = true;
-    if (texture->_hasLayout && !texture->_noCopy) {
+    if (texture->_hasLayout) {
         texture->_accounted = static_cast<int64_t>(texture->_suballocated ? texture->_cpuSizeBytes
                                                                           : texture->_state.residentSize);
         DeviceAddAllocation(device, texture->_accounted);
@@ -321,7 +312,8 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
 // argsSize:deallocator:] (IOGPU 0x1fcb30400) make the kernel resource over the caller's memory, the layout's size from
 // bytes on, keeping the pointer, the length and a copy of the deallocator. -validateBufferTextureWithSize: (0x21c982338)
 // checks the length and the watermark only for layouts with +0x17a set, which a texture without a buffer or an IOSurface
-// does not have. The memory holds the texels in the A10X layout; the host keeps it and the texture equal
+// does not have. The kernel resource's resident size is the caller's pages under the layout's size
+// (ClientMemoryResidentSize). The memory holds the texels in the A10X layout; the host keeps it and the texture equal
 // (CreateTextureNoCopy).
 WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes, NSUInteger length,
                                   MTLTextureDescriptor *descriptor, void (^deallocator)(void *pointer, NSUInteger length))
@@ -334,10 +326,10 @@ WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes,
         return nil;
     WebMetalTexture *texture = newTextureObject(device, _cmd, d);
     setLayout(texture, layout);
-    texture->_noCopy = true;
     texture->_pointer = bytes;
     texture->_length = length;
     texture->_deallocator = [deallocator copy];
+    texture->_state.residentSize = ClientMemoryResidentSize(device, _cmd, bytes, layout.cpuSizeBytes);
     const agx::SystemValues system = LayoutSystemValues();
     wire::CreateTextureNoCopy request;
     request.texture = texture->_state.handle;
@@ -666,7 +658,7 @@ uint64_t KernelResourceKey(id resource)
 {
     using namespace webmetal;
     if (_state.created && !_state.heap && !_parentTexture) {
-        if (_hasLayout && !_noCopy)
+        if (_hasLayout)
             DeviceAddAllocation(_state.device, -_accounted);
         else
             DeviceAddUnsized(_state.device, -1);
@@ -788,8 +780,6 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
         return _state.heapLength;
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
-    if (_noCopy || (_parentTexture && _parentTexture->_noCopy))
-        WMLoudMethod(self, _cmd, kNoCopySize);
     return _state.residentSize;
 }
 
@@ -808,8 +798,6 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
         return [_state.heap currentAllocatedSize] & 0x00ffffffffffffffull;
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
-    if (_noCopy)
-        WMLoudMethod(self, _cmd, kNoCopySize);
     return _state.residentSize & 0x00ffffffffffffffull;
 }
 

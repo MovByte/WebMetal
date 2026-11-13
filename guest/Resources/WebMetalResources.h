@@ -72,6 +72,23 @@ constexpr uint64_t kHazardTrackingModeMask = 0x3 << kHazardTrackingModeShift;
 // The page size the driver rounds allocations to (vm_page_size, read by AGXBuffer's initializers).
 uint64_t PageSize();
 
+// The kernel's page size on 21H461 (page_size, set to 0x4000 at 0xfffffff007339070 of kernelcache.release.ipad7).
+// IOGPUResource::newResourceWithOptions (0xfffffff005bc3f94) rounds a resource's system memory up to it, and the
+// rounded size is the resident size new_resource returns (IOGPUDevice::new_resource, 0xfffffff005bd07b4).
+constexpr uint64_t kKernelPageSize = 0x4000;
+
+// _res.info.resourceSize of a buffer or texture over caller memory (newBufferWithBytesNoCopy:..., whose system memory
+// size is the length, and newTextureWithBytesNoCopy:..., whose is the layout's CPU size). IOGPU asks for resource type
+// 0x80 with the pointer and that size (-[IOGPUMetalBuffer initWithDevice:pointer:...] IOGPU 0x1fcb2b490 and
+// -[IOGPUMetalTexture initWithDevice:descriptor:sysMemPointer:...] 0x1fcb30488), which IOGPUDevice::new_resource
+// (kernelcache 0xfffffff005bd0408) without a parent resource gives to IOGPUResource::newResourceWithClientBuffer
+// (0xfffffff005bc3ab8, from 0xfffffff005bd0784). It maps the task's pages under the memory, the size plus the pointer's
+// offset in its page rounded up to the page (0xfffffff005bc3b4c), and keeps that as the resident size (+0x78,
+// 0xfffffff005bc3bec), which it adds to the device's allocation total (0xfffffff005bc3cfc) and new_resource returns
+// (0xfffffff005bd07b4). That holds when the task's map page size (vm_map_page_size) is the kernel's; otherwise the
+// size comes from the memory descriptor's DMA map length (0xfffffff005bc3bd4), which is LOUD.
+uint64_t ClientMemoryResidentSize(id self, SEL _cmd, const void *pointer, uint64_t sysMemSize);
+
 // The device's sub-allocator (IOGPUMetalSuballocatorAllocate) and the com.apple.Metal DisableDriverSuballocation
 // preference that turns driver sub-allocation off (WebMetalBuffer.mm).
 bool SuballocatorServes(uint64_t length, uint64_t options);

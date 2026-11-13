@@ -356,10 +356,21 @@ void checkResources(id<MTLDevice> device)
     // A tracked kernel resource no committed command buffer uses has an event 0 the kernel has not stamped.
     check(complete(buffer) && complete(bufferTexture) && complete(texture) && complete(view),
           "tracked kernel resources no command buffer uses are complete");
+}
+
+// Resources over caller memory, once checkResources' textures without an A10X layout (which leave the device's total
+// unanswered) are gone.
+void checkNoCopy(id<MTLDevice> device)
+{
+    auto size = [](id resource) { return [(id<SPIResources>)resource resourceSize]; };
     // A texture over memory a texture layout filled (-[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:
-    // deallocator:]): its texels are the memory's, its deallocator receives the memory, and the size of its kernel
-    // resource is LOUD.
-    td.hazardTrackingMode = MTLHazardTrackingModeDefault;
+    // deallocator:]): its texels are the memory's, its deallocator receives the memory, and its kernel resource holds the
+    // caller's pages under the layout's size (IOGPUResource::newResourceWithClientBuffer, kernelcache
+    // 0xfffffff005bc3b4c), which its sizes and the device's total report.
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                  width:64 height:64 mipmapped:NO];
+    td.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
+    td.storageMode = MTLStorageModeShared;
     id<SPITextureLayout> layout = [(id<SPIDevice>)device newTextureLayoutWithDescriptor:td isHeapOrBufferBacked:NO];
     void *bytes = nullptr;
     check(layout && posix_memalign(&bytes, layout.alignment, layout.size) == 0, "a texture layout and its memory");
@@ -371,6 +382,8 @@ void checkResources(id<MTLDevice> device)
     [layout finalizeTextureMemory:bytes];
     __block void *released = nullptr;
     __block NSUInteger releasedLength = 0;
+    const NSUInteger allocatedBefore = device.currentAllocatedSize;
+    NSUInteger pages = 0;
     @autoreleasepool {
         id<MTLTexture> noCopy = [(id<SPIDevice>)device newTextureWithBytesNoCopy:bytes length:layout.size descriptor:td
                                                                      deallocator:^(void *pointer, NSUInteger length) {
@@ -381,12 +394,33 @@ void checkResources(id<MTLDevice> device)
         std::vector<uint32_t> read(64 * 64);
         [noCopy getBytes:read.data() bytesPerRow:256 fromRegion:MTLRegionMake2D(0, 0, 64, 64) mipmapLevel:0];
         check(read == texels, "getBytes of a texture over caller memory reads the memory's texels");
-        NSString *reason = loudReason(^{
-            (void)noCopy.allocatedSize;
-        });
-        check([reason containsString:@"over caller memory"], "the kernel resource size of a no-copy texture is LOUD");
+        // The system memory size is the texture's CPU size (-[AGXTexture getCPUSizeBytes]), the layout's size without
+        // the watermark.
+        const uint64_t cpuSize = ((uint64_t (*)(id, SEL))objc_msgSend)(noCopy, sel_registerName("getCPUSizeBytes"));
+        pages = (cpuSize + (reinterpret_cast<uintptr_t>(bytes) & 0x3fff) + 0x3fff) & ~uint64_t(0x3fff);
+        id<MTLTexture> noCopyView = [noCopy newTextureViewWithPixelFormat:td.pixelFormat];
+        check(cpuSize == layout.size - 0x10 && size(noCopy) == pages && noCopy.allocatedSize == pages &&
+                  size(noCopyView) == pages && noCopyView.allocatedSize == pages &&
+                  device.currentAllocatedSize - allocatedBefore == pages,
+              "a no-copy texture's kernel resource holds the caller's pages under the layout's size");
     }
     check(released == bytes && releasedLength == layout.size, "the deallocator receives the memory and its length");
+    check(device.currentAllocatedSize == allocatedBefore, "a released no-copy texture leaves the device's total");
+    // A buffer over caller memory (-[AGXBuffer initWithDevice:bytes:length:...]): its kernel resource holds the pages
+    // under the length from the pointer's offset in its page. (The host takes memory in 4096-byte units.)
+    void *pagesForBuffer = nullptr;
+    check(posix_memalign(&pagesForBuffer, 0x4000, 0x8000) == 0, "memory for a no-copy buffer");
+    @autoreleasepool {
+        id<MTLBuffer> start = [device newBufferWithBytesNoCopy:pagesForBuffer length:0x1000
+                                                       options:MTLResourceStorageModeShared deallocator:nil];
+        id<MTLBuffer> across = [device newBufferWithBytesNoCopy:static_cast<char *>(pagesForBuffer) + 0x3000
+                                                         length:0x2000
+                                                        options:MTLResourceStorageModeShared deallocator:nil];
+        check(size(start) == 0x4000 && start.allocatedSize == 0x4000 && size(across) == 0x8000 &&
+                  across.allocatedSize == 0x8000,
+              "a no-copy buffer's kernel resource holds the caller's pages under its length");
+    }
+    free(pagesForBuffer);
     free(bytes);
 }
 
@@ -556,7 +590,10 @@ int main(int argc, char **argv)
         }
         checkDevice(device);
         checkQueue(device);
-        checkResources(device);
+        @autoreleasepool {
+            checkResources(device);
+        }
+        checkNoCopy(device);
         checkStamps(device);
         checkListings(device);
         checkConstants();

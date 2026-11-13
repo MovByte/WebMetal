@@ -12,6 +12,16 @@ uint64_t PageSize()
     return vm_page_size;
 }
 
+uint64_t ClientMemoryResidentSize(id self, SEL _cmd, const void *pointer, uint64_t sysMemSize)
+{
+    const uint64_t page = PageSize();
+    if (page != kKernelPageSize)
+        WMLoudMethod(self, _cmd, "a resource over caller memory in a task whose page size is not the kernel's: its "
+                                 "resident size is the memory descriptor's DMA map length, which is not established");
+    const uint64_t offset = reinterpret_cast<uintptr_t>(pointer) & (page - 1);
+    return (sysMemSize + page + offset - 1) & ~(page - 1);
+}
+
 ResourceState::~ResourceState()
 {
     if (iosurface)
