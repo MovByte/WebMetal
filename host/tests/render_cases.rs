@@ -2467,5 +2467,22 @@ fn view_attachments() {
     for px in stored.chunks(4) {
         assert!(px[..3].iter().all(|&c| c.abs_diff(188) <= 1) && px[3] == 255, "{px:?}");
     }
+
+    // A BGRA8Unorm view of an RGBA8Unorm texture, which the texture's alias holds: the clear color lands with red and
+    // blue in the view's order. The texture's next pass, which loads it, takes the alias's texels into its stored
+    // texture first (the harness's readback blit reads the stored texture).
+    const BGRA8_UNORM: u64 = 80;
+    let rgba = h
+        .texture(texture_descriptor(pf::RGBA8_UNORM, 4, 4, STORAGE_PRIVATE, usage | usage::PIXEL_FORMAT_VIEW))
+        .unwrap();
+    clear_pass(rgba, 0, 0, clear(0.0, 0.0, 0.0, 1.0));
+    let bgra = h.handle();
+    h.ok(Request::CreateTextureView(CreateTextureView { texture: rgba, view: bgra, pixel_format: BGRA8_UNORM }));
+    clear_pass(bgra, 0, 0, clear(1.0, 0.0, 0.0, 1.0));
+    let mut p = pass_color(rgba, clear(0.0, 0.0, 0.0, 0.0));
+    // MTLLoadActionLoad.
+    p.color_attachments[0].load_action = 1;
+    h.run_ok(&render(h.handle(), p, vec![]));
+    assert_eq!(h.read_texture(rgba, 4, 4, 16), texels([0, 0, 255, 255], 16));
     h.g.assert_no_errors();
 }

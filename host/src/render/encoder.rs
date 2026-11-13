@@ -26,7 +26,10 @@
 //! section 5.9); `attachments` describes how the store and resolve actions then apply.
 //!
 //! **Views.** A texture view binds as a WebGPU view of its root texture over the view's levels and slices, in its
-//! format ([`crate::mem::view`]); its writes are noted on the root's subresources it covers.
+//! format ([`crate::mem::view`]); its writes are noted on the root's subresources it covers. A view in a format the
+//! root's stored texture cannot be viewed in binds through the root's alias, brought up to date before the pass and
+//! noted written in its place; a pass that writes subresources through the one and uses them through the other is
+//! refused.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -48,7 +51,7 @@ use crate::gpu::{
 };
 use crate::mem::buffer::Buffer;
 use crate::mem::texture::{Prepare, Texture};
-use crate::mem::view::{IDENTITY_SWIZZLE, read_swizzle, swizzle_string};
+use crate::mem::view::{IDENTITY_SWIZZLE, PassCopies, read_swizzle, swizzle_string};
 use crate::mem::{MemError, Memory};
 use crate::state::SamplerObject;
 
@@ -640,6 +643,8 @@ struct Run<'r, A: Api> {
     draws: usize,
     snapshots: HashMap<u32, A::Texture>,
     notes: Notes<A>,
+    /// The stored textures and aliases the pass's draws bind.
+    copies: PassCopies,
 }
 
 impl<A: Api, E: Embedder> EncoderService<A, E> for RenderEncoder<A> {
@@ -751,6 +756,7 @@ fn run<A: Api>(
         draws: 0,
         snapshots: HashMap::new(),
         notes: Notes::default(),
+        copies: PassCopies::default(),
     };
     r.before(&s, begin_offset)?;
     r.begin_pass(true).map_err(at(begin_offset))?;
@@ -783,6 +789,12 @@ impl<A: Api> Run<'_, A> {
         for (o, t) in &textures {
             if let Tex::Linear(lt) = t {
                 self.memory.prepare_linear(self.g, &self.encoder, lt).map_err(mem_at(*o))?;
+            }
+            if let Some(a) = t.alias() {
+                self.memory
+                    .prepare_alias(self.g, &self.encoder, t.texture(), a, t.root_window())
+                    .map_err(mem_at(*o))?;
+                continue;
             }
             match self.memory.prepare_texture(self.g, &self.encoder, t.texture()).map_err(mem_at(*o))? {
                 Prepare::Ready => {}
@@ -1162,7 +1174,10 @@ impl<A: Api> Run<'_, A> {
         for (t, level, layer) in &self.notes.textures {
             let tex = t.texture();
             let layers = if tex.geometry.kind.is_3d() { 0..1 } else { *layer..layer + 1 };
-            self.memory.note_texture_write(tex, *level..level + 1, layers);
+            match t.alias() {
+                Some(a) => self.memory.note_alias_write(tex, a, *level..level + 1, layers),
+                None => self.memory.note_texture_write(tex, *level..level + 1, layers),
+            }
             if let Tex::Linear(lt) = t {
                 self.memory.note_linear_write(lt);
             }
@@ -1725,6 +1740,7 @@ impl<A: Api> Run<'_, A> {
                                 ));
                             }
                         }
+                        self.copies.add(tex.texture(), tex.alias().map(|a| &**a), tex.root_window(), b.writable())?;
                         let view = self.texture_view(&tex, resource, *stage, *index)?;
                         if b.writable() {
                             // A storage binding is the first level of the texture or view.
@@ -1919,7 +1935,7 @@ impl<A: Api> Run<'_, A> {
                         tex.geometry().mip_levels
                     )));
                 }
-                if t.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 {
+                if tex.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 {
                     return Err(RenderError::undefined(
                         DRAW,
                         format!("{} texture {index} was not created with MTLTextureUsageShaderWrite", stage.name()),
@@ -1974,7 +1990,7 @@ impl<A: Api> Run<'_, A> {
             }
             d.swizzle = swizzle_string(swizzle);
         }
-        self.call("GPUTexture.createView", |_| t.gpu().create_view(&d))
+        self.call("GPUTexture.createView", |_| tex.gpu().create_view(&d))
             .map_err(|e| RenderError::gpu("GPUTexture.createView", e))
     }
 
@@ -2152,14 +2168,15 @@ impl<A: Api> Run<'_, A> {
                 RenderError::undefined(DRAW, format!("the pipeline reads color attachment {a}, which the pass lacks"))
             })?;
             let t = c.texture.texture();
-            if t.gpu().usage() & TextureUsage::COPY_SRC == 0 {
+            let source = c.texture.gpu();
+            if source.usage() & TextureUsage::COPY_SRC == 0 {
                 return Err(RenderError::unimplemented(format!(
                     "framebuffer fetch of the memoryless color attachment {a}: the snapshot copy needs its contents"
                 )));
             }
             let (w, h, _) = t.geometry.level_extent(c.level);
             // The snapshot reads as the attachment does: in a view's format (an sRGB sibling, copy-compatible).
-            let format = c.texture.view().and_then(|v| v.view_format()).unwrap_or_else(|| t.gpu().format());
+            let format = c.texture.view().and_then(|v| v.view_format()).unwrap_or_else(|| source.format());
             let snapshot = match self.snapshots.get(&a) {
                 Some(s) => s.clone(),
                 None => {
@@ -2180,7 +2197,7 @@ impl<A: Api> Run<'_, A> {
                     s
                 }
             };
-            let mut src = TexelCopyTextureInfo::<A>::new(t.gpu());
+            let mut src = TexelCopyTextureInfo::<A>::new(source);
             src.mip_level = c.level;
             src.origin = Origin3D::Origin3DDict(Origin3DDict { x: 0, y: 0, z: c.depth_slice.unwrap_or(c.slice) });
             src.aspect = TextureAspect::All;

@@ -47,6 +47,7 @@ pub mod usage {
     pub const SHADER_READ: u64 = 0x1;
     pub const SHADER_WRITE: u64 = 0x2;
     pub const RENDER_TARGET: u64 = 0x4;
+    pub const PIXEL_FORMAT_VIEW: u64 = 0x10;
 }
 pub const STORAGE_SHARED: u64 = 0;
 pub const STORAGE_PRIVATE: u64 = 2;

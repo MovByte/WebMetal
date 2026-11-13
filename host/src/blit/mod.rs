@@ -19,7 +19,7 @@
 //!
 //! A texture view's bytes are its root texture's ([`crate::mem::view`]): a blit through a view checks Metal's rules
 //! against the view (its levels, slices, extents and pixel format) and moves the root's subresources at the view's
-//! bases.
+//! bases. Mipmaps generated through a view the root's stored texture cannot give are made in the root's alias.
 
 pub mod depth;
 pub mod kernels;
@@ -40,7 +40,7 @@ use crate::mem::buffer::Buffer;
 use crate::mem::calls::Calls;
 use crate::mem::layout::{Geometry, TextureType};
 use crate::mem::linear::LinearTexture;
-use crate::mem::texture::{Texture, TextureRegion, depth_float_only};
+use crate::mem::texture::{Alias, Texture, TextureRegion, depth_float_only};
 use crate::mem::view::TextureView;
 use crate::mem::{MemError, Memory};
 
@@ -108,6 +108,22 @@ impl<A: Api> Tex<A> {
         match self {
             Tex::View(v) => v.swizzle,
             _ => self.texture().swizzle,
+        }
+    }
+
+    /// The WebGPU texture WebGPU views of it are made of: a `Copy` view's alias, else the root's stored texture.
+    pub(crate) fn gpu(&self) -> &A::Texture {
+        match self {
+            Tex::View(v) => v.gpu(),
+            _ => self.texture().gpu(),
+        }
+    }
+
+    /// The root's alias that holds a `Copy` view's texels.
+    pub(crate) fn alias(&self) -> Option<&Rc<Alias<A>>> {
+        match self {
+            Tex::View(v) => v.alias.as_ref(),
+            _ => None,
         }
     }
 
@@ -591,7 +607,13 @@ impl<A: Api> BlitService<A> {
         check_blit_texture(CALL, &tex)?;
         tex.prepare(mem, g, &encoder)?;
         let (levels, slices) = tex.root_window();
-        let w = texture::MipWindow { format: tex.format(), resolution: tex.resolution(), levels, slices };
+        let w = texture::MipWindow {
+            format: tex.format(),
+            resolution: tex.resolution(),
+            levels,
+            slices,
+            alias: tex.alias().cloned(),
+        };
         texture::generate_mipmaps(mem, g, &encoder, tex.texture(), &w)?;
         tex.written(mem, g, &encoder)
     }

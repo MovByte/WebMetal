@@ -14,15 +14,19 @@
 //! - `Same`, `SharedStorage`, `ViewFormat` and `StencilAspect` are WebGPU views of the root ([`TextureView::describe`]):
 //!   the root's format or its sRGB sibling (which every texture lists in `viewFormats`), or the stencil aspect of a
 //!   `depth32float-stencil8` texture.
-//! - `Copy` and `FromBlocks` need a second texture kept equal to the root through every CPU, blit and GPU write of
-//!   either; the memory module does not keep such a texture yet, so those views are refused when they are created
-//!   (status 2), and nothing ever reads a stale copy.
+//! - `Copy` views are WebGPU views of the root's [`Alias`] in the view's stored format, which the memory module keeps
+//!   equal to the root's other copies at each use ([`crate::mem::texture`], "Aliases"). The texel copies between them
+//!   must keep both formats' bits on this host, which is checked when the view is made; views of multisample textures
+//!   (whose contents WebGPU does not copy through buffers) and of depth and stencil formats are refused.
+//! - `FromBlocks` needs a second texture filled from a compressed texture's blocks, which the memory module does not
+//!   keep yet: such views are refused when they are created (status 2).
 //!
-//! **Bytes.** Under `Same`, `SharedStorage` and `ViewFormat` the view's Metal bytes are the root's bytes: the formats
-//! store the same bytes with the same transforms, or are sRGB siblings that differ only in how a shader converts them.
-//! `replaceRegion:`, `getBytes:` and blits through such a view are the root's transfers of the root's subresources at
-//! the view's bases ([`TextureView::root_level`], [`TextureView::root_slice`]), after Metal's rules are checked
-//! against the view. The stencil view's bytes are one aspect of the root's; its transfers are refused with the reason.
+//! **Bytes.** Under every plan but `StencilAspect` the view's Metal bytes are the root's bytes: the formats store the
+//! same bytes with the same transforms, are sRGB siblings that differ only in how a shader converts them, or are held
+//! in an alias equal to the root. `replaceRegion:`, `getBytes:` and blits through such a view are the root's transfers
+//! of the root's subresources at the view's bases ([`TextureView::root_level`], [`TextureView::root_slice`]), after
+//! Metal's rules are checked against the view. The stencil view's bytes are one aspect of the root's; its transfers
+//! are refused with the reason.
 //!
 //! **Swizzle.** A view's swizzle is the one it is made with, or its parent's (the parent texture's descriptor swizzle,
 //! or the parent view's). Like a texture's, it applies to shader reads and samples only ([`read_swizzle`]): through the
@@ -42,6 +46,7 @@ use std::rc::Rc;
 use crate::format::handling::{self, Dimension, Read, Resolution, Swizzle, Unavailable};
 use crate::format::reinterpret::{ViewPlan, view_plan};
 use crate::format::table::METAL_FORMATS;
+use crate::format::webgpu::WebGpuFormat;
 use crate::gpu::Api;
 use crate::gpu::idl::{TextureAspect, TextureFormat, TextureViewDescriptor, TextureViewDimension};
 use webmetal_wire::{Handle, Range as WireRange, TextureSwizzleChannels};
@@ -52,7 +57,7 @@ use super::error::MemError;
 use super::layout::{Geometry, RegionArgs, RegionLayout, TextureType};
 use super::memory::Memory;
 use super::options::StorageMode;
-use super::texture::{Texture, TextureRead, idl_format, usage};
+use super::texture::{Alias, Texture, TextureRead, idl_format, usage};
 use crate::embed::{Embedder, TaskId};
 
 /// `MTLTextureSwizzleChannelsDefault`: red 2, green 3, blue 4, alpha 5 (`MTLTextureSwizzle` of `MTLTexture.h`).
@@ -105,6 +110,8 @@ pub struct TextureView<A: Api> {
     /// The view's `MTLTextureSwizzle` channels (red, green, blue, alpha).
     pub swizzle: [u8; 4],
     pub plan: ViewPlan,
+    /// The root's alias that holds the view's texels, for a `Copy` view.
+    pub alias: Option<Rc<Alias<A>>>,
     pub label: String,
 }
 
@@ -129,18 +136,24 @@ impl<A: Api> TextureView<A> {
         self.base_slice..self.base_slice + self.geometry.slices()
     }
 
-    /// Are the view's bytes the root's (plans `Same`, `SharedStorage` and `ViewFormat`)? Otherwise `call` is refused
-    /// with the reason.
+    /// The WebGPU texture WebGPU views of the view are made of: the root's alias for a `Copy` view, else the root's
+    /// stored texture.
+    pub fn gpu(&self) -> &A::Texture {
+        match &self.alias {
+            Some(a) => a.gpu(),
+            None => self.root.gpu(),
+        }
+    }
+
+    /// Are the view's bytes the root's (every plan but `StencilAspect`)? Otherwise `call` is refused with the reason.
     pub fn bytes_are_root(&self, call: &'static str) -> Result<(), MemError> {
         match self.plan {
-            ViewPlan::Same | ViewPlan::SharedStorage | ViewPlan::ViewFormat(_) => Ok(()),
+            ViewPlan::Same | ViewPlan::SharedStorage | ViewPlan::ViewFormat(_) | ViewPlan::Copy { .. } => Ok(()),
             ViewPlan::StencilAspect => Err(MemError::unimplemented(format!(
                 "{call} through an X32_Stencil8 view: its bytes are the stencil aspect of the Depth32Float_Stencil8 \
                  texture, which the host moves only one aspect at a time through blits of the texture itself"
             ))),
-            ViewPlan::Copy { .. } | ViewPlan::FromBlocks(_) => {
-                unreachable!("views needing a second texture are refused when they are created")
-            }
+            ViewPlan::FromBlocks(_) => unreachable!("views of compressed blocks are refused when they are created"),
         }
     }
 
@@ -184,6 +197,60 @@ impl<A: Api> TextureView<A> {
             d.base_array_layer = self.base_slice;
             d.array_layer_count = Some(self.geometry.slices());
         }
+    }
+}
+
+/// The holders of textures' contents one WebGPU pass uses. The copies between a texture's stored texture and its
+/// aliases are made between passes ([`crate::mem::texture`], "Aliases"), so a pass that writes subresources through one
+/// of them and uses the same subresources through another would see stale texels; such a pass is refused.
+#[derive(Default)]
+pub struct PassCopies {
+    uses: Vec<CopyUse>,
+}
+
+/// One use [`PassCopies`] notes.
+struct CopyUse {
+    /// The root, by address.
+    root: usize,
+    /// The alias (its index), or `None` for the stored texture.
+    alias: Option<usize>,
+    /// The root's levels and array slices.
+    levels: Range<u32>,
+    slices: Range<u32>,
+    write: bool,
+}
+
+impl PassCopies {
+    /// Note a use of `root`'s levels and slices through `alias` (or its stored texture), refusing one that conflicts
+    /// with an earlier use of the pass.
+    pub fn add<A: Api>(
+        &mut self,
+        root: &Rc<Texture<A>>,
+        alias: Option<&Alias<A>>,
+        (levels, slices): (Range<u32>, Range<u32>),
+        write: bool,
+    ) -> Result<(), MemError> {
+        let key = Rc::as_ptr(root) as *const () as usize;
+        let which = alias.map(|a| a.index());
+        let three_d = root.geometry.kind.is_3d();
+        let overlap = |a: &Range<u32>, b: &Range<u32>| a.start < b.end && b.start < a.end;
+        for u in &self.uses {
+            if u.root == key
+                && u.alias != which
+                && (u.write || write)
+                && overlap(&u.levels, &levels)
+                && (three_d || overlap(&u.slices, &slices))
+            {
+                return Err(MemError::unimplemented(format!(
+                    "a pass uses levels {levels:?} and slices {slices:?} of texture \"{}\" through two pixel formats \
+                     held in separate WebGPU textures and writes them through one; the textures are made equal between \
+                     passes, not within one",
+                    root.label
+                )));
+            }
+        }
+        self.uses.push(CopyUse { root: key, alias: which, levels, slices, write });
+        Ok(())
     }
 }
 
@@ -249,6 +316,7 @@ impl<A: Api> Memory<A> {
     /// A view of `parent` (CreateTextureView and the other view requests).
     pub fn create_texture_view(
         &self,
+        g: &impl Calls<A>,
         (task, handle): (TaskId, Handle),
         parent: Parent<'_, A>,
         a: &ViewArgs<'_>,
@@ -369,20 +437,32 @@ impl<A: Api> Memory<A> {
                  textures; the view plans compare the formats' 2D forms"
             )));
         }
-        let plan = view_plan(root.format, format, self.features).map_err(unavailable)?;
+        let proven = |f: WebGpuFormat| self.check_format_copies(f, call).is_ok();
+        let plan = view_plan(root.format, format, self.features, &proven).map_err(unavailable)?;
         let resolution = match plan {
             ViewPlan::Same => root.resolution,
             _ => handling::resolve_texture(format, self.features, dimension).map_err(unavailable)?,
         };
+        let mut alias = None;
         match plan {
             ViewPlan::Copy { storage, .. } => {
-                return Err(MemError::unimplemented(format!(
-                    "{call}: a view in pixel format {format} of a texture in pixel format {} needs a second texture in \
-                     {} kept equal to the texture through every write of either, which the memory module does not \
-                     keep yet",
-                    root.format,
-                    storage.name()
-                )));
+                if root.geometry.sample_count > 1 {
+                    return Err(MemError::unimplemented(format!(
+                        "{call}: a view in pixel format {format} of a multisample texture in pixel format {}: its \
+                         texels would be kept in a second texture in {} by copies through a buffer, which WebGPU does \
+                         not make of multisample textures",
+                        root.format,
+                        storage.name()
+                    )));
+                }
+                if !root.resolution.storage().caps().aspects.is_empty() || !storage.caps().aspects.is_empty() {
+                    return Err(MemError::unimplemented(format!(
+                        "{call}: a view in pixel format {format} of a texture in pixel format {}: one of them is a \
+                         depth or stencil format, whose texels the memory module does not keep in a second texture",
+                        root.format
+                    )));
+                }
+                alias = Some(self.alias(g, &root, resolution)?);
             }
             ViewPlan::FromBlocks(_) => {
                 return Err(MemError::unimplemented(format!(
@@ -409,6 +489,7 @@ impl<A: Api> Memory<A> {
             base_slice: pbase_slice + slices.start,
             swizzle,
             plan,
+            alias,
             label: label(task, "texture view", handle),
         }))
     }

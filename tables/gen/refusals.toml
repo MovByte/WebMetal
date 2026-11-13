@@ -117,7 +117,7 @@ cite = [
 id = "float-view-reinterpretation"
 area = "formats"
 metal = "Bit reinterpretation of float, snorm or packed texture data through views or buffer-backed textures"
-scope = "all hosts, until a path that never routes the bits through a float-typed texel copy exists"
+scope = "views: hosts on which texel copies of the format are not proven to keep every bit pattern (host/src/mem/proof.rs); buffer-backed textures: all hosts, until their copies take the proof"
 blocking = "WebGPU texel copies preserve only finite, non-subnormal values and may change snorm and packed representations."
 cite = [
   { src = "webgpu", ref = "#texel-copies", quote = "Texel copies only guarantee that valid, finite, non-subnormal numeric values in the source have the same numeric value in the destination." },

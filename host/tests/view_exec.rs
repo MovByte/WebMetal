@@ -153,6 +153,30 @@ fn write_records(h: &Harness, kernel: &str, t: Handle, q: &[[u32; 8]], values: &
     ]
 }
 
+/// The records of `fmt_write_uint` (formats.metal) writing every texel of a `w` × `hh` texture, row-major: a write
+/// at the constant level 0, which the compiler lowers (it does not lower `tex_write_2d`'s level taken from the query
+/// yet, `[compiler:texture-write-level]`).
+fn write_all_records(h: &Harness, t: Handle, (w, hh): (u64, u64), values: &[[u32; 4]]) -> Vec<Command> {
+    assert_eq!(values.len() as u64, w * hh);
+    let p = h.pipeline("fmt_write_uint", None, 0);
+    let bytes: Vec<u8> = values.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
+    let (vb, _) = h.buffer_with(&bytes);
+    vec![
+        Command::ComputeSetComputePipelineState(ComputeSetComputePipelineState { state: Some(p) }),
+        set_texture(t),
+        set_buffer(vb, 0),
+        Command::ComputeDispatchThreadgroups(ComputeDispatchThreadgroups {
+            threadgroups_per_grid: size(w, hh, 1),
+            threads_per_threadgroup: size(1, 1, 1),
+        }),
+    ]
+}
+
+/// The uint4 texels of RGBA8 bytes.
+fn rgba8_texels(bytes: &[u8]) -> Vec<[u32; 4]> {
+    bytes.chunks(4).map(|c| [u32::from(c[0]), u32::from(c[1]), u32::from(c[2]), u32::from(c[3])]).collect()
+}
+
 /// Reads of an R32Uint texture: (value, 0, 0, 1) (Textures.m, MSL 4.1 section 6.13).
 fn texel(value: u32) -> [u32; 4] {
     [value, 0, 0, 1]
@@ -332,8 +356,26 @@ fn rgba8_pattern() -> Vec<u8> {
     p
 }
 
-/// texture.view-format-reinterpret: the views a WebGPU view gives (a linear view of an sRGB texture) are read; the
-/// views that need a second texture are refused.
+/// `TexRecordUnormReads` of Textures.m: every value within 1.5 ulp of code / 255, and the (index, bits) pairs of the
+/// corner codes 0 and 255, which are exact.
+fn unorm_corner_codes(h: &Harness, codes: &[u8], reads: &[u8]) -> Vec<u8> {
+    let values: Vec<f32> = reads.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    let mut corners = Vec::new();
+    for (i, (&v, &c)) in values.iter().zip(codes).enumerate() {
+        let ideal = f64::from(c) / 255.0;
+        let ulp = f64::from(f32::from_bits((ideal as f32).to_bits() + 1) - ideal as f32);
+        assert!((f64::from(v) - ideal).abs() <= 1.5 * ulp, "{}: texel component {i}: {v} for code {c}", h.name());
+        if c == 0 || c == 255 {
+            corners.extend((i as u32).to_le_bytes());
+            corners.extend(v.to_bits().to_le_bytes());
+        }
+    }
+    corners
+}
+
+/// texture.view-format-reinterpret: RGBA8Unorm read and written through an RGBA8Uint view, R32Float written through an
+/// R32Uint view, and an sRGB texture through its linear and RGBA8Uint views, with every `exact` record of the case's
+/// reads and writes compared byte for byte. The uint views keep their texels in the texture's aliases.
 #[test]
 fn format_views() {
     let h = Harness::new();
@@ -341,19 +383,44 @@ fn format_views() {
     let mut t = Tally { host: h.name(), count: 0 };
     let codes = rgba8_pattern();
     let all: Vec<_> = (0..16).map(|i| query(i % 4, i / 4, 0, 0)).collect();
-
-    // RGBA8Unorm as RGBA8Uint and R32Float as R32Uint: a second texture of the view's format would be needed.
     let usage = SHADER_READ | SHADER_WRITE | PIXEL_FORMAT_VIEW;
-    let unorm = h.texture(texture_descriptor(T2D, fmt("RGBA8Unorm"), (4, 4, 1), 1, 1, PRIVATE, usage, 1));
-    let f = format_view(&h, unorm, fmt("RGBA8Uint")).unwrap_err();
-    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
-    assert!(f.message.contains("second texture"), "{f:?}");
-    let floats = h.texture(texture_descriptor(T2D, fmt("R32Float"), (4, 2, 1), 1, 1, PRIVATE, usage, 1));
-    let f = format_view(&h, floats, fmt("R32Uint")).unwrap_err();
-    assert_eq!(f.status, status::HOST_UNSUPPORTED, "{f:?}");
-    assert!(f.message.contains("float-view-reinterpretation"), "{f:?}");
 
-    // An sRGB texture with a linear view: a WebGPU view in the sibling format.
+    // RGBA8Unorm viewed as RGBA8Uint.
+    let ud = texture_descriptor(T2D, fmt("RGBA8Unorm"), (4, 4, 1), 1, 1, PRIVATE, usage, 1);
+    let unorm = h.texture(ud.clone());
+    let (src, _) = h.buffer_with(&codes);
+    h.blit(vec![copy_to_texture(src, 16, (4, 4), unorm, 0, 0)]);
+    let uint_view = format_view(&h, unorm, fmt("RGBA8Uint")).unwrap();
+    t.exact(&g, "uint-view.reads.queries", &query_bytes(&all));
+    let reads = run_reads(&h, "tex_read_2d", uint_view, &all);
+    t.exact(&g, "uint-view.reads", &reads);
+    let expected = rgba8_texels(&codes);
+    t.exact_bool(&g, "uint-view.reads.match-specification", reads == texel_bytes(&expected));
+    let floats = run_reads(&h, "tex_read_2d_float", unorm, &all);
+    t.exact(&g, "unorm.reads.corner-codes", &unorm_corner_codes(&h, &codes, &floats));
+    // Writes through the uint view saturate to 8 bits and are visible through the parent. The case writes texels (1, 0)
+    // and (2, 3) with tex_write_2d; here every texel is written, the others with the codes they hold.
+    let mut values = rgba8_texels(&codes);
+    values[1] = [1, 128, 255, 256];
+    values[14] = [1000, 0, 77, 0xffff_ffff];
+    h.compute(write_all_records(&h, uint_view, (4, 4), &values));
+    t.exact(&g, "unorm.after-uint-writes", &h.read_texture(unorm, &ud, 0, 0, 16));
+
+    // R32Float viewed as R32Uint: bit patterns written through the uint view are stored unchanged, denormals and NaNs
+    // included; float reads keep normal values.
+    let fd = texture_descriptor(T2D, fmt("R32Float"), (4, 2, 1), 1, 1, PRIVATE, usage, 1);
+    let floats = h.texture(fd.clone());
+    let bits_view = format_view(&h, floats, fmt("R32Uint")).unwrap();
+    let bits = [0x3f80_0000u32, 0xc2f6_e979, 0, 0x8000_0000, 0x7f7f_ffff, 0x7f80_0000, 1, 0x7fc0_0001];
+    let fq: Vec<_> = (0..8).map(|i| query(i % 4, i / 4, 0, 0)).collect();
+    let fv: Vec<[u32; 4]> = bits.iter().map(|&b| [b, 0, 0, 0]).collect();
+    h.compute(write_all_records(&h, bits_view, (4, 2), &fv));
+    t.exact(&g, "r32float.stored-bits", &h.read_texture(floats, &fd, 0, 0, 16));
+    let reads = run_reads(&h, "tex_read_2d_float", floats, &fq);
+    let preserved: Vec<u8> = reads.chunks(16).take(6).flat_map(|c| c[..4].to_vec()).collect();
+    t.exact(&g, "r32float.reads.preserved", &preserved);
+
+    // An sRGB texture with a linear view (a WebGPU view in the sibling format) and an RGBA8Uint view.
     let srgb = h.texture(texture_descriptor(
         T2D,
         fmt("RGBA8Unorm_sRGB"),
@@ -367,31 +434,141 @@ fn format_views() {
     let (src, _) = h.buffer_with(&codes);
     h.blit(vec![copy_to_texture(src, 16, (4, 4), srgb, 0, 0)]);
     let linear = format_view(&h, srgb, fmt("RGBA8Unorm")).unwrap();
+    let raw = format_view(&h, srgb, fmt("RGBA8Uint")).unwrap();
     let reads = run_reads(&h, "tex_read_2d_float", linear, &all);
-    let values: Vec<f32> = reads.chunks(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-    // `TexRecordUnormReads`: within 1.5 ulp of code / 255, and the corner codes' values exact.
-    let mut corners = Vec::new();
-    for (i, (&v, &c)) in values.iter().zip(&codes).enumerate() {
-        let ideal = f64::from(c) / 255.0;
-        let ulp = f64::from(f32::from_bits((ideal as f32).to_bits() + 1) - ideal as f32);
-        assert!((f64::from(v) - ideal).abs() <= 1.5 * ulp, "{}: texel component {i}: {v} for code {c}", h.name());
-        if c == 0 || c == 255 {
-            corners.extend((i as u32).to_le_bytes());
-            corners.extend(v.to_bits().to_le_bytes());
-        }
-    }
-    t.exact(&g, "srgb.linear-view.reads.corner-codes", &corners);
-    // The sRGB texture viewed as RGBA8Uint needs a second texture.
-    let f = format_view(&h, srgb, fmt("RGBA8Uint")).unwrap_err();
-    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+    t.exact(&g, "srgb.linear-view.reads.corner-codes", &unorm_corner_codes(&h, &codes, &reads));
+    t.exact(&g, "srgb.uint-view.reads.queries", &query_bytes(&all));
+    let reads = run_reads(&h, "tex_read_2d", raw, &all);
+    t.exact(&g, "srgb.uint-view.reads", &reads);
+    t.exact_bool(&g, "srgb.uint-view.reads.match-specification", reads == texel_bytes(&expected));
 
+    for k in ["tex_read_2d", "tex_read_2d_float", "fmt_write_uint"] {
+        assert!(h.compiled.borrow().contains(k), "{}: {k} is not a compiled kernel", h.name());
+    }
     eprintln!(
-        "{}: {}: {} exact records equal; the uint views of RGBA8Unorm, R32Float and RGBA8Unorm_sRGB are refused \
-         (a second texture kept equal to the texture is not implemented, or WebGPU copies do not keep float bits)",
+        "{}: {}: {} exact records equal; the writes through the uint views are made by fmt_write_uint",
         h.name(),
         g.case,
         t.count
     );
+    h.assert_no_errors();
+}
+
+/// A texture and its view in another format kept equal through each kind of write: a CPU upload, a blit of part of a
+/// subresource, a blit between textures and mipmap generation through the view; and the pass that would use both in
+/// one WebGPU pass with a write, refused.
+#[test]
+fn alias_coherence() {
+    let h = Harness::new();
+    let usage = SHADER_READ | SHADER_WRITE | PIXEL_FORMAT_VIEW;
+    let d = texture_descriptor(T2D, fmt("RGBA8Unorm"), (4, 4, 1), 1, 1, SHARED, usage, 1);
+    let unorm = h.texture(d.clone());
+    let uint_view = format_view(&h, unorm, fmt("RGBA8Uint")).unwrap();
+    let all: Vec<_> = (0..16).map(|i| query(i % 4, i / 4, 0, 0)).collect();
+    let texels = |bytes: &[u8]| texel_bytes(&rgba8_texels(bytes));
+
+    // Written through the view, then replaceRegion of part of the texture: the CPU upload writes the alias the view
+    // left current, and getBytes reads it.
+    let first = pattern(64, 5);
+    let (src, _) = h.buffer_with(&first);
+    h.blit(vec![copy_to_texture(src, 16, (4, 4), unorm, 0, 0)]);
+    let mut expect = first.clone();
+    expect[..4].copy_from_slice(&[9, 8, 7, 6]);
+    h.compute(write_all_records(&h, uint_view, (4, 4), &rgba8_texels(&expect)));
+    let row = [1u8, 2, 3, 4, 5, 6, 7, 8];
+    let addr = h.alloc(8);
+    h.guest.cpu_write(addr, &row);
+    h.ok(Request::ReplaceRegion(ReplaceRegion {
+        texture: unorm,
+        region: region((2, 1, 0), (2, 1, 1)),
+        level: 0,
+        pixel_bytes: GuestAddr(addr),
+        bytes_per_row: 8,
+    }));
+    expect[24..32].copy_from_slice(&row);
+    let dst = h.alloc(64);
+    h.ok(Request::GetBytes(GetBytes {
+        texture: unorm,
+        pixel_bytes: GuestAddr(dst),
+        bytes_per_row: 16,
+        region: region((0, 0, 0), (4, 4, 1)),
+        level: 0,
+    }));
+    assert_eq!(h.read(dst, 64), expect, "{}: getBytes after a view write and replaceRegion", h.name());
+    // The texture's own texels after the alias's: a float read sees both writes.
+    let floats = run_reads(&h, "tex_read_2d_float", unorm, &all);
+    let codes: Vec<u8> =
+        floats.chunks(4).map(|c| (f32::from_le_bytes([c[0], c[1], c[2], c[3]]) * 255.0).round() as u8).collect();
+    assert_eq!(codes, expect, "{}: float reads of the texture after the view's write", h.name());
+
+    // A blit of part of the texture after a write through the view: the stored texture takes the alias's texels
+    // first, so the texels around the region keep the view's write.
+    expect[60..64].copy_from_slice(&[40, 41, 42, 43]);
+    h.compute(write_all_records(&h, uint_view, (4, 4), &rgba8_texels(&expect)));
+    let (b, _) = h.buffer_with(&[50, 51, 52, 53]);
+    h.blit(vec![Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+        source_buffer: Some(b),
+        source_offset: 0,
+        source_bytes_per_row: 4,
+        source_bytes_per_image: 0,
+        source_size: size(1, 1, 1),
+        destination_texture: Some(unorm),
+        destination_slice: 0,
+        destination_level: 0,
+        destination_origin: origin(1, 1, 0),
+    })]);
+    expect[20..24].copy_from_slice(&[50, 51, 52, 53]);
+    assert_eq!(h.read_texture(unorm, &d, 0, 0, 16), expect, "{}: a partial blit after a view write", h.name());
+    assert_eq!(run_reads(&h, "tex_read_2d", uint_view, &all), texels(&expect), "{}: the view after the blit", h.name());
+
+    // A blit from another texture into the texture leaves the alias stale; the view reads the copy.
+    let other = h.texture(d.clone());
+    let second = pattern(64, 6);
+    let (src, _) = h.buffer_with(&second);
+    h.blit(vec![copy_to_texture(src, 16, (4, 4), other, 0, 0)]);
+    h.blit(vec![Command::BlitCopyTextureToTexture(BlitCopyTextureToTexture {
+        source_texture: Some(other),
+        source_slice: 0,
+        source_level: 0,
+        source_origin: origin(0, 0, 0),
+        source_size: size(4, 4, 1),
+        destination_texture: Some(unorm),
+        destination_slice: 0,
+        destination_level: 0,
+        destination_origin: origin(0, 0, 0),
+    })]);
+    assert_eq!(run_reads(&h, "tex_read_2d", uint_view, &all), texels(&second), "{}: the view after a copy", h.name());
+
+    // One compute pass that writes through the view and reads through the texture is refused.
+    let mut records = write_all_records(&h, uint_view, (4, 4), &[[1, 1, 1, 1]; 16]);
+    let (read, _) = read_records(&h, "tex_read_2d_float", unorm, &all);
+    records.extend(read);
+    let f = h.compute_failure(records);
+    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+    assert!(f.message.contains("through two pixel formats"), "{f:?}");
+
+    // Mipmaps generated through a BGRA8Unorm view of an RGBA8Unorm texture: the levels are made in the alias and read
+    // through the texture.
+    let md = texture_descriptor(
+        T2D,
+        fmt("RGBA8Unorm"),
+        (4, 4, 1),
+        1,
+        3,
+        PRIVATE,
+        SHADER_READ | RENDER_TARGET | PIXEL_FORMAT_VIEW,
+        1,
+    );
+    let mipped = h.texture(md.clone());
+    let (src, _) = h.buffer_with(&[0x10, 0x80, 0xf0, 0xff].repeat(16));
+    h.blit(vec![copy_to_texture(src, 16, (4, 4), mipped, 0, 0)]);
+    let bgra = view(&h, mipped, fmt("BGRA8Unorm"), T2D, (0, 3), (0, 1)).unwrap();
+    h.blit(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(bgra) })]);
+    for level in 1..3 {
+        let w = mip(4, level);
+        let got = h.read_texture(mipped, &md, level, 0, w * 4);
+        assert_eq!(got, [0x10, 0x80, 0xf0, 0xff].repeat((w * w) as usize), "{}: level {level}", h.name());
+    }
     h.assert_no_errors();
 }
 
@@ -895,6 +1072,20 @@ fn view_refusals() {
     let f = format_view(&h, rgba, fmt("RGBA8Uint")).unwrap_err();
     undefined(f.clone());
     assert!(f.message.contains("MTLTextureUsagePixelFormatView"), "{f:?}");
+    // A view in another format of a multisample texture.
+    let ms = h.texture(texture_descriptor(
+        T2D_MS,
+        fmt("RGBA8Unorm"),
+        (4, 4, 1),
+        1,
+        1,
+        PRIVATE,
+        SHADER_READ | PIXEL_FORMAT_VIEW,
+        4,
+    ));
+    let f = format_view(&h, ms, fmt("RGBA8Uint")).unwrap_err();
+    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+    assert!(f.message.contains("multisample"), "{f:?}");
     // Texel sizes that differ (texture.error-view-size-mismatch).
     let rgba_view = h.texture(texture_descriptor(
         T2D,
