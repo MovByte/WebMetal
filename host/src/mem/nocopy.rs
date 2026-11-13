@@ -95,9 +95,10 @@ impl<A: Api> Memory<A> {
         }
         let storage = StorageMode::from_value(d.storage_mode, CALL)?;
         if storage == StorageMode::Memoryless {
-            return Err(MemError::unimplemented(format!(
-                "{CALL}: a memoryless texture over caller memory: what IOGPU makes of it is not traced"
-            )));
+            // -[IOGPUMetalResource initWithDevice:options:args:argsSize:] (IOGPU 0x1fcb2bbe8) makes no kernel resource
+            // for a memoryless texture, so the caller's memory is never mapped: the texture is a memoryless one (the
+            // guest keeps the pointer, the length and the deallocator).
+            return self.build_texture(g, CALL, (task, r.texture), d, None);
         }
         if d.sample_count > 1 {
             return Err(MemError::unimplemented(format!(

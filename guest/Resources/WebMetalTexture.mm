@@ -314,7 +314,8 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
 // checks the length and the watermark only for layouts with +0x17a set, which a texture without a buffer or an IOSurface
 // does not have. The kernel resource's resident size is the caller's pages under the layout's size
 // (ClientMemoryResidentSize). The memory holds the texels in the A10X layout; the host keeps it and the texture equal
-// (CreateTextureNoCopy).
+// (CreateTextureNoCopy). A memoryless texture has no kernel resource (-[IOGPUMetalResource initWithDevice:options:args:
+// argsSize:], IOGPU 0x1fcb2bbe8): the memory is never mapped and its resident size is 0.
 WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes, NSUInteger length,
                                   MTLTextureDescriptor *descriptor, void (^deallocator)(void *pointer, NSUInteger length))
 {
@@ -329,7 +330,9 @@ WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes,
     texture->_pointer = bytes;
     texture->_length = length;
     texture->_deallocator = [deallocator copy];
-    texture->_state.residentSize = ClientMemoryResidentSize(device, _cmd, bytes, layout.cpuSizeBytes);
+    texture->_state.residentSize = d.storageMode == MTLStorageModeMemoryless
+                                       ? 0
+                                       : ClientMemoryResidentSize(device, _cmd, bytes, layout.cpuSizeBytes);
     const agx::SystemValues system = LayoutSystemValues();
     wire::CreateTextureNoCopy request;
     request.texture = texture->_state.handle;

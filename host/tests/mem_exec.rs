@@ -768,6 +768,22 @@ fn layout_copy_out(d: &TextureDescriptor, memory: u64, bytes: u64, level: u64, r
 }
 
 /// The RGBA8 37x21 texture of six levels of `spi.texture-layout-copies`, and its levels' extents.
+/// A memoryless texture over caller memory: IOGPU makes no kernel resource for it, so the memory (here unmapped) is never
+/// read.
+#[test]
+fn memoryless_no_copy_texture() {
+    let h = Harness::new();
+    h.ok(Request::CreateTextureNoCopy(CreateTextureNoCopy {
+        texture: h.handle(),
+        bytes: GuestAddr(0x10),
+        length: 0x4000,
+        descriptor: texture_descriptor(70, 37, 21, 3, 4),
+        deallocator: false,
+        page_size: 16384,
+        iosurface_alignment: 16384,
+    }));
+}
+
 fn layout_texture() -> TextureDescriptor {
     let mut d = texture_descriptor(70, 37, 21, 0, 1);
     d.mipmap_level_count = 6;
