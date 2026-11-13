@@ -195,6 +195,7 @@ compared exactly.
 | A memoryless depth attachment on a device that reports `supportsMemorylessRenderTargets` | `spi.memoryless-render-target` |
 | A raster order group on a fragment output, with the device's `rasterOrderGroupsSupported` answer | `spi.raster-order-groups` |
 | A texture layout (`newTextureLayoutWithDescriptor:isHeapOrBufferBacked:`): its size and alignment, and its copies into and out of texture memory for every slice and level of 2D, 2D array, cube, 3D and ASTC textures and a sub-region (`copyFromLinearBytes:...`, `copyFromTextureMemory:...`) | `spi.texture-layout-copies` |
+| `isComplete` and `waitUntilComplete` of tracked buffers used by encoders before and after an event wait | `spi.resource-complete-per-encoder` |
 
 ## Not covered
 

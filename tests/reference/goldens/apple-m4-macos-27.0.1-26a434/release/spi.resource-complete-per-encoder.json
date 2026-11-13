@@ -1,0 +1,24 @@
+{
+  "area": "spi.resources",
+  "case": "spi.resource-complete-per-encoder",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"spi.resource-complete","value":true},
+    {"kind":"value","name":"early.complete-before-use","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"early.complete-while-waiting","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"call","name":"late.query-while-waiting","raised":0,"rule":{"compare":"exact"}},
+    {"kind":"value","name":"late.complete-while-waiting","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"command-buffer.completed-while-waiting","rule":{"compare":"exact"},"type":"bool","value":false},
+    {"kind":"value","name":"late.complete-after-wait-until-complete","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"status","rule":{"compare":"exact"},"type":"u64","value":4},
+    {"kind":"value","name":"early.complete-after","rule":{"compare":"exact"},"type":"bool","value":true},
+    {"kind":"value","name":"late.complete-after","rule":{"compare":"exact"},"type":"bool","value":true}
+  ],
+  "status": "ok",
+  "title": "isComplete of tracked buffers used before and after an event wait, while the command buffer waits",
+  "variant": "release"
+}

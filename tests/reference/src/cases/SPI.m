@@ -9,6 +9,8 @@
 
 #import "WMRefCase.h"
 
+#include <unistd.h>
+
 @protocol WMRefDeviceNames
 - (NSString *)vendorName;
 - (NSString *)familyName;
@@ -269,4 +271,89 @@ WMREF_CASE(spiRasterOrderGroups, "spi.raster-order-groups", "spi.feature-probes"
     if (!pipeline) [c fail:@"the device reports raster order groups but made no pipeline"];
     NSData *pixels = SPIDrawCover(c, pipeline, nil);
     [c data:@"color" elem:WMElemU8 bytes:pixels.bytes length:pixels.length rule:WMExact()];
+}
+
+@protocol WMRefResourceComplete
+- (BOOL)isComplete;
+- (void)waitUntilComplete;
+@end
+
+static MTLRenderPassDescriptor *SPIClearPass(WMCase *c) {
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                  width:8 height:8 mipmapped:NO];
+    td.usage = MTLTextureUsageRenderTarget;
+    td.storageMode = MTLStorageModePrivate;
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = [c texture:td];
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    return pass;
+}
+
+// -[IOGPUMetalResource isComplete] tests event 0 of the resource's kernel
+// resource, which the kernel stamps with the GPU work of the encoders that
+// list the resource when it processes them. The kernel stays at a wait on a
+// shared event until the event reaches the value, so a tracked buffer that
+// only a render encoder before the wait uses (useResource:usage:) completes
+// while the command buffer is held at the wait, and so does one that only
+// the encoder after the wait uses: that encoder has stamped nothing yet.
+// isComplete of the first is polled for up to 5 s.
+WMREF_CASE(spiResourceCompletePerEncoder, "spi.resource-complete-per-encoder", "spi.resources",
+           "isComplete of tracked buffers used before and after an event wait, while the command buffer waits")
+{
+    MTLResourceOptions options = MTLResourceStorageModeShared | MTLResourceHazardTrackingModeTracked;
+    id<MTLBuffer> early = [c.device newBufferWithLength:256 options:options];
+    id<MTLBuffer> late = [c.device newBufferWithLength:256 options:options];
+    if (!early || !late) [c fail:@"newBufferWithLength:options: returned nil"];
+    [c require:@"spi.resource-complete" value:SPIAnswers(early, @selector(isComplete)) &&
+        SPIAnswers(early, @selector(waitUntilComplete))];
+    id<WMRefResourceComplete> earlyState = (id<WMRefResourceComplete>)early, lateState = (id<WMRefResourceComplete>)late;
+    [c value:@"early.complete-before-use" boolean:earlyState.isComplete rule:WMExact()];
+    id<MTLSharedEvent> event = [c.device newSharedEvent];
+    if (!event) [c fail:@"newSharedEvent returned nil"];
+
+    // useResource:usage:, the form without stages.
+    id<MTLCommandBuffer> commandBuffer = [c commandBuffer];
+    id<MTLRenderCommandEncoder> before = [commandBuffer renderCommandEncoderWithDescriptor:SPIClearPass(c)];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    [before useResource:early usage:MTLResourceUsageRead];
+    [before endEncoding];
+    [commandBuffer encodeWaitForEvent:event value:1];
+    id<MTLRenderCommandEncoder> after = [commandBuffer renderCommandEncoderWithDescriptor:SPIClearPass(c)];
+    [after useResource:late usage:MTLResourceUsageRead];
+#pragma clang diagnostic pop
+    [after endEncoding];
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
+        dispatch_semaphore_signal(done);
+    }];
+    [commandBuffer commit];
+
+    BOOL earlyComplete = NO;
+    for (int i = 0; i < 500 && !earlyComplete; i++) {
+        earlyComplete = earlyState.isComplete;
+        if (!earlyComplete) usleep(10000);
+    }
+    [c value:@"early.complete-while-waiting" boolean:earlyComplete rule:WMExact()];
+    __block BOOL lateComplete = NO;
+    [c call:@"late.query-while-waiting" rule:WMExact() block:^{
+        lateComplete = lateState.isComplete;
+    }];
+    [c value:@"late.complete-while-waiting" boolean:lateComplete rule:WMExact()];
+    BOOL completedEarly = dispatch_semaphore_wait(done, DISPATCH_TIME_NOW) == 0;
+    [c value:@"command-buffer.completed-while-waiting" boolean:completedEarly rule:WMExact()];
+
+    // Once scheduled, the command buffer's wait is passed and the encoder
+    // after it has been processed.
+    event.signaledValue = 1;
+    [commandBuffer waitUntilScheduled];
+    [lateState waitUntilComplete];
+    [c value:@"late.complete-after-wait-until-complete" boolean:lateState.isComplete rule:WMExact()];
+    if (!completedEarly &&
+        dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * (int64_t)NSEC_PER_SEC)) != 0)
+        [c fail:@"command buffer did not complete within 10 s"];
+    [c value:@"status" u64:commandBuffer.status rule:WMExact()];
+    [c value:@"early.complete-after" boolean:earlyState.isComplete rule:WMExact()];
+    [c value:@"late.complete-after" boolean:lateState.isComplete rule:WMExact()];
 }

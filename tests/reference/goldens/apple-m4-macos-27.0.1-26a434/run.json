@@ -8,7 +8,7 @@
     "sdk": "macosx",
     "sdk_build": "26B118",
     "sdk_version": "27.2",
-    "source_sha256": "6aeddc3fd6ab64c64ff08a82428703dd20b44a1b8ba67ce8045face3d1329835",
+    "source_sha256": "281fb1c2b88287f1502338b3b7ad9555689a3734d0e8a1b3c9dd65ed60c8a462",
     "target": "arm64-apple-macos14.0"
   },
   "cases": [
@@ -892,6 +892,8 @@
     {"case":"spi.raster-order-groups","outcome":"exit 0","sha256":"144bcb93e432bcbc750acae513ea6443f5f64ade3d464d75a72e624657f243ec","status":"ok","variant":"debug-layer"},
     {"case":"spi.render-pipeline-answers","outcome":"exit 0","sha256":"591e9eae6b4137054c4bc1569e25a906b3229196bd959be030ff756b89373408","status":"ok","variant":"release"},
     {"case":"spi.render-pipeline-answers","outcome":"exit 0","sha256":"2bba8ecfd185bd333f68d2a42d2a63773d6a90c1ccc65929b62205056c121e42","status":"unsupported","variant":"debug-layer"},
+    {"case":"spi.resource-complete-per-encoder","outcome":"exit 0","sha256":"0e2dca1b4e6f1d3c3606a7e20f2f23822880581b3d1ea373972e6386083b9879","status":"ok","variant":"release"},
+    {"case":"spi.resource-complete-per-encoder","outcome":"exit 0","sha256":"1dc8d638ada4102c10aa19c3e35227f41ae84ca615b77cc5724c38ed22de3aba","status":"ok","variant":"debug-layer"},
     {"case":"spi.texture-layout-copies","outcome":"exit 0","sha256":"1babba02a96fbe95e4cf6b4d5e72e3011ab1a8c6dcad59002f57929ad4845216","status":"ok","variant":"release"},
     {"case":"spi.texture-layout-copies","outcome":"exit 0","sha256":"ccd3464cc7d4d5bec74de38d9149d59043876d82edba216ed748ba8467407e91","status":"ok","variant":"debug-layer"},
     {"case":"storage.buffer-backed-texture","outcome":"exit 0","sha256":"2ac586ae3b11d1edfd3142177ba2adfacded3614c13a75640eddc5749c2d6517","status":"ok","variant":"release"},
