@@ -110,15 +110,19 @@ impl<A: Api> Memory<A> {
             gen2::texture_alignment(&layout).map_err(|u| copy_error(CALL, region::CopyError::Unported(u)))?;
         if alignment == 0 || !r.bytes.0.is_multiple_of(alignment) {
             return Err(MemError::unimplemented(format!(
-                "{CALL}: memory at {:#x}, not a multiple of the layout's alignment {alignment}: how the kernel places a \
-                 texture over such memory is not traced",
+                "{CALL}: memory at {:#x}, not a multiple of the layout's alignment {alignment}: the kernel maps the \
+                 caller's pages and keeps the pointer's offset in them (IOGPUResource::newResourceWithClientBuffer, \
+                 kernelcache 0xfffffff005bc3bbc), so the texture's GPU address is the pointer itself, and what the \
+                 A10X's texture unit makes of a base below the layout's alignment is not established",
                 r.bytes.0
             )));
         }
         let t = self.build_texture(g, CALL, (task, r.texture), d, None)?;
         let Some(blocks) = t.blocks else {
             return Err(MemError::unimplemented(format!(
-                "{CALL}: a combined depth-stencil texture over caller memory: its bytes have no single texel size"
+                "{CALL}: a combined depth-stencil texture over caller memory: the A10X layout keeps depth and stencil \
+                 in two planes (format table entry texFormatD32FS8_2PLANE), whose copies to and from the memory (the \
+                 depth aspect through a render pass, the stencil aspect through copies) are not implemented"
             )));
         };
         let mut subresources = Vec::new();

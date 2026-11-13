@@ -1298,8 +1298,10 @@ impl<A: Api> Memory<A> {
         // MTLPurgeableStateKeepCurrent (1) only reads the state.
         if t.guest.is_some() && state != 1 {
             return Err(MemError::unimplemented(
-                "-[MTLResource setPurgeableState:] of a texture over caller memory: what the kernel does with the \
-                 purgeability of a resource over a task's own pages is not traced",
+                "-[MTLResource setPurgeableState:] of a texture over caller memory: -[IOGPUMetalResource \
+                 setPurgeableState:] (IOGPU 0x1fcb29fac) sends the state to the kernel (IOGPUResourceSetPurgeable, \
+                 user-client selector 3), and what the kernel does with the purgeability of a resource over a task's \
+                 own pages is not traced",
             ));
         }
         let tr = t.state.borrow_mut().purgeable.set(state, "-[MTLResource setPurgeableState:]")?;
