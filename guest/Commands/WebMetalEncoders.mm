@@ -92,14 +92,22 @@ void pushEncoderDebugGroup(id self, SEL cmd, EncoderState &encoder, NSString *st
     EmitEncoderRecord(self, cmd, encoder, record);
 }
 
+// Each render segment lists the pass's attachment textures with flags 12, except memoryless ones, and a resolve texture
+// with 12 when its attachment has a texture: AGX::Framebuffer's listing (0x21c919170, called with mask 0x3f from the
+// segment's begin at 0x21c96e300) skips the attachments its exclusion mask fb+3100 holds, which are the memoryless ones
+// (0x21c914848 to 0x21c914860, 0x21c915150, 0x21c915240), and lists colour resolve textures by fb+2440, which holds the
+// attachments with both a texture and a resolve texture (0x21c91490c). Whether a depth or stencil resolve texture
+// without its attachment's texture is listed is not read.
 template <class Attachment> void attachmentCommon(id self, SEL cmd, Stream &stream, Attachment &out,
                                                   MTLRenderPassAttachmentDescriptor *in)
 {
-    out.texture = Reference(stream, self, cmd, in.texture);
+    const bool memoryless = in.texture && in.texture.storageMode == MTLStorageModeMemoryless;
+    out.texture = Reference(stream, self, cmd, in.texture, memoryless ? Listing::Unlisted : Listing::Stamped);
     out.level = in.level;
     out.slice = in.slice;
     out.depthPlane = in.depthPlane;
-    out.resolveTexture = Reference(stream, self, cmd, in.resolveTexture);
+    out.resolveTexture =
+        Reference(stream, self, cmd, in.resolveTexture, in.texture ? Listing::Stamped : Listing::Untraced);
     out.resolveLevel = in.resolveLevel;
     out.resolveSlice = in.resolveSlice;
     out.resolveDepthPlane = in.resolveDepthPlane;
@@ -143,7 +151,8 @@ void renderPass(id self, SEL cmd, Stream &stream, id<MTLDevice> device, MTLRende
         d.stencilAttachment.value.clearStencil = stencil.clearStencil;
         d.stencilAttachment.value.stencilResolveFilter = stencil.stencilResolveFilter;
     }
-    d.visibilityResultBuffer = Reference(stream, self, cmd, in.visibilityResultBuffer);
+    // Listed only once the encoder sets a visibility result mode (NoteRecordListing).
+    d.visibilityResultBuffer = Reference(stream, self, cmd, in.visibilityResultBuffer, Listing::Unlisted);
     d.renderTargetArrayLength = in.renderTargetArrayLength;
     d.imageblockSampleLength = in.imageblockSampleLength;
     d.threadgroupMemoryLength = in.threadgroupMemoryLength;
@@ -186,6 +195,85 @@ void renderPass(id self, SEL cmd, Stream &stream, id<MTLDevice> device, MTLRende
 }
 
 }  // namespace
+
+}  // namespace webmetal
+
+namespace webmetal {
+
+namespace {
+
+const char kNoAccessFlags[] =
+    "the A10X driver lists the resource with no access flags, which the kernel's parse of the segment's resource list "
+    "refuses (AGXAllocationList2, kernelcache 0xfffffff005bf1af8 to 0xfffffff005bf1b04); what the kernel does with the "
+    "command buffer then is not implemented";
+
+bool anyNamed(const wire::Span<uint64_t> &handles)
+{
+    for (size_t i = 0; i < handles.size; i++)
+        if (handles.data[i])
+            return true;
+    return false;
+}
+
+// -[AGXA10FamilyRenderContext useResource:usage:stages:] (0x21c960d70 to 0x21c960dc0) and -useResources:count:usage:
+// stages: (0x21c960e28 to 0x21c960e84) list with read and write bits for the vertex (0, 1) and fragment or tile (2, 3)
+// stages, which are all clear unless the usage has a read, write or sample bit and the stages a vertex, fragment or
+// tile bit.
+bool renderUseListed(uint64_t usage, uint64_t stages)
+{
+    return (usage & 7) && (stages & 7);
+}
+
+}  // namespace
+
+void NoteRecordListing(id self, SEL cmd, EncoderState &, const wire::RenderUseResourceStages &record)
+{
+    if (record.resource && !renderUseListed(record.usage, record.stages))
+        WMLoudMethod(self, cmd, kNoAccessFlags);
+}
+
+void NoteRecordListing(id self, SEL cmd, EncoderState &, const wire::RenderUseResourcesStages &record)
+{
+    if (anyNamed(record.resources) && !renderUseListed(record.usage, record.stages))
+        WMLoudMethod(self, cmd, kNoAccessFlags);
+}
+
+// -[AGXA10FamilyRenderContext useHeap:stages:] (0x21c960f58 to 0x21c960f68) and -useHeaps:count:stages: (0x21c96106c to
+// 0x21c96107c): read bits for the vertex (0) and fragment or tile (2) stages.
+void NoteRecordListing(id self, SEL cmd, EncoderState &, const wire::RenderUseHeapStages &record)
+{
+    if (record.heap && !(record.stages & 7))
+        WMLoudMethod(self, cmd, kNoAccessFlags);
+}
+
+void NoteRecordListing(id self, SEL cmd, EncoderState &, const wire::RenderUseHeapsStages &record)
+{
+    if (anyNamed(record.heaps) && !(record.stages & 7))
+        WMLoudMethod(self, cmd, kNoAccessFlags);
+}
+
+// -[AGXA10FamilyComputeContext useResource:usage:] (0x21c90c0b8 to 0x21c90c0cc) and -useResources:count:usage:
+// (0x21c90c134 to 0x21c90c140): (usage & 2) | ((usage & 7) != 0).
+void NoteRecordListing(id self, SEL cmd, EncoderState &, const wire::ComputeUseResource &record)
+{
+    if (record.resource && !(record.usage & 7))
+        WMLoudMethod(self, cmd, kNoAccessFlags);
+}
+
+void NoteRecordListing(id self, SEL cmd, EncoderState &, const wire::ComputeUseResources &record)
+{
+    if (anyNamed(record.resources) && !(record.usage & 7))
+        WMLoudMethod(self, cmd, kNoAccessFlags);
+}
+
+// -[AGXA10FamilyRenderContext setVisibilityResultMode:offset:] lists the pass's visibility result buffer with flags 15
+// (0x21c962c88) once a mode other than Disabled has been set in the encoder (ctx+2407, 0x21c962c34 to 0x21c962c44), in
+// each segment that has the buffer (0x21c96e074 to 0x21c96e088, 0x21c96cc68); nothing else lists it.
+void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::RenderSetVisibilityResultMode &record)
+{
+    if (record.mode != MTLVisibilityResultModeDisabled && encoder.visibilityResultKey)
+        encoder.stream->noteUse(encoder.visibilityResultKey, Stream::UseKind::Stamped);
+}
 
 }  // namespace webmetal
 
@@ -295,6 +383,7 @@ using namespace webmetal;
     EncoderState &state = *encoder->_encoder;
     RenderPass pass;
     renderPass(self, _cmd, *state.stream, self.device, descriptor, pass);
+    state.visibilityResultKey = KernelResourceKey(descriptor.visibilityResultBuffer);
     wire::BeginRenderPass record;
     record.encoder = state.handle;
     record.renderPassDescriptor = pass.descriptor;
@@ -498,6 +587,7 @@ using namespace webmetal;
     }
     _encoder = NewEncoderState((WebMetalCommandBuffer *)commandBuffer, stream.get());
     _encoder->own = stream;
+    _encoder->visibilityResultKey = KernelResourceKey(descriptor.visibilityResultBuffer);
     wire::BeginParallelSubEncoder record;
     record.parent = parent->_encoder->handle;
     record.encoder = _encoder->handle;

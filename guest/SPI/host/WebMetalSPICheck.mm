@@ -427,6 +427,70 @@ void checkStamps(id<MTLDevice> device)
           "the command buffer with the wait completes");
 }
 
+// The A10X driver's listing of the resources an encoder names decides whether its kick stamps them: a render segment
+// lists its attachment textures (AGX::Framebuffer, 0x21c919170), the visibility result buffer only once a visibility
+// result mode is set (0x21c962c88), and -optimizeContentsForGPUAccess: lists nothing (0x21c8b995c); a use with no
+// access flags is refused by the kernel (AGXAllocationList2, kernelcache 0xfffffff005bf1af8).
+void checkListings(id<MTLDevice> device)
+{
+    id<MTLSharedEvent> event = [device newSharedEvent];
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                  width:8 height:8 mipmapped:NO];
+    td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    td.storageMode = MTLStorageModePrivate;
+    id<MTLTexture> target = [device newTextureWithDescriptor:td];
+    id<MTLTexture> optimized = [device newTextureWithDescriptor:td];
+    id<MTLBuffer> visibility = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+    id<MTLBuffer> used = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = target;
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    pass.visibilityResultBuffer = visibility;
+    check(event && queue && target && optimized && visibility && used, "the listing check's objects are made");
+    auto quiet = [](void (^body)(void)) { return loudReason(body) == nil; };
+
+    // The encoders before a wait run while the command buffer waits.
+    id<MTLCommandBuffer> buffer = [queue commandBuffer];
+    id<MTLRenderCommandEncoder> render = [buffer renderCommandEncoderWithDescriptor:pass];
+    [render endEncoding];
+    id<MTLBlitCommandEncoder> blit = [buffer blitCommandEncoder];
+    [blit optimizeContentsForGPUAccess:optimized];
+    [blit endEncoding];
+    [buffer encodeWaitForEvent:event value:1];
+    [buffer commit];
+    __block BOOL visibilityComplete = NO, optimizedComplete = NO, targetComplete = NO;
+    check(quiet(^{
+        visibilityComplete = [(id<SPIResources>)visibility isComplete];
+        optimizedComplete = [(id<SPIResources>)optimized isComplete];
+    }) && visibilityComplete && optimizedComplete,
+          "an unlisted visibility result buffer and an optimized texture are complete while the command buffer waits");
+    check(quiet(^{
+        [(id<SPIResources>)target waitUntilComplete];
+        targetComplete = [(id<SPIResources>)target isComplete];
+    }) && targetComplete,
+          "a render attachment completes with its encoder while the command buffer waits");
+    event.signaledValue = 1;
+    [buffer waitUntilCompleted];
+    check(buffer.status == MTLCommandBufferStatusCompleted, "the command buffer with the listings completes");
+
+    // Uses whose flags are 0.
+    id<MTLCommandBuffer> refused = [queue commandBuffer];
+    id<MTLComputeCommandEncoder> compute = [refused computeCommandEncoder];
+    NSString *computeReason = loudReason(^{
+        [compute useResource:used usage:0];
+    });
+    [compute endEncoding];
+    id<MTLRenderCommandEncoder> staged = [refused renderCommandEncoderWithDescriptor:pass];
+    NSString *renderReason = loudReason(^{
+        [staged useResource:used usage:MTLResourceUsageRead stages:0];
+    });
+    [staged endEncoding];
+    check([computeReason containsString:@"no access flags"] && [renderReason containsString:@"no access flags"],
+          "a use the A10X driver lists with no access flags is LOUD");
+}
+
 void checkConstants()
 {
     // -[AGXA10FamilyRenderPipeline ...] 0x21c977a54 to 0x21c977c20.
@@ -483,6 +547,7 @@ int main(int argc, char **argv)
         checkQueue(device);
         checkResources(device);
         checkStamps(device);
+        checkListings(device);
         checkConstants();
         printf("%s: %u of %u SPI checks failed\n", gFailures ? "FAIL" : "PASS", gFailures, gChecks);
         return gFailures ? 1 : 0;

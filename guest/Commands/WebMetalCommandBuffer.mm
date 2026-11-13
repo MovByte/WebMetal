@@ -91,20 +91,41 @@ void PendingRelease::bound(const std::vector<uint64_t> &handles, Connection *con
         ReleaseHandle(connection, handle);
 }
 
-// Whether the A10X driver is traced to list the resource that `cmd` of encoder `self` names in the encoder's IOGPU
-// resource list (IOGPUResourceListAddResource) with flags whose per-flag sets the kernel stamps on submission
-// (AGXAllocationList2, kernelcache 0xfffffff005bf1914; IOGPUResource's stamp 0xfffffff005bc4e68). Render
-// -useResource:usage: (AGXMetalA10 0x21c960e94), -useResources:count:usage: (0x21c960ef0), -useHeap: (0x21c961088) and
-// -useHeaps:count: (0x21c961190) list the resource, or the heap's, with flags 5; the indexed draws list the index buffer
-// with 1 (0x21c963d78, 0x21c964048, 0x21c964330, 0x21c9647b4) and the indirect draws the indirect buffer with 0x41
-// (0x21c964570, 0x21c9647f0). Every other use is untraced.
-Stream::UseKind useKind(id self, SEL cmd)
+// How the A10X driver lists the resource that `cmd` of encoder `self` names in the IOGPU resource list of the encoder's
+// segment (IOGPUResourceListAddResource, which ORs the flags of a resource's listings), and so whether the segment's
+// kick stamps the kernel resource's event 0. The kernel's parse of the list (AGXAllocationList2, kernelcache
+// 0xfffffff005bf1914) drops the read bit of a read and write pair (0x3, 0xc, 0x30) and puts the resource in a set per
+// remaining bit; the render kick stamps sets 0, 1, 9, 10 and 11 with its vertex work and 2 and 3 with its fragment work
+// (0xfffffff005bffce0 to 0xfffffff005c00518), the compute kick sets 0, 1, 10 and 11 (0xfffffff005bfc728 to
+// 0xfffffff005bfca58) and the blit kick sets 2 and 3 (0xfffffff005bfda5c, 0xfffffff005bfdb5c); flag 0x80 and bits 4 to
+// 8 are stamped by none.
+//
+// Render (AGXA10FamilyRenderContext): -useResource:usage: (0x21c960e94), -useResources:count:usage: (0x21c960ef0),
+// -useHeap: (0x21c961088) and -useHeaps:count: (0x21c961190) list with 5; the forms with stages (0x21c960d60,
+// 0x21c960e24, 0x21c960f30, 0x21c961058) with flags from the usage and the stages that are not 0 when the usage has a
+// read, write or sample bit and the stages a vertex, fragment or tile bit (NoteRecordListing refuses the rest); the
+// indexed draws list the index buffer with 1 (0x21c963d78, 0x21c964048, 0x21c964330, 0x21c9647b4) and the indirect
+// draws the indirect buffer with 0x41 (0x21c964570, 0x21c9647f0). Compute (AGXA10FamilyComputeContext):
+// -useResource:usage: (0x21c90c0a4) and -useResources:count:usage: (0x21c90c120) list with (usage & 2) | ((usage & 7)
+// != 0), -useHeap: (0x21c90c16c) and -useHeaps:count: (0x21c90c274) with 1,
+// -setStageInRegionWithIndirectBuffer:indirectBufferOffset: with 1 (0x21c90b7c8). Blit (AGXA10FamilyBlitContext):
+// -invalidateCompressedTexture:, -optimizeContentsForGPUAccess:, -optimizeContentsForCPUAccess: and their slice and
+// level forms return at once (0x21c8b9954 to 0x21c8b9968). Every other use is untraced: the binds the driver lists at
+// draw and dispatch time by masks of the bound pipeline's compiled program (render 0x21c96ad3c, compute 0x21c90f2c4),
+// which come from its compiler (packages G4 and G5); the indirect dispatch's buffer, listed only while the threadgroup
+// fits the pipeline (0x21c90b8a0 to 0x21c90b8ac); and the blit operations, which the driver runs as blit or render
+// kicks over the arguments by paths not read yet.
+Listing listingOf(id self, SEL cmd)
 {
     static const std::vector<SEL> render = {
         @selector(useResource:usage:),
         @selector(useResources:count:usage:),
         @selector(useHeap:),
         @selector(useHeaps:count:),
+        @selector(useResource:usage:stages:),
+        @selector(useResources:count:usage:stages:),
+        @selector(useHeap:stages:),
+        @selector(useHeaps:count:stages:),
         @selector(drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:),
         @selector(drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:),
         @selector(drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:
@@ -112,13 +133,32 @@ Stream::UseKind useKind(id self, SEL cmd)
         @selector(drawPrimitives:indirectBuffer:indirectBufferOffset:),
         @selector(drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:),
     };
-    if ([self isKindOfClass:[WebMetalRenderCommandEncoder class]] &&
-        std::find(render.begin(), render.end(), cmd) != render.end())
-        return Stream::UseKind::Stamped;
-    return Stream::UseKind::Untraced;
+    static const std::vector<SEL> compute = {
+        @selector(useResource:usage:),
+        @selector(useResources:count:usage:),
+        @selector(useHeap:),
+        @selector(useHeaps:count:),
+        @selector(setStageInRegionWithIndirectBuffer:indirectBufferOffset:),
+    };
+    static const std::vector<SEL> blitUnlisted = {
+        @selector(invalidateCompressedTexture:),
+        @selector(invalidateCompressedTexture:slice:level:),
+        @selector(optimizeContentsForGPUAccess:),
+        @selector(optimizeContentsForGPUAccess:slice:level:),
+        @selector(optimizeContentsForCPUAccess:),
+        @selector(optimizeContentsForCPUAccess:slice:level:),
+    };
+    auto in = [cmd](const std::vector<SEL> &list) { return std::find(list.begin(), list.end(), cmd) != list.end(); };
+    if ([self isKindOfClass:[WebMetalRenderCommandEncoder class]] && in(render))
+        return Listing::Stamped;
+    if ([self isKindOfClass:[WebMetalComputeCommandEncoder class]] && in(compute))
+        return Listing::Stamped;
+    if ([self isKindOfClass:[WebMetalBlitCommandEncoder class]] && in(blitUnlisted))
+        return Listing::Unlisted;
+    return Listing::Untraced;
 }
 
-uint64_t Reference(Stream &stream, id self, SEL cmd, id object)
+uint64_t Reference(Stream &stream, id self, SEL cmd, id object, Listing listing)
 {
     if (!object)
         return 0;
@@ -129,9 +169,15 @@ uint64_t Reference(Stream &stream, id self, SEL cmd, id object)
         WMLoudMethod(self, cmd, detail.c_str());
     }
     stream.use(object, handle);
-    if (const uint64_t key = KernelResourceKey(object))
-        stream.noteUse(key, useKind(self, cmd));
+    const uint64_t key = KernelResourceKey(object);
+    if (key && listing != Listing::Unlisted)
+        stream.noteUse(key, listing == Listing::Stamped ? Stream::UseKind::Stamped : Stream::UseKind::Untraced);
     return handle;
+}
+
+uint64_t Reference(Stream &stream, id self, SEL cmd, id object)
+{
+    return Reference(stream, self, cmd, object, listingOf(self, cmd));
 }
 
 // The stamps committed command buffers have pending, by kernel resource ----------------------------------------------

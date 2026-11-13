@@ -74,6 +74,9 @@ struct EncoderState {
     std::shared_ptr<PendingRelease> releases;
     uint64_t handle = 0;
     bool ended = false;
+    // A render encoder's: the kernel resource of its pass's visibility result buffer (KernelResourceKey), which the
+    // driver lists once the encoder sets a visibility result mode other than Disabled.
+    uint64_t visibilityResultKey = 0;
 };
 
 }  // namespace webmetal
@@ -139,6 +142,13 @@ template <class Record> void EmitCommandBufferRecord(WebMetalCommandBuffer *buff
 // the call LOUD: the plugin cannot name it to the host.
 uint64_t Reference(Stream &stream, id self, SEL cmd, id object);
 
+// How the A10X driver lists the resource an argument names in the IOGPU resource list of its encoder's segment, which
+// decides whether the segment's kick stamps event 0 of the kernel resource (WebMetalCommandBuffer.mm): with flags the
+// kick stamps, not at all (or with flags no kick stamps), or in a way that is not traced. Reference without a listing
+// takes the one of `cmd` on encoder `self`.
+enum class Listing : uint8_t { Stamped, Unlisted, Untraced };
+uint64_t Reference(Stream &stream, id self, SEL cmd, id object, Listing listing);
+
 // An object an encoder command names, noted in the encoder's stream. nil where the record needs an object is LOUD.
 inline uint64_t EncoderReference(id self, SEL cmd, EncoderState &encoder, id object, bool nilAllowed)
 {
@@ -150,11 +160,23 @@ inline uint64_t EncoderReference(id self, SEL cmd, EncoderState &encoder, id obj
 // A new encoder of `buffer` that records into the buffer's stream, or into `subStream` (a parallel sub-encoder).
 std::shared_ptr<EncoderState> NewEncoderState(WebMetalCommandBuffer *buffer, Stream *subStream);
 
+// What a record's values do to the A10X driver's listing of the resources its arguments name (WebMetalEncoders.mm),
+// beyond what Reference notes: no access flags, which the kernel refuses, and the visibility result buffer.
+template <class Record> void NoteRecordListing(id, SEL, EncoderState &, const Record &) {}
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::RenderUseResourceStages &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::RenderUseResourcesStages &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::RenderUseHeapStages &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::RenderUseHeapsStages &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::ComputeUseResource &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::ComputeUseResources &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::RenderSetVisibilityResultMode &record);
+
 // Appends an encoder's record. Fails the call LOUD when the encoder has ended or the record cannot be encoded.
 template <class Record> void EmitEncoderRecord(id self, SEL cmd, EncoderState &encoder, const Record &record)
 {
     if (encoder.ended)
         WMLoudMethod(self, cmd, "the encoder has ended encoding; Metal leaves later commands undefined");
+    NoteRecordListing(self, cmd, encoder, record);
     if (!wire::encode(encoder.stream->writer(), record))
         WMLoudMethod(self, cmd, "the arguments break a rule of the wire format");
 }
