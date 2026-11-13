@@ -120,6 +120,9 @@ pub struct Binding {
     pub visibility: u32,
     pub resource: Resource,
     pub source: Source,
+    /// For a Metal texture argument, the argument as the function declares it, which a draw checks the bound texture
+    /// against before making its view (`crate::pipeline::bound`).
+    pub texture: Option<crate::pipeline::bound::TextureArgument>,
 }
 
 impl Binding {

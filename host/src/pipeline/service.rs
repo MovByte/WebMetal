@@ -112,7 +112,7 @@ impl<A: Api, E: Embedder + 'static> PipelineService<A, E> {
         let created = self.shared.gpu.compute_async(cx.gpu(), &label, compiled)?;
         let mut settings = c.settings.clone();
         settings.label = label;
-        let (state, _) = compute::payload(&self.shared, c.function.clone(), &settings, &c.info);
+        let (state, _) = compute::payload(&self.shared, c.function.clone(), &settings, &c.info, &compiled.reflection);
         cx.attach(Rc::new(state));
         let reflection = reflect.then(|| reflection::to_wire(&compiled.reflection));
         Ok(Box::pin(async move {

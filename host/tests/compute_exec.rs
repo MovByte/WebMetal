@@ -431,3 +431,48 @@ fn sampler_descriptor() -> SamplerDescriptor {
         t_address_mode: 0,
     }
 }
+
+/// A bound texture the kernel's argument cannot take (G1b's case: a 2D-array texture bound to a `texture2d`
+/// argument; and a format of another class) fails the dispatch as behavior Metal does not define, naming the index and
+/// both types, and never as the pipeline's creation failing: the pipeline was created, and the mismatch is the
+/// encoder's (Metal's validation layer rejects it).
+#[test]
+fn bound_textures_the_argument_cannot_take() {
+    let h = Harness::new();
+    let p = h.pipeline("smp_sample_2d", None, 0);
+    let sampler = h.handle();
+    h.ok(Request::CreateSamplerState(CreateSamplerState { sampler, descriptor: sampler_descriptor() }));
+    let dispatch_with = |t: Handle| {
+        let (input, _) = h.buffer_with(&[0u8; 8]);
+        let (out, _) = h.buffer(16);
+        h.compute_failure(vec![
+            set_pipeline(p),
+            Command::ComputeSetTexture(ComputeSetTexture { texture: Some(t), index: 0 }),
+            Command::ComputeSetSamplerState(ComputeSetSamplerState { sampler: Some(sampler), index: 0 }),
+            set_buffer(input, 0, 0),
+            set_buffer(out, 0, 1),
+            dispatch(size(1, 1, 1), size(1, 1, 1)),
+        ])
+    };
+    // MTLTextureType2DArray 3, two slices.
+    let array = h.texture(texture_descriptor(3, fmt("RGBA32Float"), (8, 8, 1), 2, 1, 2, 1, 1));
+    let f = dispatch_with(array);
+    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+    assert!(f.message.contains("behavior Metal does not define"), "{f:?}");
+    assert!(!f.message.contains("NSError from the driver"), "{f:?}");
+    assert!(
+        f.message.contains("texture index 0")
+            && f.message.contains("MTLTextureType2D,")
+            && f.message.contains("MTLTextureType2DArray"),
+        "{f:?}"
+    );
+    // An unsigned-integer format bound to a float argument.
+    let uint = h.texture(texture_descriptor(2, fmt("RGBA32Uint"), (8, 8, 1), 1, 1, 2, 1, 1));
+    let f = dispatch_with(uint);
+    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+    assert!(f.message.contains("behavior Metal does not define") && f.message.contains("RGBA32Uint"), "{f:?}");
+    // The texture the argument takes still dispatches.
+    let fine = h.texture(texture_descriptor(2, fmt("RGBA32Float"), (8, 8, 1), 1, 1, 2, 1, 1));
+    assert_eq!(dispatch_with(fine).status, status::OK);
+    h.assert_no_errors();
+}

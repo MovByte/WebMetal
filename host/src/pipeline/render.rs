@@ -809,7 +809,7 @@ fn stage(call: &str, s: airwgsl::MetalStage) -> Result<MetalStage, Failure> {
 }
 
 /// The render path's form of one compiled binding.
-fn binding(call: &str, e: &airwgsl::BindingEntry) -> Result<Binding, Failure> {
+fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflection) -> Result<Binding, Failure> {
     let what = |x: String| failure::unimplemented(format!("{call}: binding {}: {x}", e.binding));
     let resource = match &e.resource {
         BindingResource::Buffer { ty, has_dynamic_offset, min_binding_size } => {
@@ -871,7 +871,20 @@ fn binding(call: &str, e: &airwgsl::BindingEntry) -> Result<Binding, Failure> {
         }
         other => return Err(what(format!("the source {other:?}"))),
     };
-    Ok(Binding { binding: e.binding, visibility: e.visibility.0, resource, source })
+    // The function's texture argument the binding stands for (vertex functions reflect as type 1, fragment as 2).
+    let texture = match &source {
+        Source::MetalTexture { stage, index } => {
+            let function_type = if *stage == MetalStage::Vertex { 1 } else { 2 };
+            reflection
+                .stages
+                .iter()
+                .find(|s| s.function_type == function_type)
+                .map(super::bound::texture_arguments)
+                .and_then(|args| super::bound::argument_at(&args, *index).cloned())
+        }
+        _ => None,
+    };
+    Ok(Binding { binding: e.binding, visibility: e.visibility.0, resource, source, texture })
 }
 
 /// The render path's description of a compiled render pipeline with `settings`.
@@ -895,7 +908,7 @@ pub fn plan(call: &str, label: &str, settings: &RenderSettings, c: &Compiled) ->
     for g in &c.layout.groups {
         groups.push(GroupDesc {
             index: g.group,
-            bindings: g.entries.iter().map(|e| binding(call, e)).collect::<Result<Vec<_>, _>>()?,
+            bindings: g.entries.iter().map(|e| binding(call, e, &c.reflection)).collect::<Result<Vec<_>, _>>()?,
         });
     }
     let passes = match &c.passes[..] {

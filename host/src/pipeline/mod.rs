@@ -40,6 +40,7 @@
 //! `createRenderPipeline`; the creation makes the variant of a new encoder's state through it.
 
 pub mod archive;
+pub mod bound;
 pub mod compile;
 pub mod compute;
 pub mod errors;

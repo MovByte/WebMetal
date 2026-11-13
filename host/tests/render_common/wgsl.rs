@@ -50,6 +50,7 @@ fn buffer(stage: MetalStage, index: u64, binding: u32, ty: BufferBindingType, mi
     Binding {
         binding,
         visibility,
+        texture: None,
         resource: Resource::Buffer { ty, min_binding_size: min },
         source: Source::MetalBuffer { stage, index },
     }
@@ -189,6 +190,7 @@ pub fn function(name: &str) -> Option<Func> {
             f.bindings = vec![Binding {
                 binding: 0,
                 visibility: ShaderStage::FRAGMENT,
+                texture: None,
                 resource: Resource::Texture {
                     sample_type: TextureSampleType::Uint,
                     view_dimension: TextureViewDimension::D2,
@@ -400,6 +402,7 @@ pub fn function(name: &str) -> Option<Func> {
                     Binding {
                         binding: 0,
                         visibility: ShaderStage::COMPUTE,
+                        texture: None,
                         resource: Resource::Texture {
                             sample_type,
                             view_dimension: TextureViewDimension::D2,
@@ -410,6 +413,7 @@ pub fn function(name: &str) -> Option<Func> {
                     Binding {
                         binding: 1,
                         visibility: ShaderStage::COMPUTE,
+                        texture: None,
                         resource: Resource::Buffer { ty: BufferBindingType::Storage, min_binding_size: size },
                         source: Source::MetalBuffer { stage: MetalStage::Fragment, index: 0 },
                     },

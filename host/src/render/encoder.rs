@@ -1708,6 +1708,18 @@ impl<A: Api> Run<'_, A> {
                                 ),
                             )
                         })?;
+                        if let Some(a) = &b.texture {
+                            let t = tex.texture();
+                            let kind = crate::pipeline::bound::texture_type_value(t.geometry.kind);
+                            if let Some(why) =
+                                crate::pipeline::bound::texture_mismatch(a, *index, kind, u64::from(t.format))
+                            {
+                                return Err(RenderError::undefined(
+                                    DRAW,
+                                    format!("the {} function's {why}", stage.name()),
+                                ));
+                            }
+                        }
                         let view = self.texture_view(&tex, resource, *stage, *index)?;
                         if b.writable() {
                             let layers = tex.texture().geometry.layers();

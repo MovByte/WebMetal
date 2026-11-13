@@ -91,6 +91,26 @@ pub fn refusal(call: &str, r: &Refusal) -> Failure {
     }
 }
 
+/// The failure of encoder call `call` for a refusal of the variant a draw or dispatch needs. The pipeline was created:
+/// its creation variant compiled, so the refusal comes from what the encoder bound or set, never from the pipeline's
+/// functions alone, and it is not the driver's creation error. A construct the device rejects with that state is
+/// behavior Metal does not define (its validation layer rejects it); one the compiler does not lower yet is status 2,
+/// one that needs what the host lacks status 3.
+pub fn variant_refusal(call: &'static str, r: &Refusal) -> Failure {
+    match r.kind {
+        RefusalKind::RejectedByDevice => {
+            crate::mem::MemError::undefined(call, format!("the bound or set state is one the device rejects: {r}"))
+                .failure()
+        }
+        RefusalKind::NotImplemented | RefusalKind::NoExactLowering => failure::unimplemented(format!(
+            "{call}: the shader compiler refuses the variant for the bound and set state: {r}"
+        )),
+        RefusalKind::HostUnsupported => failure::host_unsupported(format!(
+            "{call}: the variant for the bound and set state needs what this host lacks: {r}"
+        )),
+    }
+}
+
 /// The failure of `call` for a descriptor field whose value the host does not implement.
 pub fn field(call: &str, field: &str, value: impl std::fmt::Display, why: &str) -> Failure {
     failure::unimplemented(format!("{call}: descriptor {field} = {value}: {why}"))

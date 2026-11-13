@@ -206,6 +206,7 @@ impl Pipelines {
                 let storage = |binding: u32, index: u64| Binding {
                     binding,
                     visibility: ShaderStage::VERTEX,
+                    texture: None,
                     resource: Resource::Buffer { ty: BufferBindingType::ReadOnlyStorage, min_binding_size: 4 },
                     source: Source::MetalBuffer { stage: MetalStage::Vertex, index },
                 };
@@ -215,6 +216,7 @@ impl Pipelines {
                     Binding {
                         binding: 2,
                         visibility: ShaderStage::VERTEX,
+                        texture: None,
                         resource: Resource::Buffer { ty: BufferBindingType::Uniform, min_binding_size: 16 },
                         source: Source::Uniforms(UniformBlock {
                             fields: vec![

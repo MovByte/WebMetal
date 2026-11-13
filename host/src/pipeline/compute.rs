@@ -12,6 +12,11 @@
 //! too (status 2); its WebGPU objects stay in the object cache, where a dispatch variant that compiles to the same
 //! WGSL finds them. The reply carries the compiler's reflection when the caller asked for it.
 //!
+//! A dispatch variant is compiled for what the encoder bound and set. A bound texture the kernel's argument cannot take
+//! fails the dispatch as behavior Metal does not define, naming the index and both types ([`super::bound`]), before
+//! the compiler sees it; any other refusal of a dispatch variant is the bound or set state's
+//! ([`super::errors::variant_refusal`]), never the pipeline's creation.
+//!
 //! **Pipeline properties.** The A10X driver takes `maxTotalThreadsPerThreadgroup` and `staticThreadgroupMemoryLength`
 //! from its back-end compiler's reply (`AGX::ComputeProgramVariant` constructor, AGXMetalA10 21H461 0x21c92f9b4: the
 //! limit at +0xb38 is a reply field when the compiler sets one, otherwise the smaller of two register-file terms,
@@ -47,15 +52,16 @@ use airwgsl::{
 use webmetal_wire::{ComputePipelineDescriptor, Failure, Handle};
 
 use super::Shared;
-use super::errors;
 use super::gpu::{self, ComputeObjects};
 use super::registry::{Function, function_type};
+use super::{bound, errors};
 use crate::compute::pipeline::{
     BindGroup, Binding, ComputePipelineState, ComputeVariant, ComputeVariants, Resource, Source, UniformBlock,
     UniformValue, VariantKey,
 };
 use crate::exec::{Gpu, Table, failure};
 use crate::gpu::Api;
+use crate::mem::MemError;
 
 /// `threadExecutionWidth` of every A10X compute pipeline (`-[AGXA10FamilyComputePipeline threadExecutionWidth]`,
 /// AGXMetalA10 21H461 0x21c8cc394: `mov w0, #0x20; ret`).
@@ -508,6 +514,8 @@ pub struct Variants<A: Api> {
     function: Rc<Function>,
     stage_input: Option<StageInputDescriptor>,
     label: String,
+    /// The kernel's texture arguments, from the creation variant's reflection.
+    textures: Vec<bound::TextureArgument>,
     made: RefCell<HashMap<VariantKey, Rc<ComputeVariant<A>>>>,
 }
 
@@ -517,8 +525,9 @@ impl<A: Api> Variants<A> {
         function: Rc<Function>,
         stage_input: Option<StageInputDescriptor>,
         label: String,
+        textures: Vec<bound::TextureArgument>,
     ) -> Variants<A> {
-        Variants { shared, function, stage_input, label, made: RefCell::new(HashMap::new()) }
+        Variants { shared, function, stage_input, label, textures, made: RefCell::new(HashMap::new()) }
     }
 
     /// The number of variants made so far.
@@ -541,10 +550,17 @@ impl<A: Api> ComputeVariants<A> for Variants<A> {
         if let Some(v) = self.made.borrow().get(key) {
             return Ok(v.clone());
         }
+        for t in &key.textures {
+            if let Some(a) = bound::argument_at(&self.textures, t.index)
+                && let Some(why) = bound::texture_mismatch(a, t.index, t.texture_type, t.pixel_format)
+            {
+                return Err(MemError::undefined(DISPATCH, why).failure());
+            }
+        }
         let outcome = self.compiled(key)?;
         let compiled = match &*outcome {
             Ok(c) => c,
-            Err(r) => return Err(errors::refusal(DISPATCH, r)),
+            Err(r) => return Err(errors::variant_refusal(DISPATCH, r)),
         };
         gpu::requirements::<A>(DISPATCH, gpu.device(), &self.shared.wgsl_language_features, &compiled.requirements)?;
         let objects = self.shared.gpu.compute_now(gpu, &self.label, compiled)?;
@@ -563,6 +579,7 @@ pub fn payload<A: Api>(
     function: Rc<Function>,
     settings: &ComputeSettings,
     info: &KernelInfo,
+    reflection: &airwgsl::Reflection,
 ) -> (ComputePipelineState<A>, Rc<Variants<A>>) {
     let mut max = MAX_THREADS_BOUND;
     if settings.max_total_threads_per_threadgroup != 0 {
@@ -571,8 +588,14 @@ pub fn payload<A: Api>(
     if let Some(m) = info.max_total_threads {
         max = max.min(m);
     }
-    let variants =
-        Rc::new(Variants::new(shared.clone(), function, settings.stage_input.clone(), settings.label.clone()));
+    let textures = reflection.stages.first().map(bound::texture_arguments).unwrap_or_default();
+    let variants = Rc::new(Variants::new(
+        shared.clone(),
+        function,
+        settings.stage_input.clone(),
+        settings.label.clone(),
+        textures,
+    ));
     let state = ComputePipelineState {
         max_total_threads_per_threadgroup: max,
         thread_execution_width: THREAD_EXECUTION_WIDTH,
