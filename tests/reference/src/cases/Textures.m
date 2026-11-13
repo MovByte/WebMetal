@@ -647,6 +647,183 @@ WMREF_CASE(texWriteOutOfBounds, "texture.write-out-of-bounds", "texture.access",
     }
 }
 
+// Every level and slice of an R32Uint texture as TexUploadAll fills them, in
+// the order TexReadAll reads them back: levels, then slices (a 3D level is
+// one slice of all its depth images).
+static NSMutableData *TexInitialContents(id<MTLTexture> t) {
+    NSMutableData *all = [NSMutableData data];
+    for (NSUInteger level = 0; level < t.mipmapLevelCount; level++) {
+        NSUInteger w = TexMip(t.width, level), h = TexMip(t.height, level);
+        NSUInteger d = TexIs3D(t) ? TexMip(t.depth, level) : 1;
+        for (NSUInteger slice = 0; slice < TexSlices(t); slice++)
+            for (NSUInteger z = 0; z < d; z++)
+                for (NSUInteger y = 0; y < h; y++)
+                    for (NSUInteger x = 0; x < w; x++) {
+                        uint32_t v = TexValue(level, TexIs3D(t) ? z : slice, y, x);
+                        [all appendBytes:&v length:sizeof v];
+                    }
+    }
+    return all;
+}
+
+static NSData *TexReadAll(WMCase *c, id<MTLTexture> t) {
+    NSMutableData *all = [NSMutableData data];
+    for (NSUInteger level = 0; level < t.mipmapLevelCount; level++)
+        for (NSUInteger slice = 0; slice < TexSlices(t); slice++)
+            [all appendData:[c readTexture:t level:level slice:slice bytesPerRow:TexMip(t.width, level) * 4]];
+    return all;
+}
+
+// Applies to `contents` (TexInitialContents of `root`) a write of `value`
+// through `t`, which is `root` or a view of it whose level 0 and slice 0 are
+// the root's `baseLevel` and `baseSlice`, when the write is in bounds of `t`
+// itself: its level, coordinates, array slice or face, and depth (MSL 4.1
+// section 6.13). An out-of-bounds write is ignored.
+static void TexApplyWrite(NSMutableData *contents, id<MTLTexture> root, id<MTLTexture> t, NSUInteger baseLevel,
+                          NSUInteger baseSlice, TexQuery q, uint32_t value) {
+    uint32_t x = q.c[0], y = q.c[1], z = q.c[2], lod = q.c[4];
+    if (lod >= t.mipmapLevelCount) return;
+    NSUInteger w = TexMip(t.width, lod), h = TexMip(t.height, lod);
+    NSUInteger slice = 0, depth = 0;
+    switch (t.textureType) {
+    case MTLTextureType2D:
+        break;
+    case MTLTextureType2DArray:
+        if (z >= t.arrayLength) return;
+        slice = z;
+        break;
+    case MTLTextureTypeCube:
+        if (z >= 6) return;
+        slice = z;
+        break;
+    case MTLTextureType3D:
+        if (z >= TexMip(t.depth, lod)) return;
+        depth = z;
+        break;
+    default:
+        return;
+    }
+    if (x >= w || y >= h) return;
+    NSUInteger level = baseLevel + lod, offset = 0;
+    for (NSUInteger l = 0; l < level; l++)
+        offset += TexMip(root.width, l) * TexMip(root.height, l) * (TexIs3D(root) ? TexMip(root.depth, l) : 1) *
+                  TexSlices(root);
+    NSUInteger rw = TexMip(root.width, level), rh = TexMip(root.height, level);
+    NSUInteger rd = TexIs3D(root) ? TexMip(root.depth, level) : 1;
+    offset += (baseSlice + slice) * rw * rh * rd + (depth * rh + y) * rw + x;
+    ((uint32_t *)contents.mutableBytes)[offset] = value;
+}
+
+WMREF_CASE(texWriteLevels, "texture.write-levels", "texture.access",
+           "Shader writes at every level and at levels out of range of textures and of level-range views")
+{
+    // A write is out of bounds when its level is (MSL 4.1 section 6.13): not
+    // below the mipmap level count of the texture the function writes, which
+    // for a view is the view's own count from its first level. Out-of-bounds
+    // writes are ignored. Each write runs in a command buffer of its own, in
+    // order, so the contents do not depend on how a device schedules writes
+    // that land on one texel.
+    MTLTextureDescriptor *viewable2D = TexDescriptor(MTLTextureType2D, 8, 8, 1, 4, 1);
+    viewable2D.usage |= MTLTextureUsagePixelFormatView;
+    MTLTextureDescriptor *viewableArray = TexDescriptor(MTLTextureType2DArray, 8, 8, 1, 3, 3);
+    viewableArray.usage |= MTLTextureUsagePixelFormatView;
+    // Writes Apple silicon does not ignore although the specification puts
+    // them out of bounds (measured on the Apple M4: the level is taken modulo
+    // 2^16, and a write past a view's last level lands in its parent's level
+    // when the parent has it; reads at the same levels are out of bounds).
+    WMRule *deviation = WMNone(@"MSL 4.1 section 6.13 ignores a write at a level out of range of the texture written "
+                               @"(a view's own levels); Apple silicon writes some of these levels, so the result is "
+                               @"recorded for reference only");
+    struct {
+        NSString *name, *kernel;
+        MTLTextureDescriptor *desc;
+        // The view the writes go through, of levels and slices from these
+        // bases and of these counts, or none (count 0).
+        MTLTextureType viewType;
+        NSUInteger baseLevel, levels, baseSlice, slices;
+        // The writes' results follow the specification on every device the
+        // case was measured on.
+        BOOL exact;
+    } targets[] = {
+        {@"2d", @"tex_write_2d", TexDescriptor(MTLTextureType2D, 8, 8, 1, 4, 1), MTLTextureType2D, 0, 0, 0, 0, YES},
+        {@"level-view", @"tex_write_2d", viewable2D, MTLTextureType2D, 1, 1, 0, 1, YES},
+        {@"array-view", @"tex_write_2d_array", viewableArray, MTLTextureType2DArray, 1, 1, 1, 1, YES},
+        {@"3d", @"tex_write_3d", TexDescriptor(MTLTextureType3D, 4, 4, 4, 3, 1), MTLTextureType3D, 0, 0, 0, 0, YES},
+        {@"cube", @"tex_write_cube", TexDescriptor(MTLTextureTypeCube, 4, 4, 1, 3, 1), MTLTextureTypeCube, 0, 0, 0, 0,
+         YES},
+        {@"2d.wrapped-levels", @"tex_write_2d", TexDescriptor(MTLTextureType2D, 8, 8, 1, 4, 1), MTLTextureType2D, 0, 0,
+         0, 0, NO},
+        {@"level-view.past-view", @"tex_write_2d", viewable2D, MTLTextureType2D, 1, 1, 0, 1, NO},
+        {@"array-view.past-view", @"tex_write_2d_array", viewableArray, MTLTextureType2DArray, 1, 1, 1, 1, NO},
+    };
+    const TexQuery queries[][11] = {
+        // 2D, 4 levels: one write at each level; levels 4, 5, 31, 32,
+        // 2^16 - 1, 2^31 - 1 and 2^32 - 1 are out of range.
+        {TexQ(1, 1, 0, 0, 0), TexQ(2, 1, 0, 0, 1), TexQ(1, 0, 0, 0, 2), TexQ(0, 0, 0, 0, 3), TexQ(3, 3, 0, 0, 4),
+         TexQ(0, 1, 0, 0, 5), TexQ(1, 1, 0, 0, 31), TexQ(2, 2, 0, 0, 32), TexQ(0, 0, 0, 0, 0xffffu),
+         TexQ(0, 0, 0, 0, 0x7fffffffu), TexQ(0, 0, 0, 0, 0xffffffffu)},
+        // A view of level 1 of a 4-level 2D texture: its level 0 is in
+        // range; its level 3 would be the parent's level 4.
+        {TexQ(3, 2, 0, 0, 0), TexQ(2, 0, 0, 0, 0), TexQ(0, 0, 0, 0, 3), TexQ(2, 2, 0, 0, 0xffffffffu)},
+        // A view of level 1 and slice 1 of a 3-level, 3-slice 2D array: its
+        // slice 1 (the parent's slice 2) is outside it.
+        {TexQ(1, 0, 0, 0, 0), TexQ(3, 3, 0, 0, 0), TexQ(2, 2, 1, 0, 0), TexQ(0, 0, 0, 0, 3)},
+        // 3D, 3 levels: one write at each level; z = 1 at level 2 (1 x 1 x 1),
+        // level 3 and level 2^32 - 1 are out of bounds.
+        {TexQ(1, 2, 3, 0, 0), TexQ(1, 0, 1, 0, 1), TexQ(0, 0, 0, 0, 2), TexQ(0, 0, 1, 0, 2), TexQ(1, 1, 1, 0, 3),
+         TexQ(0, 0, 0, 0, 0xffffffffu)},
+        // Cube, 3 levels: one write at each level; level 3, face 6 and level
+        // 2^32 - 1 are out of bounds.
+        {TexQ(3, 0, 0, 0, 0), TexQ(1, 1, 2, 0, 1), TexQ(0, 0, 5, 0, 2), TexQ(0, 0, 1, 0, 3), TexQ(0, 0, 6, 0, 1),
+         TexQ(1, 1, 3, 0, 0xffffffffu)},
+        // 2D, 4 levels: levels 2^16, 2^16 + 3, 2^31 and 2^31 + 1 are out of
+        // range; their low 16 bits are levels the texture has.
+        {TexQ(1, 1, 0, 0, 0x10000u), TexQ(0, 0, 0, 0, 0x10003u), TexQ(2, 3, 0, 0, 0x80000000u),
+         TexQ(1, 0, 0, 0, 0x80000001u)},
+        // The view of level 1: its levels 1 and 2 are the parent's levels 2
+        // and 3, which the parent has.
+        {TexQ(1, 1, 0, 0, 1), TexQ(0, 0, 0, 0, 2)},
+        // The view of level 1 and slice 1: its level 1 is the parent's level
+        // 2, which the parent has.
+        {TexQ(0, 1, 0, 0, 1), TexQ(1, 1, 0, 0, 1)},
+    };
+    const NSUInteger counts[] = {11, 4, 4, 6, 6, 4, 2, 2};
+    for (int i = 0; i < 8; i++) {
+        id<MTLTexture> root = [c texture:targets[i].desc];
+        TexUploadAll(c, root);
+        id<MTLTexture> t = root;
+        if (targets[i].levels) {
+            t = [root newTextureViewWithPixelFormat:MTLPixelFormatR32Uint textureType:targets[i].viewType
+                                             levels:NSMakeRange(targets[i].baseLevel, targets[i].levels)
+                                             slices:NSMakeRange(targets[i].baseSlice, targets[i].slices)];
+            if (!t) [c fail:@"%@: the view returned nil", targets[i].name];
+        }
+        if (i == 1) {
+            // Reads through the view at its levels 1 and 2, which the parent
+            // has, are out of bounds (MSL 4.1 section 6.13).
+            TexQuery rq[4] = {TexQ(1, 0, 0, 0, 0), TexQ(1, 0, 0, 0, 1), TexQ(0, 0, 0, 0, 2),
+                              TexQ(0, 0, 0, 0, 0xffffffffu)};
+            TexTexel re[4] = {TexR(TexValue(1, 0, 0, 1)), TexDefault(), TexDefault(), TexDefault()};
+            TexRecordReads(c, @"level-view.reads", rq, 4, TexRunReads(c, @"tex_read_2d", t, rq, 4), re);
+        }
+        NSMutableData *expected = TexInitialContents(root);
+        for (NSUInteger j = 0; j < counts[i]; j++) {
+            uint32_t value = 0xc0de0000u | (uint32_t)(i << 8) | (uint32_t)j;
+            TexTexel v = {{value, 0, 0, 0}};
+            TexRunWrites(c, targets[i].kernel, t, &queries[i][j], &v, 1);
+            TexApplyWrite(expected, root, t, targets[i].baseLevel, targets[i].baseSlice, queries[i][j], value);
+        }
+        [c data:[targets[i].name stringByAppendingString:@".writes"] elem:WMElemU32 bytes:queries[i]
+         length:counts[i] * sizeof(TexQuery) rule:WMExact()];
+        NSData *contents = TexReadAll(c, root);
+        WMRule *rule = targets[i].exact ? WMExact() : deviation;
+        [c data:[targets[i].name stringByAppendingString:@".contents"] elem:WMElemU32 bytes:contents.bytes
+         length:contents.length rule:rule];
+        [c value:[targets[i].name stringByAppendingString:@".contents.match-specification"]
+         boolean:[contents isEqualToData:expected] rule:rule];
+    }
+}
+
 #pragma mark - Views
 
 static void TexUploadBytes(WMCase *c, id<MTLTexture> t, const void *bytes, NSUInteger bytesPerRow) {
