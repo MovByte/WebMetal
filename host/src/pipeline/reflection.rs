@@ -3,9 +3,8 @@
 //!
 //! The two have the same members with the same meaning (the compiler's type is defined field for field after the wire
 //! struct); every struct is destructured here, so a member either side gains breaks the build until it is carried.
-//! The wire also has members the compiler's reflection does not produce yet (a buffer's address space, the data type of
-//! threadgroup memory, a stage's built-in arguments); they are sent as not reported (0, MTLDataTypeNone, None), and the
-//! guest does not build the reflection objects that need them.
+//! A value the compiler does not report (an address space of 0, a threadgroup data type of 0, built-ins `None`) is sent
+//! as such, and the guest does not build the reflection objects that need it.
 
 use webmetal_wire as wire;
 
@@ -16,12 +15,28 @@ pub fn to_wire(r: &airwgsl::Reflection) -> wire::Reflection {
 }
 
 fn stage(s: &airwgsl::StageReflection) -> wire::StageReflection {
-    let airwgsl::StageReflection { function_type, arguments, types } = s;
+    let airwgsl::StageReflection { function_type, arguments, types, builtins } = s;
     wire::StageReflection {
         function_type: *function_type,
         arguments: arguments.iter().map(argument).collect(),
         types: types.iter().map(ty).collect(),
-        builtins: None,
+        builtins: builtins.as_ref().map(|list| wire::Builtins {
+            list: list
+                .iter()
+                .map(|b| {
+                    let airwgsl::BuiltinReflection { name, r#type, access, active, index, data_type, builtin_type } = b;
+                    wire::BuiltinReflection {
+                        name: name.clone(),
+                        r#type: *r#type,
+                        access: *access,
+                        active: *active,
+                        index: *index,
+                        data_type: *data_type,
+                        builtin_type: *builtin_type,
+                    }
+                })
+                .collect(),
+        }),
     }
 }
 
@@ -47,6 +62,8 @@ fn argument(a: &airwgsl::ArgumentReflection) -> wire::ArgumentReflection {
         indirect_constant_alignment,
         indirect_constant_data_size,
         indirect_constant_data_type,
+        buffer_address_space,
+        threadgroup_memory_data_type,
     } = a;
     wire::ArgumentReflection {
         name: name.clone(),
@@ -69,8 +86,8 @@ fn argument(a: &airwgsl::ArgumentReflection) -> wire::ArgumentReflection {
         indirect_constant_alignment: *indirect_constant_alignment,
         indirect_constant_data_size: *indirect_constant_data_size,
         indirect_constant_data_type: *indirect_constant_data_type,
-        buffer_address_space: 0,
-        threadgroup_memory_data_type: 0,
+        buffer_address_space: *buffer_address_space,
+        threadgroup_memory_data_type: *threadgroup_memory_data_type,
     }
 }
 
@@ -90,6 +107,7 @@ fn ty(t: &airwgsl::TypeReflection) -> wire::TypeReflection {
         texture_data_type,
         texture_type,
         is_depth_texture,
+        address_space,
     } = t;
     wire::TypeReflection {
         data_type: *data_type,
@@ -118,7 +136,7 @@ fn ty(t: &airwgsl::TypeReflection) -> wire::TypeReflection {
         texture_data_type: *texture_data_type,
         texture_type: *texture_type,
         is_depth_texture: *is_depth_texture,
-        address_space: 0,
+        address_space: *address_space,
     }
 }
 
@@ -152,6 +170,8 @@ mod tests {
                     indirect_constant_alignment: 10,
                     indirect_constant_data_size: 11,
                     indirect_constant_data_type: 12,
+                    buffer_address_space: 2,
+                    threadgroup_memory_data_type: 13,
                 }],
                 types: vec![airwgsl::TypeReflection {
                     data_type: 1,
@@ -174,7 +194,17 @@ mod tests {
                     texture_data_type: 3,
                     texture_type: 2,
                     is_depth_texture: true,
+                    address_space: 1,
                 }],
+                builtins: Some(vec![airwgsl::BuiltinReflection {
+                    name: "gid".into(),
+                    r#type: 15,
+                    access: 0,
+                    active: true,
+                    index: 0,
+                    data_type: 35,
+                    builtin_type: 5,
+                }]),
             }],
         };
         let w = to_wire(&r);
@@ -193,7 +223,11 @@ mod tests {
             (a.index, a.threadgroup_memory_data_size, a.indirect_constant_data_type, a.buffer_indirect_argument_type),
             (2, 6, 12, airwgsl::NO_TYPE)
         );
+        assert_eq!((a.buffer_address_space, a.threadgroup_memory_data_type), (2, 13));
         let t = &w.stages[0].types[0];
         assert_eq!((t.members[0].argument_index, t.argument_index_stride, t.is_depth_texture), (3, 5, true));
+        assert_eq!(t.address_space, 1);
+        let b = &w.stages[0].builtins.as_ref().unwrap().list[0];
+        assert_eq!((b.name.as_str(), b.r#type, b.active, b.data_type, b.builtin_type), ("gid", 15, true, 35, 5));
     }
 }
