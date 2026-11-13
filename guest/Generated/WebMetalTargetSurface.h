@@ -475,7 +475,7 @@ inline constexpr DriverSelector kAGXA10FamilyTextureDriver[] = {
     {SelectorKind::Instance, "resourceIndex", "Q16@0:8", "agx", ""},
     {SelectorKind::Instance, "resourceOptions", "Q16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "resourceRef", "^{__IOGPUResource={__CFRuntimeBase=QAQ}^{__IOGPUDevice}^vQQIIQQ^{IOGPUClientSharedRO}QQQQ[0Q]}16@0:8", "iogpu", ""},
-    {SelectorKind::Instance, "resourceSize", "Q16@0:8", "iogpu", "the size of the texture's kernel resource (-[IOGPUMetalResource resourceSize] 0x1fcb2e758: IOGPU._res +0x28, low 56 bits), the A10X layout's allocation including the kernel's rounding; for textures it is not derived yet"},
+    {SelectorKind::Instance, "resourceSize", "Q16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "responsibleProcess", "i16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "retainedLabel", "@16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "rootResource", "@16@0:8", "iogpu", ""},

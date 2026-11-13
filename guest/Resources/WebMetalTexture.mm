@@ -112,6 +112,11 @@ constexpr uint64_t kKernelPageSize = 0x4000;
 }
 @end
 
+// IOGPUMetalResource's -resourceSize, which WebMetalBuffer answers.
+@protocol WebMetalResourceSize
+- (NSUInteger)resourceSize;
+@end
+
 namespace webmetal {
 
 wire::TextureDescriptor WireTextureDescriptor(id self, SEL _cmd, MTLTextureDescriptor *d)
@@ -721,6 +726,26 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
     return _state.residentSize;
+}
+
+// -[IOGPUMetalResource resourceSize] (0x1fcb2e758): _res.info.resourceSize, its low 56 bits. A view, a texture over a
+// buffer and a heap texture take their parent's, their buffer's and the heap's backing resource's _res, info included
+// (-[IOGPUMetalResource initWithResource:] 0x1fcb2acc8, from -[IOGPUMetalTexture initWithTextureInternal:...],
+// initWithBuffer:... and initWithHeap:...); a sub-allocated texture's kernel resource is the sub-allocator's buffer.
+- (NSUInteger)resourceSize
+{
+    if (_parentTexture)
+        return [_parentTexture resourceSize];
+    if (_buffer)
+        return [(id<WebMetalResourceSize>)_buffer resourceSize];
+    if (_state.heap)
+        return [_state.heap currentAllocatedSize] & 0x00ffffffffffffffull;
+    if (_resourceSizeUnknown)
+        WMLoudMethod(self, _cmd, "the kernel resource size of a sub-allocated texture (a texture over the sub-allocator's "
+                                 "buffer) is not established for 21H461");
+    if (!_hasLayout)
+        WMLoudMethod(self, _cmd, kLayout);
+    return _state.residentSize & 0x00ffffffffffffffull;
 }
 
 // -[AGXTexture getAlignment], getCPUSizeBytes, getBytesPerRow (AGXMetalA10 0x21c9d5da0, 0x21c9d5dc0, 0x21c9d5de0): the

@@ -27,6 +27,10 @@
 - (void)setDisableComputeEncoderCoalescing:(BOOL)disable;
 - (id)newVisibleFunctionTableWithDescriptor:(id)descriptor;
 - (id)newIndirectComputeCommandEncoderWithBuffer:(id)buffer;
+- (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes
+                                     length:(NSUInteger)length
+                                 descriptor:(MTLTextureDescriptor *)descriptor
+                                deallocator:(void (^)(void *pointer, NSUInteger length))deallocator;
 - (NSUInteger)gpuCoreCount;
 @end
 
@@ -55,6 +59,10 @@
                           count:(NSUInteger)count;
 - (void)setResourceGroups:(const id __unsafe_unretained *)groups count:(NSUInteger)count;
 - (void)encodeDashboardTagForResourceGroup:(id)group;
+@end
+
+@protocol SPIResources
+- (NSUInteger)resourceSize;
 @end
 
 @protocol SPIConstants
@@ -246,6 +254,37 @@ void checkQueue(id<MTLDevice> device)
           "a command buffer with cache hints completes");
 }
 
+void checkResources(id<MTLDevice> device)
+{
+    // -[IOGPUMetalResource resourceSize] (0x1fcb2e758): a heap resource, a view and a texture over a buffer answer the
+    // kernel resource they take from the heap, the parent or the buffer (-[IOGPUMetalResource initWithResource:]).
+    auto size = [](id resource) { return [(id<SPIResources>)resource resourceSize]; };
+    MTLHeapDescriptor *hd = [MTLHeapDescriptor new];
+    hd.size = 65536;
+    hd.storageMode = MTLStorageModeShared;
+    id<MTLHeap> heap = [device newHeapWithDescriptor:hd];
+    id<MTLBuffer> heapBuffer = [heap newBufferWithLength:4096 options:MTLResourceStorageModeShared];
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                  width:64 height:64 mipmapped:NO];
+    td.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
+    td.storageMode = MTLStorageModeShared;
+    id<MTLTexture> texture = [device newTextureWithDescriptor:td];
+    id<MTLTexture> view = [texture newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm_sRGB];
+    id<MTLTexture> heapTexture = [heap newTextureWithDescriptor:td];
+    id<MTLBuffer> buffer = [device newBufferWithLength:65536 options:MTLResourceStorageModeShared];
+    MTLTextureDescriptor *linear = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                      width:16 height:16 mipmapped:NO];
+    linear.storageMode = MTLStorageModeShared;
+    id<MTLTexture> bufferTexture = [buffer newTextureWithDescriptor:linear offset:0 bytesPerRow:256];
+    check(heap && heapBuffer && texture && view && heapTexture && buffer && bufferTexture, "the resources are made");
+    check(size(heapBuffer) == heap.currentAllocatedSize && size(heapTexture) == heap.currentAllocatedSize,
+          "heap resources answer the heap's kernel resource size");
+    check(size(texture) == texture.allocatedSize && size(view) == size(texture),
+          "a texture answers its kernel resource size and its view the same");
+    check(size(bufferTexture) == size(buffer) && size(buffer) == buffer.allocatedSize,
+          "a texture over a buffer answers the buffer's kernel resource size");
+}
+
 void checkConstants()
 {
     // -[AGXA10FamilyRenderPipeline ...] 0x21c977a54 to 0x21c977c20.
@@ -300,6 +339,7 @@ int main(int argc, char **argv)
         }
         checkDevice(device);
         checkQueue(device);
+        checkResources(device);
         checkConstants();
         printf("%s: %u of %u SPI checks failed\n", gFailures ? "FAIL" : "PASS", gFailures, gChecks);
         return gFailures ? 1 : 0;

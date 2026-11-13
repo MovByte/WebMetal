@@ -2342,7 +2342,7 @@ AGXA10FamilyTexture	instance	resourceID	-	iogpu	driver	WebMetalTexture	loud
 AGXA10FamilyTexture	instance	resourceIndex	MTLTextureSPI	agx	driver	WebMetalTexture	loud
 AGXA10FamilyTexture	instance	resourceOptions	MTLResource	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	resourceRef	-	iogpu	driver	WebMetalTexture	loud
-AGXA10FamilyTexture	instance	resourceSize	-	iogpu	driver	WebMetalTexture	loud
+AGXA10FamilyTexture	instance	resourceSize	-	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	responsibleProcess	MTLResourceSPI	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	retainedLabel	-	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	rootResource	MTLTexture	iogpu	driver	WebMetalTexture	implemented

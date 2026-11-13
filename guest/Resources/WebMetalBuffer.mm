@@ -367,10 +367,18 @@ WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, M
     return _state.residentSize;
 }
 
-// -[IOGPUMetalResource resourceSize] (0x1fcb2e758): the kernel resource's resident size.
+// -[IOGPUMetalResource resourceSize] (0x1fcb2e758): _res.info.resourceSize, its low 56 bits: the kernel resource's
+// resident size. A heap buffer takes the heap's backing resource's _res, info included (-[IOGPUMetalBuffer
+// initWithHeap:resource:offset:length:] 0x1fcb2d810 through -[IOGPUMetalResource initWithResource:] 0x1fcb2acc8); a
+// sub-allocated buffer's kernel resource is the sub-allocator's primary buffer.
 - (NSUInteger)resourceSize
 {
-    return _state.residentSize;
+    if (_state.heap)
+        return [_state.heap currentAllocatedSize] & 0x00ffffffffffffffull;
+    if (_suballocated)
+        WMLoudMethod(self, _cmd, "the kernel resource of a sub-allocated buffer is the sub-allocator's primary buffer, "
+                                 "whose size is not established for 21H461");
+    return _state.residentSize & 0x00ffffffffffffffull;
 }
 
 - (MTLPurgeableState)setPurgeableState:(MTLPurgeableState)state
