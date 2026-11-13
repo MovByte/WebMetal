@@ -269,7 +269,11 @@ impl<A: Api> Memory<A> {
     ) -> Result<(), MemError> {
         let m = t.guest.as_ref().expect("a texture over caller memory");
         if let Some(refusal) = region::validate_region(&m.layout, c).map_err(|e| copy_error(call, e))? {
-            return Err(MemError::undefined(call, format!("the A10X driver copies nothing: {}", refusal.assertion())));
+            return Err(MemError::invalid(format!(
+                "{call}: a region the A10X driver's validateRegion refuses ({}): the guest logs it and copies nothing, \
+                 so it does not reach the host",
+                refusal.assertion()
+            )));
         }
         if pixel_bytes == 0 {
             return Err(MemError::undefined(call, "the bytes pointer is null (the driver reads through it)"));
@@ -297,7 +301,11 @@ impl<A: Api> Memory<A> {
     ) -> Result<(), MemError> {
         let m = t.guest.as_ref().expect("a texture over caller memory");
         if let Some(refusal) = region::validate_region(&m.layout, c).map_err(|e| copy_error(call, e))? {
-            return Err(MemError::undefined(call, format!("the A10X driver copies nothing: {}", refusal.assertion())));
+            return Err(MemError::invalid(format!(
+                "{call}: a region the A10X driver's validateRegion refuses ({}): the guest logs it and copies nothing, \
+                 so it does not reach the host",
+                refusal.assertion()
+            )));
         }
         if pixel_bytes == 0 {
             return Err(MemError::undefined(call, "the bytes pointer is null (the driver reads through it)"));

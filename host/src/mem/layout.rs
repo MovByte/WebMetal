@@ -290,6 +290,109 @@ impl RegionLayout {
         })
     }
 
+    /// A CPU copy as the A10X driver makes it, `AGX::Texture::writeRegion` (`replaceRegion:`, AGXMetalA10 0x21c982fe0)
+    /// and `readRegion` (`getBytes:`, 0x21c9a4e84), for a region its `validateRegion` (0x21c983ef4) accepts: the guest
+    /// refuses the others as the driver does, logging the assertion and copying nothing, so one reaching the host is
+    /// an invalid request. As the driver's copy loops (`agx::region`) place them:
+    ///
+    /// - the region's fields, the slice and the level are 32-bit, as the driver's selectors pass them on;
+    /// - a block-compressed format copies `ceil(width / blockWidth)` by `ceil(height / blockHeight)` blocks from block
+    ///   `(x / blockWidth, y / blockHeight)`, an uncompressed one `width` by `height` texels from `(x, y)`;
+    /// - row `j` of image `k` lies at `k * bytesPerImage + j * bytesPerRow` in the caller's bytes, with the pitches as
+    ///   given: a pitch of 0 copies every row or image from the same bytes (validateRegion substitutes a tight row
+    ///   pitch for 0 only in its own check), and `bytesPerImage` is read only for a 3D region more than one deep;
+    /// - PVRTC copies the first `((width + 3) / 4) * ((height + 3) / 4) * 8` bytes (4 bpp, `agxsTwiddleAddressPVRTC4`
+    ///   0x21c98ebb8) or `((width + 7) & ~7) * ((height + 3) / 4)` bytes (2 bpp, `agxsTwiddleAddressPVRTC2`
+    ///   0x21c995308) of the level's words, whatever the region's origin.
+    pub fn agx(call: &'static str, g: &Geometry, blocks: Blocks, a: &RegionArgs) -> Result<RegionLayout, MemError> {
+        let refused = |what: String| {
+            Err(MemError::invalid(format!(
+                "{call}: {what}: a region the A10X driver's validateRegion refuses (the guest refuses it before it \
+                 reaches the host)"
+            )))
+        };
+        let (level, slice) = (a.level as u32, a.slice as u32);
+        let (x, y, z) = (a.origin.0 as u32, a.origin.1 as u32, a.origin.2 as u32);
+        let (w, h, d) = (a.size.0 as u32, a.size.1 as u32, a.size.2 as u32);
+        if level >= g.mip_levels {
+            return refused(format!("mipmap level {level} of a texture with {} levels", g.mip_levels));
+        }
+        if slice >= g.slices() {
+            return refused(format!("slice {slice} of a texture with {} slices", g.slices()));
+        }
+        let (lw, lh, ld) = g.level_extent(level);
+        let fits = |o: u32, s: u32, l: u32| s > 0 && u64::from(o) + u64::from(s) <= u64::from(l);
+        if !fits(x, w, lw.next_multiple_of(blocks.width))
+            || !fits(y, h, lh.next_multiple_of(blocks.height))
+            || !fits(z, d, ld)
+        {
+            return refused(format!("region ({x}, {y}, {z}) {w}x{h}x{d} of level {level} of extent {lw}x{lh}x{ld}"));
+        }
+        if let Some(bpp) = blocks.pvrtc {
+            let len = match bpp {
+                Bpp::Four => u64::from(w.wrapping_add(3) >> 2) * u64::from(h.wrapping_add(3) >> 2) * 8,
+                Bpp::Two => u64::from(w.wrapping_add(7) & !7) * u64::from(h.wrapping_add(3) >> 2),
+            };
+            let (wx, wy) = blocks.count(lw, lh);
+            return Ok(RegionLayout {
+                origin: (0, 0, 0),
+                size: (lw, lh, 1),
+                blocks: (wx, wy),
+                images: 1,
+                row_bytes: u64::from(wx) * u64::from(blocks.bytes),
+                bytes_per_row: u64::from(wx) * u64::from(blocks.bytes),
+                bytes_per_image: len,
+                span: len,
+                pvrtc: true,
+            });
+        }
+        let (bx, by) = (w.div_ceil(blocks.width), h.div_ceil(blocks.height));
+        let (ox, oy) = (x / blocks.width * blocks.width, y / blocks.height * blocks.height);
+        let size = if blocks.compressed() {
+            ((bx * blocks.width).min(lw - ox), (by * blocks.height).min(lh - oy))
+        } else {
+            (w, h)
+        };
+        let row_bytes = u64::from(bx) * u64::from(blocks.bytes);
+        let image = (u64::from(by) - 1).checked_mul(a.bytes_per_row).and_then(|r| r.checked_add(row_bytes));
+        let span = image.and_then(|i| (u64::from(d) - 1).checked_mul(a.bytes_per_image)?.checked_add(i));
+        let Some(span) = span else {
+            return Err(MemError::invalid(format!(
+                "{call}: the region's bytes past the end of the address space (bytesPerRow {}, bytesPerImage {})",
+                a.bytes_per_row, a.bytes_per_image
+            )));
+        };
+        Ok(RegionLayout {
+            origin: (ox, oy, z),
+            size: (size.0, size.1, d),
+            blocks: (bx, by),
+            images: d,
+            row_bytes,
+            bytes_per_row: a.bytes_per_row,
+            bytes_per_image: a.bytes_per_image,
+            span,
+            pvrtc: false,
+        })
+    }
+
+    /// Do two rows of the region's bytes overlap (a pitch below a row or an image)? A read into such bytes keeps, for
+    /// each byte, the last of the driver's copies that writes it.
+    pub fn rows_overlap(&self) -> bool {
+        if self.pvrtc {
+            return false;
+        }
+        let (rows, images) = (u64::from(self.blocks.1), u64::from(self.images));
+        let image = (rows - 1) * self.bytes_per_row + self.row_bytes;
+        if (rows == 1 || self.bytes_per_row >= self.row_bytes) && (images == 1 || self.bytes_per_image >= image) {
+            return false;
+        }
+        let mut starts: Vec<u64> = (0..images)
+            .flat_map(|k| (0..rows).map(move |j| k * self.bytes_per_image + j * self.bytes_per_row))
+            .collect();
+        starts.sort_unstable();
+        starts.windows(2).any(|p| p[1] - p[0] < self.row_bytes)
+    }
+
     /// The tight bytes of the region (rows of `row_bytes`, images of `blocks.1` rows) from Metal's layout.
     pub fn pack(&self, metal: &[u8]) -> Vec<u8> {
         if self.pvrtc {
@@ -464,6 +567,78 @@ mod tests {
         // Levels below two words keep two.
         let small = g2d(4, 4, 1);
         assert_eq!(RegionLayout::new("t", &small, b, &args((0, 0, 0), (4, 4, 1), 0, 0)).unwrap().span, 32);
+    }
+
+    #[test]
+    fn agx_copies() {
+        // Uncompressed: the region as given; a pitch of 0 repeats the first row, and is the only overlap.
+        let g = g2d(8, 4, 1);
+        let l = RegionLayout::agx("t", &g, RGBA8, &args((1, 1, 0), (3, 2, 1), 0, 0)).unwrap();
+        assert_eq!((l.origin, l.size, l.bytes_per_row, l.span), ((1, 1, 0), (3, 2, 1), 0, 12));
+        let metal: Vec<u8> = (0..12).collect();
+        assert_eq!(l.pack(&metal), [&metal[..], &metal[..]].concat());
+        assert!(l.rows_overlap());
+        // A pitch that is no multiple of the texel is the driver's to take; bytesPerImage is not read for one image.
+        let l = RegionLayout::agx("t", &g, RGBA8, &args((0, 0, 0), (8, 2, 1), 34, 7)).unwrap();
+        assert_eq!((l.span, l.rows_overlap()), (66, false));
+        // Outside the level, or past the levels and slices: refused by validateRegion, never sent.
+        assert!(RegionLayout::agx("t", &g, RGBA8, &args((5, 0, 0), (4, 1, 1), 0, 0)).is_err());
+        assert!(RegionLayout::agx("t", &g, RGBA8, &args((0, 0, 0), (0, 1, 1), 0, 0)).is_err());
+        let mut a = args((0, 0, 0), (1, 1, 1), 0, 0);
+        a.level = 1;
+        assert!(RegionLayout::agx("t", &g, RGBA8, &a).is_err());
+        // The fields are 32-bit: an origin of 2^32 + 1 is 1.
+        let l = RegionLayout::agx("t", &g, RGBA8, &args((1 << 32 | 1, 0, 0), (2, 1, 1), 0, 0)).unwrap();
+        assert_eq!(l.origin, (1, 0, 0));
+    }
+
+    #[test]
+    fn agx_compressed_blocks() {
+        // A 6x6 level of 4x4 blocks: validateRegion takes regions inside the level rounded up to blocks (8x8), and the
+        // copy takes ceil(width / 4) blocks from block x / 4.
+        let g = g2d(6, 6, 1);
+        let l = RegionLayout::agx("t", &g, ETC, &args((2, 0, 0), (4, 4, 1), 8, 0)).unwrap();
+        assert_eq!((l.origin, l.blocks, l.size), ((0, 0, 0), (1, 1), (4, 4, 1)));
+        let l = RegionLayout::agx("t", &g, ETC, &args((3, 3, 0), (5, 5, 1), 16, 0)).unwrap();
+        assert_eq!((l.origin, l.blocks, l.size, l.span), ((0, 0, 0), (2, 2), (6, 6, 1), 32));
+        let l = RegionLayout::agx("t", &g, ETC, &args((4, 4, 0), (4, 4, 1), 0, 0)).unwrap();
+        assert_eq!((l.origin, l.blocks, l.size), ((4, 4, 0), (1, 1), (2, 2, 1)));
+        assert!(RegionLayout::agx("t", &g, ETC, &args((4, 0, 0), (5, 4, 1), 16, 0)).is_err());
+    }
+
+    #[test]
+    fn agx_images() {
+        let g = Geometry {
+            kind: TextureType::D3,
+            width: 4,
+            height: 4,
+            depth: 4,
+            array_length: 1,
+            mip_levels: 1,
+            sample_count: 1,
+        };
+        let l = RegionLayout::agx("t", &g, RGBA8, &args((0, 0, 1), (2, 2, 3), 8, 20)).unwrap();
+        assert_eq!((l.span, l.rows_overlap()), (56, false));
+        // An image pitch below an image (here 0) reads every image from the same bytes.
+        let l = RegionLayout::agx("t", &g, RGBA8, &args((0, 0, 0), (2, 2, 2), 8, 0)).unwrap();
+        assert_eq!((l.span, l.rows_overlap()), (16, true));
+        // Rows of one image between those of another do not overlap.
+        let l = RegionLayout::agx("t", &g, RGBA8, &args((0, 0, 0), (1, 2, 2), 8, 4)).unwrap();
+        assert_eq!((l.span, l.rows_overlap()), (16, false));
+    }
+
+    #[test]
+    fn agx_pvrtc() {
+        let four = Blocks { width: 4, height: 4, bytes: 8, pvrtc: Some(Bpp::Four) };
+        let two = Blocks { width: 8, height: 4, bytes: 8, pvrtc: Some(Bpp::Two) };
+        let g = g2d(16, 16, 1);
+        // The first ((w + 3) / 4) * ((h + 3) / 4) words of the level, whatever the origin and the pitches.
+        let l = RegionLayout::agx("t", &g, four, &args((0, 0, 0), (16, 16, 1), 0, 0)).unwrap();
+        assert_eq!((l.span, l.pvrtc), (128, true));
+        assert_eq!(RegionLayout::agx("t", &g, four, &args((4, 4, 0), (8, 8, 1), 64, 0)).unwrap().span, 32);
+        assert_eq!(RegionLayout::agx("t", &g, two, &args((0, 0, 0), (16, 16, 1), 0, 0)).unwrap().span, 64);
+        // A level below two words each way: 8 bytes of its 32.
+        assert_eq!(RegionLayout::agx("t", &g2d(4, 4, 1), four, &args((0, 0, 0), (4, 4, 1), 0, 0)).unwrap().span, 8);
     }
 
     #[test]

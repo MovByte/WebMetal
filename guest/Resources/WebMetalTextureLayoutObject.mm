@@ -10,9 +10,7 @@
 #import "WebMetalTexture.h"
 #import "WebMetalTextureLayout.h"
 
-#include <cstdio>
 #include <cstring>
-#include <os/log.h>
 
 // The class adopts MTLTextureLayout as AGXTextureLayout does and implements only what the 21H461 driver implements; the
 // protocol's other methods are LOUD stubs.
@@ -88,24 +86,7 @@ webmetal::wire::Region wireRegion(MTLRegion region)
     return r;
 }
 
-// What AGX::Texture::validateRegion (AGXMetalA10 0x21c983ef4) and agxaAssertBufferIsValid (0x21c9a4aa4) do when they
-// refuse a copy: the assertion to stderr, then to the default log at the error and info levels with the format
-// "AGX: AGX: ..." and again with "AGX: ...", each when the level is enabled.
-void logRefusal(const std::string &assertion)
-{
-    const char *a = assertion.c_str();
-    fprintf(stderr, "AGX: Texture read/write assertion failed: %s\n", a);
-    os_log_error(OS_LOG_DEFAULT, "AGX: AGX: Texture read/write assertion failed: %s\n", a);
-    os_log_info(OS_LOG_DEFAULT, "AGX: AGX: Texture read/write assertion failed: %s\n", a);
-    os_log_error(OS_LOG_DEFAULT, "AGX: Texture read/write assertion failed: %s\n", a);
-    os_log_info(OS_LOG_DEFAULT, "AGX: Texture read/write assertion failed: %s\n", a);
-}
-
 }  // namespace
-
-namespace webmetal {
-
-}  // namespace webmetal
 
 @implementation WebMetalTextureLayout
 
@@ -175,7 +156,7 @@ namespace webmetal {
     if (!reply.ok)
         WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
     if (reply.value.refusal)
-        logRefusal(*reply.value.refusal);
+        webmetal::agx::logRegionRefusal(reply.value.refusal->c_str());
 }
 
 // -[AGXTextureLayout copyFromTextureMemory:textureSlice:textureLevel:textureRegion:toLinearBytes:linearOffset:
@@ -210,7 +191,7 @@ namespace webmetal {
     if (!reply.ok)
         WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
     if (reply.value.refusal)
-        logRefusal(*reply.value.refusal);
+        webmetal::agx::logRegionRefusal(reply.value.refusal->c_str());
 }
 
 @end

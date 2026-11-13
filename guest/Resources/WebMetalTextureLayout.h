@@ -264,4 +264,23 @@ struct LayoutResult {
 LayoutResult textureLayout(const DescriptorFields &d, bool heapOrBufferBacked,
                            const SystemValues &system = SystemValues());
 
+// The arguments of AGX::Texture::writeRegion (0x21c982fe0) and readRegion (0x21c9a4e84) after the receiver: the
+// MTLRegion, each field truncated to 32 bits, the slice and the level as unsigned int, and the row pitch.
+struct RegionCopy {
+    uint32_t x = 0, y = 0, z = 0;
+    uint32_t width = 0, height = 0, depth = 0;
+    uint32_t slice = 0;
+    uint32_t level = 0;
+    uint64_t bytesPerRow = 0;
+};
+
+// AGX::Texture::validateRegion (0x21c983ef4), with the row pitch test of agxaAssertBufferIsValid (0x21c9a4aa4) it ends
+// with: the assertion the driver logs when it refuses the copy (and then copies nothing), or null when it accepts it.
+const char *validateRegion(const TextureGen2 &t, const RegionCopy &c);
+
+// What validateRegion and agxaAssertBufferIsValid do when they refuse a copy: the assertion to stderr, then to the
+// default log at the error and info levels with the format "AGX: AGX: ..." and again with "AGX: ...", each when the
+// level is enabled.
+void logRegionRefusal(const char *assertion);
+
 }  // namespace webmetal::agx

@@ -1154,8 +1154,35 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
     [self replaceRegion:region mipmapLevel:level slice:0 withBytes:bytes bytesPerRow:bytesPerRow bytesPerImage:0];
 }
 
+// AGX::Texture::validateRegion (AGXMetalA10 0x21c983ef4), which writeRegion and readRegion start with, on the texture's
+// layout object: a copy it refuses is logged (agx::logRegionRefusal) and copies nothing. The host copies the regions it
+// accepts as the driver does (Memory::cpu_region). A texture over an IOSurface or a buffer has no ported layout; the
+// host answers its copies by its own rules.
+static bool refusedRegion(WebMetalTexture *texture, MTLRegion region, NSUInteger level, NSUInteger slice,
+                          NSUInteger bytesPerRow)
+{
+    if (!texture->_hasLayout)
+        return false;
+    webmetal::agx::RegionCopy c;
+    c.x = static_cast<uint32_t>(region.origin.x);
+    c.y = static_cast<uint32_t>(region.origin.y);
+    c.z = static_cast<uint32_t>(region.origin.z);
+    c.width = static_cast<uint32_t>(region.size.width);
+    c.height = static_cast<uint32_t>(region.size.height);
+    c.depth = static_cast<uint32_t>(region.size.depth);
+    c.slice = static_cast<uint32_t>(slice);
+    c.level = static_cast<uint32_t>(level);
+    c.bytesPerRow = bytesPerRow;
+    const char *refusal = webmetal::agx::validateRegion(texture->_layout, c);
+    if (!refusal)
+        return false;
+    webmetal::agx::logRegionRefusal(refusal);
+    return true;
+}
+
 // -[AGXA10FamilyTexture replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:] (AGXMetalA10 0x21c9819fc)
-// writes the region into the texture's memory on the CPU (AGX::Texture::writeRegion); the host holds that memory.
+// writes the region into the texture's memory on the CPU (AGX::Texture::writeRegion, 0x21c982fe0, with each region
+// field, the slice and the level as unsigned int); the host holds that memory.
 - (void)replaceRegion:(MTLRegion)region
           mipmapLevel:(NSUInteger)level
                 slice:(NSUInteger)slice
@@ -1164,6 +1191,8 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
         bytesPerImage:(NSUInteger)bytesPerImage
 {
     using namespace webmetal;
+    if (refusedRegion(self, region, level, slice, bytesPerRow))
+        return;
     wire::ReplaceRegionSlice request;
     request.texture = _state.handle;
     request.region.origin.x = region.origin.x;
@@ -1192,7 +1221,8 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
 }
 
 // -[AGXA10FamilyTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:] (AGXMetalA10 0x21c98199c)
-// reads the region from the texture's memory on the CPU (AGX::Texture::readRegion); the host holds that memory.
+// reads the region from the texture's memory on the CPU (AGX::Texture::readRegion, 0x21c9a4e84, with each region field,
+// the slice and the level as unsigned int); the host holds that memory.
 - (void)getBytes:(void *)bytes
       bytesPerRow:(NSUInteger)bytesPerRow
     bytesPerImage:(NSUInteger)bytesPerImage
@@ -1201,6 +1231,8 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
             slice:(NSUInteger)slice
 {
     using namespace webmetal;
+    if (refusedRegion(self, region, level, slice, bytesPerRow))
+        return;
     wire::GetBytesSlice request;
     request.texture = _state.handle;
     request.pixelBytes = reinterpret_cast<uint64_t>(bytes);

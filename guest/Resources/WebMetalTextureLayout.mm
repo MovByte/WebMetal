@@ -2,8 +2,11 @@
 #import "WebMetalTextureLayout.h"
 #import "../Plugin/WebMetalReport.h"
 
+#include <os/log.h>
+
 #include <algorithm>
 #include <climits>
+#include <cstdio>
 #include <initializer_list>
 
 namespace webmetal::agx {
@@ -944,6 +947,48 @@ LayoutResult textureLayout(const DescriptorFields &d, bool heapOrBufferBacked, c
     TextureGen2 t = construct(a, system);
     if (!t.valid) return {false, 0, 0, 0, 0, 0};
     return {true, t.size + 0x10, textureAlignment(t), t.size, t.blockWidth, t.blockHeight};
+}
+
+const char *validateRegion(const TextureGen2 &t, const RegionCopy &c) {
+    if (c.width == 0) return "width > 0";
+    if (c.height == 0) return "height > 0";
+    if (c.depth == 0) return "depth > 0";
+    const uint32_t shift = t.baseLevel + c.level;
+    // add w14, w14, w7 (32 bits); sub x15, x14, #1; udiv; msub; mvn; add (64 bits): the extent rounded up to blocks.
+    auto aligned = [](uint32_t extent, uint32_t block) -> uint64_t {
+        const uint64_t s = uint32_t(extent + block);
+        const uint64_t m = s - 1;
+        const uint64_t rem = m - udiv64(m, block) * block;
+        return s + ~rem;
+    };
+    if (aligned(atLeastOne(lsr32(t.width, shift)), t.blockWidth) < uint32_t(c.x + c.width))
+        return "(xoffset + width) <= ALIGNGRAN_NPOT(getViewLevelWidth(mipmapLevel), block_width) && \"Region width OOB\"";
+    if (aligned(atLeastOne(lsr32(t.height, shift)), t.blockHeight) < uint32_t(c.y + c.height))
+        return "(yoffset + height) <= ALIGNGRAN_NPOT(getViewLevelHeight(mipmapLevel), block_height) && \"Region height "
+               "OOB\"";
+    if (uint32_t(c.z + c.depth) > atLeastOne(lsr32(t.depth, shift)))
+        return "(zoffset + depth) <= getViewLevelDepth(mipmapLevel) && \"Region depth OOB\"";
+    const uint32_t slices =
+        (t.arrayBits & 1) != 0 || t.dim == 4 ? (t.dim == 4 ? t.arrayLength * 6 : t.arrayLength) : 1;
+    if (c.slice >= slices) return "slice < getNumSlices() && \"Specified slice OOB\"";
+    if (c.level >= t.mipLevels) return "mipmapLevel < getBaseNumMipmapLevels() && \"Specified mipmap level OOB\"";
+    if (!t.format) unported("the region check of a layout whose format pointer is null (interchange-tiled kind 3)");
+    if (t.format->planes == 0) return "plane < getNumPlanes() && \"Specified plane OOB\"";
+    // agxaAssertBufferIsValid (0x21c9a4aa4): the 32-bit minimum row pitch from planeBytes[0], and the pitch the caller
+    // gives (that minimum for 0), compared in 32 bits.
+    const uint32_t cols = udiv32(c.width + t.blockWidth - 1, t.blockWidth);
+    const uint32_t minimum = cols * t.format->planeBytes[0];
+    const uint64_t pitch = c.bytesPerRow != 0 ? c.bytesPerRow : minimum;
+    if (uint32_t(pitch) < minimum) return "bytes_per_row >= used_bytes_per_row";
+    return nullptr;
+}
+
+void logRegionRefusal(const char *assertion) {
+    fprintf(stderr, "AGX: Texture read/write assertion failed: %s\n", assertion);
+    os_log_error(OS_LOG_DEFAULT, "AGX: AGX: Texture read/write assertion failed: %s\n", assertion);
+    os_log_info(OS_LOG_DEFAULT, "AGX: AGX: Texture read/write assertion failed: %s\n", assertion);
+    os_log_error(OS_LOG_DEFAULT, "AGX: Texture read/write assertion failed: %s\n", assertion);
+    os_log_info(OS_LOG_DEFAULT, "AGX: Texture read/write assertion failed: %s\n", assertion);
 }
 
 }  // namespace webmetal::agx

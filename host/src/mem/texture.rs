@@ -631,7 +631,8 @@ impl<A: Api> Memory<A> {
         }))
     }
 
-    /// The layout of a `replaceRegion`/`getBytes` region, with the rules both calls share.
+    /// The layout of a `replaceRegion`/`getBytes` region: the A10X driver's copy of a region its `validateRegion`
+    /// accepts ([`RegionLayout::agx`]).
     fn cpu_region(
         &self,
         call: &'static str,
@@ -639,7 +640,7 @@ impl<A: Api> Memory<A> {
         a: &RegionArgs,
     ) -> Result<(RegionLayout, Blocks), MemError> {
         let blocks = self.cpu_rules(call, t)?;
-        Ok((RegionLayout::new(call, &t.geometry, blocks, a)?, blocks))
+        Ok((RegionLayout::agx(call, &t.geometry, blocks, a)?, blocks))
     }
 
     /// The rules of `replaceRegion` and `getBytes` that concern the texture rather than the region; its blocks.
@@ -670,6 +671,14 @@ impl<A: Api> Memory<A> {
         if t.geometry.sample_count > 1 {
             return Err(MemError::unimplemented(format!(
                 "{call} of a multisampled texture: WebGPU copies multisampled textures only to textures"
+            )));
+        }
+        if t.geometry.kind.is_3d() && (160..=184).contains(&t.format) {
+            // writeRegion's 3D switch (jump table 0x21c9dd59c) sends PVRTC, ETC2 and EAC to the bytes-per-pixel table:
+            // texel (x + i, y + j) goes to the element of block coordinates (x + i, y + j) within a block-sized twiddle.
+            return Err(MemError::unimplemented(format!(
+                "{call} of a 3D PVRTC, ETC2 or EAC texture: the A10X driver addresses its blocks by texel coordinates, \
+                 which the host's texture does not reproduce"
             )));
         }
         t.blocks.ok_or_else(|| {
@@ -1045,7 +1054,18 @@ impl<A: Api> Memory<A> {
         a: &RegionArgs,
         (task, pixel_bytes): (TaskId, u64),
     ) -> Result<(), MemError> {
-        let (l, _) = self.cpu_region(call, t, a)?;
+        let (l, blocks) = self.cpu_region(call, t, a)?;
+        if let Some(bpp) = blocks.pvrtc {
+            let (w, h, _) = t.geometry.level_extent(a.level as u32);
+            if l.span != pvrtc::data_len(bpp, w, h) as u64 {
+                return Err(MemError::unimplemented(format!(
+                    "{call}: a PVRTC write of {} of the level's {} bytes: the A10X driver replaces only those, and the \
+                     host keeps no copy of the level's other words to write the rest back from",
+                    l.span,
+                    pvrtc::data_len(bpp, w, h)
+                )));
+            }
+        }
         let mut metal = vec![0u8; l.span as usize];
         e.read_guest(task, pixel_bytes, &mut metal)?;
         self.upload_region(g, call, t, &l, (a.level as u32, a.slice as u32), &l.pack(&metal))
@@ -1166,6 +1186,13 @@ impl<A: Api> Memory<A> {
         a: &RegionArgs,
     ) -> Result<TextureRead<A>, MemError> {
         let (l, _) = self.cpu_region(call, t, a)?;
+        if l.rows_overlap() {
+            return Err(MemError::unimplemented(format!(
+                "{call} into rows or images that overlap (bytesPerRow {}, bytesPerImage {}): the A10X driver's result \
+                 depends on the order of its copy loops, which is not ported",
+                l.bytes_per_row, l.bytes_per_image
+            )));
+        }
         let encoder = g.call("GPUDevice.createCommandEncoder", call, |d| {
             d.create_command_encoder(&CommandEncoderDescriptor::new())
         });

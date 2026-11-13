@@ -463,12 +463,12 @@ impl<A: Api> Memory<A> {
 }
 
 impl<A: Api> Memory<A> {
-    /// The arguments of a CPU transfer through a view as the root's: Metal's rules checked against the view, then its
-    /// level and slice moved to the root's.
+    /// The arguments of a CPU transfer through a view as the root's: the A10X driver's region checked against the
+    /// view, then its level and slice moved to the root's.
     fn view_region(&self, call: &'static str, v: &TextureView<A>, a: &RegionArgs) -> Result<RegionArgs, MemError> {
         v.bytes_are_root(call)?;
         let blocks = self.cpu_rules(call, &v.root)?;
-        RegionLayout::new(call, &v.geometry, blocks, a)?;
+        RegionLayout::agx(call, &v.geometry, blocks, a)?;
         Ok(RegionArgs {
             level: u64::from(v.root_level(a.level as u32)),
             slice: u64::from(v.root_slice(a.slice as u32)),
