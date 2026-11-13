@@ -301,8 +301,8 @@ fn compute_refusals() {
 
 /// sampler.address-modes (tests/reference/src/cases/Samplers.m): `smp_sample_2d` samples an 8x8 RGBA32Float texture
 /// through sampler states bound with `setSamplerState:atIndex:`, at texel centres inside the texture and one and two
-/// periods outside it. Every address mode WebGPU has gives the texel the mode selects (MTLSampler.h); the modes it
-/// lacks make sampler states the encoder refuses when a dispatch uses them.
+/// periods outside it. Every address mode gives the texel the mode selects (MTLSampler.h); clamp-to-zero, which WebGPU
+/// lacks, is filtered by the compiled shader.
 #[test]
 fn sampler_address_modes() {
     let h = Harness::new();
@@ -373,14 +373,15 @@ fn sampler_address_modes() {
         }
         assert_eq!(got, expected, "{}: address modes s {s_mode} t {t_mode}", h.name());
     }
-    // Clamp-to-zero has no WebGPU sampler: the dispatch that uses the state is refused with the reason.
+    // Clamp-to-zero has no WebGPU address mode; the compiler filters such a sample in the shader, and a coordinate
+    // outside the texture reads transparent zero for a format with alpha (MTLSampler.h).
     let sampler = h.handle();
     let mut desc = sampler_descriptor();
     desc.s_address_mode = 4;
     h.ok(Request::CreateSamplerState(CreateSamplerState { sampler, descriptor: desc }));
     let (input, _) = h.buffer_with(&coords);
-    let (out, _) = h.buffer((count * 16) as usize);
-    let f = h.compute_failure(vec![
+    let (out, out_addr) = h.buffer((count * 16) as usize);
+    h.compute(vec![
         set_pipeline(p),
         Command::ComputeSetTexture(ComputeSetTexture { texture: Some(t), index: 0 }),
         Command::ComputeSetSamplerState(ComputeSetSamplerState { sampler: Some(sampler), index: 0 }),
@@ -388,8 +389,14 @@ fn sampler_address_modes() {
         set_buffer(out, 0, 1),
         dispatch(size(count, 1, 1), size(1, 1, 1)),
     ]);
-    assert_eq!(f.status, status::HOST_UNSUPPORTED, "{f:?}");
-    assert!(f.message.contains("ClampToZero"), "{f:?}");
+    let mut expected = Vec::new();
+    for v in vs {
+        for u in us {
+            let value = if (0..N).contains(&u) { texel(u, address(0, v)) } else { [0.0; 4] };
+            expected.extend(value.iter().flat_map(|x| x.to_le_bytes()));
+        }
+    }
+    assert_eq!(h.read(out_addr, (count * 16) as usize), expected, "{}: address modes s 4 t 0", h.name());
     h.assert_no_errors();
 }
 
