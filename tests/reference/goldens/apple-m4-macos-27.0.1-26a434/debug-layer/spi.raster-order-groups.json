@@ -8,8 +8,10 @@
   },
   "records": [
     {"kind":"value","name":"raster-order-groups-supported","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"call","name":"make-pipeline","raised":0,"rule":{"compare":"device"}},
     {"kind":"value","name":"pipeline-made","rule":{"compare":"device"},"type":"bool","value":true},
     {"kind":"error","name":"pipeline-error","nil":1,"rule":{"compare":"device"}},
+    {"kind":"require","name":"raster-order-groups-supported","value":true},
     {"count":256,"elem":"u8","hex":"4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff","kind":"data","name":"color","rule":{"compare":"exact"}}
   ],
   "status": "ok",

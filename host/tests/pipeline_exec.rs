@@ -442,6 +442,25 @@ fn reference_render_pipelines_create_or_fail_as_metal_defines() {
     h.assert_no_errors();
 }
 
+/// spi_ordered_fragment (tests/reference/shaders/spi.metal) puts its color output in raster order group 0. The A10X
+/// reports no raster order groups, and the pipeline fails loudly at creation, where the A10X's compiler back end
+/// decides; the same vertex function with an unordered fragment function draws (spi.raster-order-groups).
+#[test]
+fn raster_order_group_pipelines_fail_loudly_at_creation() {
+    use pipeline_common::render_descriptor;
+    let h = Harness::new();
+    let lib = reference_library();
+    let vertex = h.function(&lib["spi_cover_vertex"].bitcode, "spi_cover_vertex", 1);
+    let ordered = h.function(&lib["spi_ordered_fragment"].bitcode, "spi_ordered_fragment", 2);
+    let f =
+        reply_failure(&h.render_pipeline(h.handle(), render_descriptor(Some(vertex), Some(ordered), RGBA8_UNORM), 0));
+    assert_eq!(f.status, status::UNIMPLEMENTED, "{}: {f:?}", h.name());
+    assert!(f.message.contains("raster order groups") && f.message.contains("G4 and G5"), "{f:?}");
+    let plain = h.function(&lib["spi_color_fragment"].bitcode, "spi_color_fragment", 2);
+    let f = reply_failure(&h.render_pipeline(h.handle(), render_descriptor(Some(vertex), Some(plain), RGBA8_UNORM), 0));
+    assert_eq!(f.status, status::OK, "{}: {f:?}", h.name());
+}
+
 #[test]
 fn a_compiled_render_pipeline_draws_through_the_render_encoder() {
     use pipeline_common::render_descriptor;

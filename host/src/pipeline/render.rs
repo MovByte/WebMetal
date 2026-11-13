@@ -709,6 +709,28 @@ pub fn check_functions(
             ),
         )
     })?;
+    // Raster order groups. The A10X reports none (supportsRasterOrderGroups is NO in the device profile), and what its
+    // driver does with a fragment function that declares them, refuse the pipeline or build it without ordering, is
+    // decided by its compiler back end (AGXCompilerCore in MTLCompilerService), which only the real compiler service can
+    // show (packages G4 and G5). A WebGPU draw orders no overlapping fragments, so building the pipeline here would drop
+    // the ordering the function asks for.
+    let ordered = fe.outputs.iter().any(|o| o.raster_order_group.is_some())
+        || fe.arguments.iter().any(|a| {
+            matches!(
+                a.role,
+                Role::Texture { raster_order_group: Some(_), .. }
+                    | Role::RenderTarget { raster_order_group: Some(_), .. }
+            )
+        });
+    if ordered {
+        return Err(failure::unimplemented(format!(
+            "{call}: {} declares raster order groups, which the A10X does not report \
+             (supportsRasterOrderGroups is NO); its driver's answer for such a pipeline is its compiler back end's, \
+             which only the real compiler service can show (packages G4 and G5), and a WebGPU draw has no fragment \
+             ordering",
+            fragment.describe()
+        )));
+    }
     // Varyings: every fragment input the vertex function must write, with the same type.
     let outputs: Vec<(&str, Option<&str>)> = ve
         .outputs

@@ -8,7 +8,7 @@
     "sdk": "macosx",
     "sdk_build": "26B118",
     "sdk_version": "27.2",
-    "source_sha256": "2ef931e6d69c8708282d5ccde30ce96daef1ecdbbbcde276cb45de30f0f7df5b",
+    "source_sha256": "d6d8564559339c86fd05dcf6c22208193b0111d1ceba89291888c4e2397a63da",
     "target": "arm64-apple-macos14.0"
   },
   "cases": [
@@ -888,8 +888,8 @@
     {"case":"spi.memoryless-render-target","outcome":"exit 0","sha256":"daf81282ac399bc36aa49d162938f1e39f06536cc1af01fa24159ad4934c5b55","status":"ok","variant":"debug-layer"},
     {"case":"spi.queue-priority","outcome":"exit 0","sha256":"03f8d88a79e183b4c54d7017776bef1bbba565bf92e0023a201348e27f695cad","status":"ok","variant":"release"},
     {"case":"spi.queue-priority","outcome":"exit 0","sha256":"a20ea8a5449c976780ac5a02d4aba3a150f6fddf03680936b32fac89c4b9ddb0","status":"ok","variant":"debug-layer"},
-    {"case":"spi.raster-order-groups","outcome":"exit 0","sha256":"6f7bbf1d6efa64d5cad782507d1227e8357a2e9a3aec4b009acdb31f86b3541c","status":"ok","variant":"release"},
-    {"case":"spi.raster-order-groups","outcome":"exit 0","sha256":"6d965c6b95af0fde5e3c64c74de65c5939062a39d071ea4a375423c2dcf003e2","status":"ok","variant":"debug-layer"},
+    {"case":"spi.raster-order-groups","outcome":"exit 0","sha256":"307e75a80446b4dae5f3d17a3b5dbca1f81658baa0314d2a79fd638d9b160e79","status":"ok","variant":"release"},
+    {"case":"spi.raster-order-groups","outcome":"exit 0","sha256":"144bcb93e432bcbc750acae513ea6443f5f64ade3d464d75a72e624657f243ec","status":"ok","variant":"debug-layer"},
     {"case":"spi.render-pipeline-answers","outcome":"exit 0","sha256":"591e9eae6b4137054c4bc1569e25a906b3229196bd959be030ff756b89373408","status":"ok","variant":"release"},
     {"case":"spi.render-pipeline-answers","outcome":"exit 0","sha256":"2bba8ecfd185bd333f68d2a42d2a63773d6a90c1ccc65929b62205056c121e42","status":"unsupported","variant":"debug-layer"},
     {"case":"storage.buffer-backed-texture","outcome":"exit 0","sha256":"2ac586ae3b11d1edfd3142177ba2adfacded3614c13a75640eddc5749c2d6517","status":"ok","variant":"release"},

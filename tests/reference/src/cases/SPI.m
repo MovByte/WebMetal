@@ -246,18 +246,27 @@ WMREF_CASE(spiMemorylessTarget, "spi.memoryless-render-target", "spi.feature-pro
 
 // QuartzCore tests supportsRasterOrderGroups before it uses raster order
 // groups. A device that reports them makes the pipeline and orders the
-// fragments; what a device that does not report them does with such a
-// pipeline is the driver's.
+// fragments. What a device that does not report them does with such a
+// pipeline is its driver's: the attempt, and an exception it raises, are
+// recorded with the device rule, and the draw runs only where the device
+// reports raster order groups, so runs on devices that differ in the answer
+// are not comparable.
 WMREF_CASE(spiRasterOrderGroups, "spi.raster-order-groups", "spi.feature-probes",
            "A render pipeline whose fragment color output is in a raster order group, and a draw with it")
 {
     [c value:@"raster-order-groups-supported" boolean:c.device.rasterOrderGroupsSupported rule:WMDevice()];
-    NSError *error = nil;
-    id<MTLRenderPipelineState> pipeline =
-        [c.device newRenderPipelineStateWithDescriptor:SPICoverDescriptor(c, @"spi_ordered_fragment", NO) error:&error];
+    MTLRenderPipelineDescriptor *descriptor = SPICoverDescriptor(c, @"spi_ordered_fragment", NO);
+    __block id<MTLRenderPipelineState> pipeline = nil;
+    __block NSError *error = nil;
+    [c call:@"make-pipeline" rule:WMDevice() block:^{
+        NSError *made = nil;
+        pipeline = [c.device newRenderPipelineStateWithDescriptor:descriptor error:&made];
+        error = made;
+    }];
     [c value:@"pipeline-made" boolean:pipeline != nil rule:WMDevice()];
     [c error:@"pipeline-error" value:error rule:WMDevice()];
-    if (!pipeline) return;
+    [c require:@"raster-order-groups-supported" value:c.device.rasterOrderGroupsSupported];
+    if (!pipeline) [c fail:@"the device reports raster order groups but made no pipeline"];
     NSData *pixels = SPIDrawCover(c, pipeline, nil);
     [c data:@"color" elem:WMElemU8 bytes:pixels.bytes length:pixels.length rule:WMExact()];
 }
