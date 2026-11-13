@@ -51,6 +51,22 @@ impl TextureType {
         })
     }
 
+    /// The `MTLTextureType` value.
+    pub fn value(self) -> u64 {
+        match self {
+            TextureType::D1 => 0,
+            TextureType::D1Array => 1,
+            TextureType::D2 => 2,
+            TextureType::D2Array => 3,
+            TextureType::D2Multisample => 4,
+            TextureType::Cube => 5,
+            TextureType::CubeArray => 6,
+            TextureType::D3 => 7,
+            TextureType::D2MultisampleArray => 8,
+            TextureType::TextureBuffer => 9,
+        }
+    }
+
     pub fn is_1d(self) -> bool {
         matches!(self, TextureType::D1 | TextureType::D1Array)
     }

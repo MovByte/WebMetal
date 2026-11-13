@@ -1354,3 +1354,60 @@ pub fn texture_layout(
     a.heap_or_buffer_backed = heap_or_buffer_backed;
     construct(&a, system)
 }
+
+/// `-[AGXA10FamilyTexture initImplWithTexture:pixelFormat:textureType:levels:slices:swizzle:resourceIndex:]`
+/// (0x21c98172c; the form without a swizzle, 0x21c981074, passes the parent's +0xbc): a view's layout, built from its
+/// parent's object with the parent's extent, level count and samples, the view's format and type, the parent's base
+/// level plus the view's first level, the view's level count, and the view's slice count over its faces as its array
+/// length. `None` where the method fails: for a memoryless parent (+0x30 == 3) or a layout that is not valid. Neither
+/// form reads the slice location; the view's memory starts at the parent's CPU address of that slice
+/// (`updateBindDataWithTexture:...` 0x21c981c84).
+#[allow(clippy::too_many_arguments)]
+pub fn init_impl_view(
+    parent: &TextureGen2,
+    pixel_format: u64,
+    texture_type: u64,
+    level_location: u64,
+    level_length: u64,
+    slice_length: u64,
+    swizzle: u32,
+    system: SystemValues,
+) -> Result<Option<TextureGen2>, Unported> {
+    if parent.storage_mode == 3 {
+        return Ok(None);
+    }
+    let faces = if texture_type.wrapping_sub(5) < 2 { 6 } else { 1 };
+    let a = TextureGen2Args {
+        texture_type,
+        pixel_format,
+        usage: parent.usage,
+        storage_mode: parent.storage_mode,
+        compression: (u32::from(parent.compression_mode)
+            | u32::from(parent.compression_footprint) << 8
+            | u32::from(parent.compression_byte2) << 16)
+            & 0xff_ffff,
+        color_conversion: parent.color_space,
+        rotation: parent.rotation,
+        swizzle,
+        width: parent.width,
+        height: parent.height,
+        depth: parent.depth,
+        mip_levels: parent.mip_levels,
+        samples: parent.samples,
+        array_length: udiv32(slice_length as u32, faces),
+        bytes_per_row: parent.bytes_per_row,
+        sparse_page_size: if parent.sparse_params { 0 } else { parent.sparse_page_size },
+        cpu_cache_mode: parent.cpu_cache_mode,
+        iosurface: parent.iosurface,
+        plane: parent.plane,
+        slice: parent.slice,
+        iosurface2: parent.iosurface2,
+        base_level: parent.base_level.wrapping_add(level_location as u32),
+        level_count: level_length as u32,
+        allow_twiddled_planes: parent.twiddled_planes,
+        compressed_backing: parent.compressed_backing,
+        heap_or_buffer_backed: parent.heap_or_buffer_backed,
+    };
+    let t = construct(&a, system)?;
+    Ok(t.valid.then_some(t))
+}

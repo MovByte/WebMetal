@@ -908,6 +908,32 @@ fn no_copy_texture_through_the_executor() {
         slice: 0,
     }));
     assert_eq!(h.guest.cpu_read(got, (w1 * h1 * 4) as usize), levels[1], "getBytes reads the memory");
+    // Through an sRGB view of levels 1 on: the view's layout over the memory from the texture's level 0 (its slices
+    // start at the texture's first), its level 0 the texture's level 1.
+    let v = h.handle();
+    h.ok(Request::CreateTextureViewLevelsSlices(CreateTextureViewLevelsSlices {
+        texture: t,
+        view: v,
+        pixel_format: 71,
+        texture_type: 2,
+        level_range: Range { location: 1, length: 5 },
+        slice_range: Range { location: 0, length: 1 },
+    }));
+    let through = h.alloc(w1 * h1 * 4);
+    h.ok(Request::GetBytesSlice(GetBytesSlice {
+        texture: v,
+        pixel_bytes: GuestAddr(through),
+        bytes_per_row: w1 * 4,
+        bytes_per_image: w1 * h1 * 4,
+        region: region(w1, h1),
+        level: 0,
+        slice: 0,
+    }));
+    assert_eq!(
+        h.guest.cpu_read(through, (w1 * h1 * 4) as usize),
+        levels[1],
+        "getBytes through a view reads the memory"
+    );
     let patch = layout_pattern(5 * 3 * 4, 77);
     let patch_addr = h.alloc(patch.len() as u64);
     h.guest.cpu_write(patch_addr, &patch);

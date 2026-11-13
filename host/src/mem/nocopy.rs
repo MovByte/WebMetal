@@ -269,26 +269,7 @@ impl<A: Api> Memory<A> {
         pixel_bytes: u64,
     ) -> Result<(), MemError> {
         let m = t.guest.as_ref().expect("a texture over caller memory");
-        if let Some(refusal) = region::validate_region(&m.layout, c).map_err(|e| copy_error(call, e))? {
-            return Err(MemError::invalid(format!(
-                "{call}: a region the A10X driver's validateRegion refuses ({}): the guest logs it and copies nothing, \
-                 so it does not reach the host",
-                refusal.assertion()
-            )));
-        }
-        if pixel_bytes == 0 {
-            return Err(MemError::undefined(call, "the bytes pointer is null (the driver reads through it)"));
-        }
-        let extent = region::extent(&m.layout, c).map_err(|e| copy_error(call, e))?.expect("validated");
-        let mut linear = vec![0u8; extent.linear as usize];
-        e.read_guest(m.task, pixel_bytes, &mut linear)?;
-        let Some((first, end)) = extent.texture else { return Ok(()) };
-        let mut held = vec![0u8; (end - first) as usize];
-        e.read_guest(m.task, m.addr + first, &mut held)?;
-        let mut new = held.clone();
-        region::write_region(&m.layout, c, &mut new, first, &linear).map_err(|e| copy_error(call, e))?;
-        e.write_guest_changed(m.task, m.addr + first, &new, &held)?;
-        Ok(())
+        write_guest_region(e, call, m, (&m.layout, 0), c, pixel_bytes)
     }
 
     /// `getBytes:...` of a texture over caller memory: the driver's `readRegion` from the memory.
@@ -301,27 +282,151 @@ impl<A: Api> Memory<A> {
         pixel_bytes: u64,
     ) -> Result<(), MemError> {
         let m = t.guest.as_ref().expect("a texture over caller memory");
-        if let Some(refusal) = region::validate_region(&m.layout, c).map_err(|e| copy_error(call, e))? {
-            return Err(MemError::invalid(format!(
-                "{call}: a region the A10X driver's validateRegion refuses ({}): the guest logs it and copies nothing, \
-                 so it does not reach the host",
-                refusal.assertion()
-            )));
-        }
-        if pixel_bytes == 0 {
-            return Err(MemError::undefined(call, "the bytes pointer is null (the driver reads through it)"));
-        }
-        let extent = region::extent(&m.layout, c).map_err(|e| copy_error(call, e))?.expect("validated");
-        let mut held = vec![0u8; extent.linear as usize];
-        e.read_guest(m.task, pixel_bytes, &mut held)?;
-        let Some((first, end)) = extent.texture else { return Ok(()) };
-        let mut memory = vec![0u8; (end - first) as usize];
-        e.read_guest(m.task, m.addr + first, &mut memory)?;
-        let mut new = held.clone();
-        region::read_region(&m.layout, c, &memory, first, &mut new).map_err(|e| copy_error(call, e))?;
-        e.write_guest_changed(m.task, pixel_bytes, &new, &held)?;
-        Ok(())
+        read_guest_region(e, call, m, (&m.layout, 0), c, pixel_bytes)
     }
+
+    /// `replaceRegion:...` through a view of a texture over caller memory: the driver's `writeRegion` on the view's
+    /// layout, from the view's first byte of the memory.
+    pub fn replace_region_guest_view(
+        &self,
+        e: &dyn Embedder,
+        call: &'static str,
+        root: &Texture<A>,
+        v: &GuestView,
+        c: &RegionCopy,
+        pixel_bytes: u64,
+    ) -> Result<(), MemError> {
+        let m = root.guest.as_ref().expect("a texture over caller memory");
+        write_guest_region(e, call, m, (&v.layout, v.offset), c, pixel_bytes)
+    }
+
+    /// `getBytes:...` through a view of a texture over caller memory: the driver's `readRegion` on the view's layout.
+    pub fn get_bytes_guest_view(
+        &self,
+        e: &dyn Embedder,
+        call: &'static str,
+        root: &Texture<A>,
+        v: &GuestView,
+        c: &RegionCopy,
+        pixel_bytes: u64,
+    ) -> Result<(), MemError> {
+        let m = root.guest.as_ref().expect("a texture over caller memory");
+        read_guest_region(e, call, m, (&v.layout, v.offset), c, pixel_bytes)
+    }
+}
+
+/// The layout a view of a texture over caller memory copies through, and where its memory starts.
+///
+/// `-[AGXA10FamilyTexture initImplWithTexture:...]` builds the view's layout from its parent's object
+/// ([`gen2::init_impl_view`]), and `updateBindDataWithTexture:pixelFormat:textureType:levels:slices:` (0x21c981b14)
+/// starts the view's CPU memory (TextureGen2 +0x120, from which `getCPUPtr` counts) at its parent's CPU address of the
+/// view's first slice at level 0 (0x21c981c84), of the parent's plane 1 for an X32_Stencil8 view of another format
+/// (0x21c981c64). The view's levels are counted in its parent's chain (its base level is the parent's plus the view's
+/// first level), its slices from its first.
+#[derive(Clone, Debug)]
+pub struct GuestView {
+    pub layout: TextureGen2,
+    /// From the root's first byte.
+    pub offset: u64,
+}
+
+impl GuestView {
+    /// The view of `parent` (the root's layout at offset 0, or a view's) with the view's arguments.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        call: &'static str,
+        parent: (&TextureGen2, u64),
+        pixel_format: u64,
+        texture_type: u64,
+        levels: core::ops::Range<u32>,
+        slices: core::ops::Range<u32>,
+        swizzle: u32,
+    ) -> Result<GuestView, MemError> {
+        let (p, base) = parent;
+        let layout = gen2::init_impl_view(
+            p,
+            pixel_format,
+            texture_type,
+            u64::from(levels.start),
+            u64::from(levels.end - levels.start),
+            u64::from(slices.end - slices.start),
+            swizzle,
+            p.system,
+        )
+        .map_err(|u| copy_error(call, region::CopyError::Unported(u)))?
+        .ok_or_else(|| {
+            MemError::invalid(format!(
+                "{call}: the A10X driver makes no layout for this view (initImplWithTexture: answers nil), so the guest \
+                 does not send the request"
+            ))
+        })?;
+        let plane = u32::from(pixel_format == 261 && p.pixel_format != 261);
+        let offset = region::cpu_offset(p, slices.start, 0, plane).map_err(|e| copy_error(call, e))?;
+        Ok(GuestView { layout, offset: base.wrapping_add(offset) })
+    }
+}
+
+/// writeRegion on `layout` with the memory from `offset` of `m`.
+fn write_guest_region(
+    e: &dyn Embedder,
+    call: &'static str,
+    m: &GuestTextureMemory,
+    (layout, offset): (&TextureGen2, u64),
+    c: &RegionCopy,
+    pixel_bytes: u64,
+) -> Result<(), MemError> {
+    if let Some(refusal) = region::validate_region(layout, c).map_err(|e| copy_error(call, e))? {
+        return Err(refused(call, refusal));
+    }
+    if pixel_bytes == 0 {
+        return Err(MemError::undefined(call, "the bytes pointer is null (the driver reads through it)"));
+    }
+    let extent = region::extent(layout, c).map_err(|e| copy_error(call, e))?.expect("validated");
+    let mut linear = vec![0u8; extent.linear as usize];
+    e.read_guest(m.task, pixel_bytes, &mut linear)?;
+    let Some((first, end)) = extent.texture else { return Ok(()) };
+    let at = m.addr.wrapping_add(offset).wrapping_add(first);
+    let mut held = vec![0u8; (end - first) as usize];
+    e.read_guest(m.task, at, &mut held)?;
+    let mut new = held.clone();
+    region::write_region(layout, c, &mut new, first, &linear).map_err(|e| copy_error(call, e))?;
+    e.write_guest_changed(m.task, at, &new, &held)?;
+    Ok(())
+}
+
+/// readRegion on `layout` with the memory from `offset` of `m`.
+fn read_guest_region(
+    e: &dyn Embedder,
+    call: &'static str,
+    m: &GuestTextureMemory,
+    (layout, offset): (&TextureGen2, u64),
+    c: &RegionCopy,
+    pixel_bytes: u64,
+) -> Result<(), MemError> {
+    if let Some(refusal) = region::validate_region(layout, c).map_err(|e| copy_error(call, e))? {
+        return Err(refused(call, refusal));
+    }
+    if pixel_bytes == 0 {
+        return Err(MemError::undefined(call, "the bytes pointer is null (the driver reads through it)"));
+    }
+    let extent = region::extent(layout, c).map_err(|e| copy_error(call, e))?.expect("validated");
+    let mut held = vec![0u8; extent.linear as usize];
+    e.read_guest(m.task, pixel_bytes, &mut held)?;
+    let Some((first, end)) = extent.texture else { return Ok(()) };
+    let mut memory = vec![0u8; (end - first) as usize];
+    e.read_guest(m.task, m.addr.wrapping_add(offset).wrapping_add(first), &mut memory)?;
+    let mut new = held.clone();
+    region::read_region(layout, c, &memory, first, &mut new).map_err(|e| copy_error(call, e))?;
+    e.write_guest_changed(m.task, pixel_bytes, &new, &held)?;
+    Ok(())
+}
+
+fn refused(call: &'static str, refusal: region::Refusal) -> MemError {
+    MemError::invalid(format!(
+        "{call}: a region the A10X driver's validateRegion refuses ({}): the guest logs it and copies nothing, so it \
+         does not reach the host",
+        refusal.assertion()
+    ))
 }
 
 fn wire_region(r: &webmetal_wire::Region) -> Region {
@@ -409,5 +514,72 @@ impl<A: Api> GuestArrived<A> {
         e.write_guest_changed(m.task, m.addr, &new, &shadow)?;
         *shadow = new;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::agx::gen2::{DescriptorFields, SystemValues};
+    use super::*;
+
+    fn visits(t: &TextureGen2, c: &RegionCopy, offset: u64) -> Vec<(u64, u64, u64)> {
+        let mut v = Vec::new();
+        region::visit(t, c, &mut |tex, lin, len| {
+            v.push((offset + tex, lin, len));
+            Ok(())
+        })
+        .unwrap();
+        v
+    }
+
+    fn copy(slice: u32, level: u32) -> RegionCopy {
+        RegionCopy {
+            region: Region { x: 1, y: 0, z: 0, width: 3, height: 2, depth: 1 },
+            slice,
+            level,
+            linear: Linear { bytes_per_row: 24, bytes_per_image: 0 },
+        }
+    }
+
+    /// A view's layout and memory start place each element where its parent places the same subresource's: the view's
+    /// slices from its first, its levels in the parent's chain.
+    #[test]
+    fn views_copy_where_their_parent_does() {
+        // RGBA8Unorm 2D array, 37x21 (NPOT), 4 levels, 6 slices; and 64x64, which fills pages.
+        for (w, h) in [(37, 21), (64, 64)] {
+            let d = DescriptorFields {
+                texture_type: 3,
+                pixel_format: 70,
+                width: w,
+                height: h,
+                depth: 1,
+                mipmap_level_count: 4,
+                sample_count: 1,
+                array_length: 6,
+                usage: 7,
+                allow_gpu_optimized_contents: true,
+                ..Default::default()
+            };
+            let root = gen2::texture_layout(&d, false, SystemValues::default()).unwrap();
+            // The same format, and R32Float, of slices 2..5 and levels 1..4.
+            for format in [70, 55] {
+                let v = GuestView::new("t", (&root, 0), format, 3, 1..4, 2..5, root.swizzle).unwrap();
+                for (slice, level) in [(0, 0), (2, 2)] {
+                    assert_eq!(
+                        visits(&v.layout, &copy(slice, level), v.offset),
+                        visits(&root, &copy(slice + 2, level + 1), 0),
+                        "{w}x{h} format {format} slice {slice} level {level}"
+                    );
+                }
+                // A view of the view: slices 1..2 of it, its level 1 on.
+                let vv = GuestView::new("t", (&v.layout, v.offset), format, 3, 1..3, 1..2, v.layout.swizzle).unwrap();
+                assert_eq!(visits(&vv.layout, &copy(0, 0), vv.offset), visits(&root, &copy(3, 2), 0));
+            }
+            if w == h {
+                // A cube view of six slices.
+                let cube = GuestView::new("t", (&root, 0), 70, 5, 0..4, 0..6, root.swizzle).unwrap();
+                assert_eq!(visits(&cube.layout, &copy(4, 1), cube.offset), visits(&root, &copy(4, 1), 0));
+            }
+        }
     }
 }

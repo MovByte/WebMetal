@@ -652,9 +652,9 @@ impl<A: Api> Memory<A> {
             )));
         }
         if t.guest.is_some() {
-            return Err(MemError::unimplemented(format!(
-                "{call} of a view of a texture over caller memory: the driver copies through the view's own layout of \
-                 the memory, which is not traced"
+            return Err(MemError::host(format!(
+                "{call} of a texture over caller memory or a view of one: the copy is the A10X driver's on its memory \
+                 (nocopy), not one of the texture's"
             )));
         }
         match t.storage {

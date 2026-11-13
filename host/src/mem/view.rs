@@ -58,6 +58,7 @@ use super::calls::Calls;
 use super::error::MemError;
 use super::layout::{Geometry, RegionArgs, RegionLayout, TextureType};
 use super::memory::Memory;
+use super::nocopy::GuestView;
 use super::options::StorageMode;
 use super::texture::{Alias, Texture, TextureRead, idl_format};
 use crate::embed::{Embedder, TaskId};
@@ -114,6 +115,8 @@ pub struct TextureView<A: Api> {
     pub plan: ViewPlan,
     /// The root's alias that holds the view's texels, for a `Copy` view.
     pub alias: Option<Rc<Alias<A>>>,
+    /// For a view of a texture over caller memory: the A10X layout CPU copies through the view use.
+    pub guest: Option<GuestView>,
     pub label: String,
 }
 
@@ -311,6 +314,11 @@ impl<A: Api> Memory<A> {
             Parent::Texture(t) => (t.clone(), t.geometry, (0, 0), t.swizzle),
             Parent::View(v) => (v.root.clone(), v.geometry, (v.base_level, v.base_slice), v.swizzle),
         };
+        // The A10X layout of the parent, for a texture over caller memory, and where its memory starts.
+        let parent_layout = match parent {
+            Parent::Texture(t) => t.guest.as_ref().map(|m| (&m.layout, 0)),
+            Parent::View(v) => v.guest.as_ref().map(|g| (&g.layout, g.offset)),
+        };
         if root.surface.is_some() {
             return Err(MemError::unimplemented(format!(
                 "{call} of a texture over an IOSurface plane: the A10X layout of its parent is not ported to the guest, \
@@ -447,6 +455,25 @@ impl<A: Api> Memory<A> {
             }
             _ => {}
         }
+        let guest = match parent_layout {
+            Some(p) => {
+                // The swizzle initImplWithTexture: takes: the channels it is given as the u32 they pack into, or the
+                // parent's layout swizzle (+0xbc).
+                let layout_swizzle =
+                    a.swizzle.map_or(p.0.swizzle, |s| u32::from_le_bytes([s.red, s.green, s.blue, s.alpha]));
+                let texture_type = a.texture_type.unwrap_or(pg.kind.value());
+                Some(GuestView::new(
+                    call,
+                    p,
+                    a.pixel_format,
+                    texture_type,
+                    levels.clone(),
+                    slices.clone(),
+                    layout_swizzle,
+                )?)
+            }
+            None => None,
+        };
         Ok(Rc::new(TextureView {
             root,
             format,
@@ -457,6 +484,7 @@ impl<A: Api> Memory<A> {
             swizzle,
             plan,
             alias,
+            guest,
             label: label(task, "texture view", handle),
         }))
     }

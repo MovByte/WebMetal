@@ -330,6 +330,10 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     mem.replace_region_guest(e, call, &t, &c, r.pixel_bytes.0)?;
                 } else if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     mem.replace_region(g, e, task, &t, r)?;
+                } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture).filter(|v| v.guest.is_some()) {
+                    let (c, call) = nocopy::replace_region_copy(r);
+                    let gv = v.guest.as_ref().expect("a view of a texture over caller memory");
+                    mem.replace_region_guest_view(e, call, &v.root, gv, &c, r.pixel_bytes.0)?;
                 } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
                     let a = args(&r.region, r.level, 0, r.bytes_per_row, 0);
                     mem.replace_region_view(g, e, (task, REPLACE_REGION_CALL), &v, &a, r.pixel_bytes.0)?;
@@ -351,6 +355,10 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     mem.replace_region_guest(e, call, &t, &c, r.pixel_bytes.0)?;
                 } else if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     mem.replace_region_slice(g, e, task, &t, r)?;
+                } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture).filter(|v| v.guest.is_some()) {
+                    let (c, call) = nocopy::replace_region_slice_copy(r);
+                    let gv = v.guest.as_ref().expect("a view of a texture over caller memory");
+                    mem.replace_region_guest_view(e, call, &v.root, gv, &c, r.pixel_bytes.0)?;
                 } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
                     let a = args(&r.region, r.level, r.slice, r.bytes_per_row, r.bytes_per_image);
                     mem.replace_region_view(g, e, (task, REPLACE_REGION_SLICE_CALL), &v, &a, r.pixel_bytes.0)?;
@@ -365,6 +373,12 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture).filter(|t| t.guest.is_some()) {
                     let (c, call) = nocopy::get_bytes_copy(r);
                     mem.get_bytes_guest(e, call, &t, &c, r.pixel_bytes.0)?;
+                    return Ok(Served::Ready(ok!(GetBytes, GetBytesReply)));
+                }
+                if let Some(v) = payload::<TextureView<A>>(objects, r.texture).filter(|v| v.guest.is_some()) {
+                    let (c, call) = nocopy::get_bytes_copy(r);
+                    let gv = v.guest.as_ref().expect("a view of a texture over caller memory");
+                    mem.get_bytes_guest_view(e, call, &v.root, gv, &c, r.pixel_bytes.0)?;
                     return Ok(Served::Ready(ok!(GetBytes, GetBytesReply)));
                 }
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
@@ -392,6 +406,12 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture).filter(|t| t.guest.is_some()) {
                     let (c, call) = nocopy::get_bytes_slice_copy(r);
                     mem.get_bytes_guest(e, call, &t, &c, r.pixel_bytes.0)?;
+                    return Ok(Served::Ready(ok!(GetBytesSlice, GetBytesSliceReply)));
+                }
+                if let Some(v) = payload::<TextureView<A>>(objects, r.texture).filter(|v| v.guest.is_some()) {
+                    let (c, call) = nocopy::get_bytes_slice_copy(r);
+                    let gv = v.guest.as_ref().expect("a view of a texture over caller memory");
+                    mem.get_bytes_guest_view(e, call, &v.root, gv, &c, r.pixel_bytes.0)?;
                     return Ok(Served::Ready(ok!(GetBytesSlice, GetBytesSliceReply)));
                 }
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
