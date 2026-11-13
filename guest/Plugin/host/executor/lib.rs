@@ -38,7 +38,7 @@ use webmetal_host::embed::{
 use webmetal_host::exec::{Config, ControlService, Executor, Services, fetch_events_reply};
 use webmetal_host::format::webgpu::{Feature, HostFeatures};
 use webmetal_host::gpu::ExceptionKind;
-use webmetal_host::gpu::idl::{DeviceDescriptor, FeatureName, RequestAdapterOptions};
+use webmetal_host::gpu::idl::RequestAdapterOptions;
 use webmetal_host::gpu::native::{Native, NativeGpu};
 use webmetal_host::gpu::scope::{Granularity, Policy};
 use webmetal_host::gpu::{Adapter as _, Device as _, Gpu as _, negotiate};
@@ -401,19 +401,9 @@ fn set_up() -> Result<(NativeGpu, Exec, Rc<InProcess>), String> {
                     .await
                     .map_err(|e| format!("requestAdapter: {e:?}"))?
                     .ok_or("requestAdapter: no adapter")?;
-                let mut descriptor = match negotiate::plan(&adapter.features(), &adapter.limits()) {
-                    Ok(p) => p.descriptor,
-                    // wgpu-native reports no "core-features-and-limits"; ask for every feature it offers with the
-                    // default limits, as the executor's own native tests do.
-                    Err(negotiate::NegotiationError::NotCore) => {
-                        let offered = adapter.features();
-                        let mut d = DeviceDescriptor::new();
-                        d.required_features =
-                            FeatureName::ALL.into_iter().filter(|f| offered.contains(f.as_str())).collect();
-                        d
-                    }
-                    Err(e) => return Err(format!("negotiation: {e}")),
-                };
+                let mut descriptor = negotiate::plan(&adapter.features(), &adapter.limits())
+                    .map_err(|e| format!("negotiation: {e}"))?
+                    .descriptor;
                 descriptor.label = "WebMetal shim".into();
                 adapter.request_device(&descriptor).await.map_err(|e| format!("requestDevice: {e:?}"))
             },

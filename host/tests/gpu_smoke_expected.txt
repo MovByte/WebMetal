@@ -9,6 +9,8 @@ check requestAdapter = adapter
 check adapter.features has core-features-and-limits = true
 # §3.5.2 "a new device": the device's features and limits follow from the request (negotiate.rs).
 check negotiate.plan = ok
+# §4.2.2 featureLevel: the adapter was requested for "core", whose capabilities it has.
+check negotiate.level = core
 check requestDevice(plan) = ok
 check negotiate.verify = none
 # §3.1.2 "create a new WebGPU object": the label comes from the descriptor.
