@@ -351,6 +351,21 @@ WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, M
     return !_state.pinned;
 }
 
+// -[IOGPUMetalResource isComplete] (0x1fcb39934), on the buffer's kernel resource: its own (a sub-allocated buffer's is
+// made with its primary's options, untracked exactly when the buffer's are: IOGPUMetalSuballocatorAllocate keys its
+// pools by them, clearing only the tracked mode) or, for a heap buffer, the heap's.
+- (BOOL)isComplete
+{
+    webmetal::CheckEventComplete(self, _cmd, _state, false);
+    return YES;
+}
+
+// -[IOGPUMetalResource waitUntilComplete] (0x1fcb39964).
+- (void)waitUntilComplete
+{
+    webmetal::CheckEventComplete(self, _cmd, _state, false);
+}
+
 - (void)makeAliasable
 {
     webmetal::MakeAliasable(self, _cmd, _state, false);

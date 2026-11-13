@@ -329,7 +329,7 @@ inline constexpr DriverSelector kAGXA10FamilyBufferDriver[] = {
     {SelectorKind::Instance, "initWithResource:", "@24@0:8@16", "iogpu", "-[IOGPUMetalResource initWithResource:], an initializer IOGPU sends only to a resource object it allocated itself; the plugin creates its buffers through its own initializers. MetalPerformanceShaders's reference is to its own classes (MPSState and its subclasses implement initWithResource:)"},
     {SelectorKind::Instance, "iosurface", "^{__IOSurface=}16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "isAliasable", "B16@0:8", "iogpu", ""},
-    {SelectorKind::Instance, "isComplete", "B16@0:8", "iogpu", "IOGPUResourceTestEvent(_res.resourceRef, 0) (-[IOGPUMetalResource isComplete] 0x1fcb39934): event 0 of the kernel resource, up to 15 GPU channel stamps that IOGPUDeviceTestEventFast (0x1fcb3c0dc) compares with the channels' completed stamps; views, textures over buffers and heap resources share their parent's, buffer's or heap's kernel resource (-[IOGPUMetalResource initWithResource:] callers). The kernel stamps the resources in each submitted command buffer's IOGPU resource list, which the A10 encoders fill with per-use flags through IOGPUResourceListAddResource (175 call sites in AGXMetalA10, 144 in its C++ encoder helpers); which bindings and flags reach that list, so which uses stamp event 0, is not read yet. On the Apple M4 a read-only useResource: stamps it and a heap buffer bound with setBuffer: stamps neither it nor its heap neighbours, so binding alone does not decide it"},
+    {SelectorKind::Instance, "isComplete", "B16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "isPurgeable", "B16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "label", "@16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "length", "Q16@0:8", "iogpu", ""},
@@ -353,7 +353,7 @@ inline constexpr DriverSelector kAGXA10FamilyBufferDriver[] = {
     {SelectorKind::Instance, "storageMode", "Q16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "unfilteredResourceOptions", "Q16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "virtualAddress", "^v16@0:8", "iogpu", ""},
-    {SelectorKind::Instance, "waitUntilComplete", "v16@0:8", "iogpu", "IOGPUResourceFinishEvent(_res.resourceRef, 0) (-[IOGPUMetalResource waitUntilComplete] 0x1fcb39964), which waits in the kernel (IOConnectTrap2 selector 2) while the event is pending: event 0 of the kernel resource, up to 15 GPU channel stamps that IOGPUDeviceTestEventFast (0x1fcb3c0dc) compares with the channels' completed stamps; views, textures over buffers and heap resources share their parent's, buffer's or heap's kernel resource (-[IOGPUMetalResource initWithResource:] callers). The kernel stamps the resources in each submitted command buffer's IOGPU resource list, which the A10 encoders fill with per-use flags through IOGPUResourceListAddResource (175 call sites in AGXMetalA10, 144 in its C++ encoder helpers); which bindings and flags reach that list, so which uses stamp event 0, is not read yet. On the Apple M4 a read-only useResource: stamps it and a heap buffer bound with setBuffer: stamps neither it nor its heap neighbours, so binding alone does not decide it"},
+    {SelectorKind::Instance, "waitUntilComplete", "v16@0:8", "iogpu", ""},
 };
 
 // Driver-layer selectors of AGXA10FamilyTexture -> AGXTexture -> IOGPUMetalTexture -> IOGPUMetalResource -> _MTLResource -> _MTLObjectWithLabel.
@@ -444,7 +444,7 @@ inline constexpr DriverSelector kAGXA10FamilyTextureDriver[] = {
     {SelectorKind::Instance, "iosurface", "^{__IOSurface=}16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "iosurfacePlane", "Q16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "isAliasable", "B16@0:8", "iogpu", ""},
-    {SelectorKind::Instance, "isComplete", "B16@0:8", "iogpu", "IOGPUResourceTestEvent(_res.resourceRef, 0) (-[IOGPUMetalResource isComplete] 0x1fcb39934): event 0 of the kernel resource, up to 15 GPU channel stamps that IOGPUDeviceTestEventFast (0x1fcb3c0dc) compares with the channels' completed stamps; views, textures over buffers and heap resources share their parent's, buffer's or heap's kernel resource (-[IOGPUMetalResource initWithResource:] callers). The kernel stamps the resources in each submitted command buffer's IOGPU resource list, which the A10 encoders fill with per-use flags through IOGPUResourceListAddResource (175 call sites in AGXMetalA10, 144 in its C++ encoder helpers); which bindings and flags reach that list, so which uses stamp event 0, is not read yet. On the Apple M4 a read-only useResource: stamps it and a heap buffer bound with setBuffer: stamps neither it nor its heap neighbours, so binding alone does not decide it"},
+    {SelectorKind::Instance, "isComplete", "B16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "isCompressed", "B16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "isDrawable", "B16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "isFramebufferOnly", "B16@0:8", "iogpu", ""},
@@ -507,7 +507,7 @@ inline constexpr DriverSelector kAGXA10FamilyTextureDriver[] = {
     {SelectorKind::Instance, "usage", "Q16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "validateBufferTextureWithSize:", "B24@0:8Q16", "agx", ""},
     {SelectorKind::Instance, "virtualAddress", "^v16@0:8", "iogpu", ""},
-    {SelectorKind::Instance, "waitUntilComplete", "v16@0:8", "iogpu", "IOGPUResourceFinishEvent(_res.resourceRef, 0) (-[IOGPUMetalResource waitUntilComplete] 0x1fcb39964), which waits in the kernel (IOConnectTrap2 selector 2) while the event is pending: event 0 of the kernel resource, up to 15 GPU channel stamps that IOGPUDeviceTestEventFast (0x1fcb3c0dc) compares with the channels' completed stamps; views, textures over buffers and heap resources share their parent's, buffer's or heap's kernel resource (-[IOGPUMetalResource initWithResource:] callers). The kernel stamps the resources in each submitted command buffer's IOGPU resource list, which the A10 encoders fill with per-use flags through IOGPUResourceListAddResource (175 call sites in AGXMetalA10, 144 in its C++ encoder helpers); which bindings and flags reach that list, so which uses stamp event 0, is not read yet. On the Apple M4 a read-only useResource: stamps it and a heap buffer bound with setBuffer: stamps neither it nor its heap neighbours, so binding alone does not decide it"},
+    {SelectorKind::Instance, "waitUntilComplete", "v16@0:8", "iogpu", ""},
     {SelectorKind::Instance, "width", "Q16@0:8", "iogpu", ""},
 };
 

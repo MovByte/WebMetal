@@ -63,6 +63,8 @@
 
 @protocol SPIResources
 - (NSUInteger)resourceSize;
+- (BOOL)isComplete;
+- (void)waitUntilComplete;
 @end
 
 @protocol SPIConstants
@@ -299,6 +301,39 @@ void checkResources(id<MTLDevice> device)
     check(size(small) == 0x20000 && small.allocatedSize == 256, "a sub-allocated buffer answers its primary's size");
     check(size(tinyTexture) == 0x20000 && size(tinyView) == 0x20000 && tinyView.allocatedSize == 0x20000,
           "a sub-allocated texture and its view answer the primary's size");
+    // -[IOGPUMetalResource isComplete] and -waitUntilComplete: the submissions of the A10X driver never stamp event 0 of
+    // an untracked kernel resource (IOGPUResource's stamp, kernelcache 0xfffffff005bc4e68), so it stays clear; a
+    // heap's resource is untracked unless its descriptor says otherwise. Event 0 of a tracked one is LOUD.
+    auto complete = [](id resource) {
+        __block BOOL done = NO;
+        NSString *reason = loudReason(^{
+            done = [(id<SPIResources>)resource isComplete];
+            [(id<SPIResources>)resource waitUntilComplete];
+        });
+        return !reason && done;
+    };
+    id<MTLBuffer> untracked = [device newBufferWithLength:65536
+                                                  options:MTLResourceStorageModeShared |
+                                                          MTLResourceHazardTrackingModeUntracked];
+    id<MTLBuffer> untrackedSmall = [device newBufferWithLength:256
+                                                       options:MTLResourceStorageModeShared |
+                                                               MTLResourceHazardTrackingModeUntracked];
+    td.hazardTrackingMode = MTLHazardTrackingModeUntracked;
+    id<MTLTexture> untrackedTexture = [device newTextureWithDescriptor:td];
+    id<MTLTexture> untrackedView = [untrackedTexture newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm_sRGB];
+    id<MTLTexture> overUntracked = [untracked newTextureWithDescriptor:linear offset:0 bytesPerRow:256];
+    check(complete(untracked) && complete(untrackedSmall) && complete(heapBuffer) && complete(heapTexture) &&
+              complete(untrackedTexture) && complete(untrackedView) && complete(overUntracked),
+          "untracked kernel resources are complete");
+    NSString *trackedReason = loudReason(^{
+        (void)[(id<SPIResources>)buffer isComplete];
+    });
+    NSString *trackedWait = loudReason(^{
+        [(id<SPIResources>)bufferTexture waitUntilComplete];
+    });
+    check([trackedReason containsString:@"tracked kernel resource"] &&
+              [trackedWait containsString:@"tracked kernel resource"],
+          "a tracked kernel resource's event is LOUD");
     // -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] fails: no host reads the layout.
     void *bytes = calloc(1, 65536);
     NSString *reason = loudReason(^{

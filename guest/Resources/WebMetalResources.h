@@ -135,6 +135,11 @@ void InitResourceState(ResourceState &state, WebMetalDevice *device, uint64_t op
 
 // IOGPUMetalResource's answers, for any resource class holding a ResourceState.
 MTLHazardTrackingMode HazardTrackingMode(const ResourceState &state);
+
+// -[IOGPUMetalResource isComplete] and -waitUntilComplete for a resource whose kernel resource has the state `kernel`
+// (the parent's, buffer's or heap's for a resource that shares one): returns for a kernel resource made untracked,
+// LOUD otherwise (WebMetalResource.mm).
+void CheckEventComplete(id self, SEL _cmd, const ResourceState &kernel, bool iosurface);
 MTLResourceOptions ResourceOptions(const ResourceState &state);
 NSUInteger HeapOffset(const ResourceState &state);
 NSString *RetainedLabel(ResourceState &state);

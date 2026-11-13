@@ -675,6 +675,31 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
     return !_state.pinned;
 }
 
+// -[IOGPUMetalResource isComplete] (0x1fcb39934) and -waitUntilComplete (0x1fcb39964), on the texture's kernel resource:
+// a view shares its parent's and a texture over a buffer the buffer's (-[IOGPUMetalResource initWithResource:]); a heap
+// texture's state carries the heap's options; a sub-allocated texture's own kernel resource takes the hazard-tracking
+// mode of its primary buffer (-[IOGPUMetalTexture initWithBuffer:...isStrideTexture:] 0x1fcb2e508), untracked exactly
+// when the texture's options are.
+static void checkTextureEvent(WebMetalTexture *self, SEL _cmd)
+{
+    WebMetalTexture *root = self;
+    while (root->_parentTexture)
+        root = root->_parentTexture;
+    const webmetal::ResourceState *kernel = root->_buffer ? webmetal::StateOf(root->_buffer) : &root->_state;
+    webmetal::CheckEventComplete(self, _cmd, *kernel, root->_state.iosurface != nullptr);
+}
+
+- (BOOL)isComplete
+{
+    checkTextureEvent(self, _cmd);
+    return YES;
+}
+
+- (void)waitUntilComplete
+{
+    checkTextureEvent(self, _cmd);
+}
+
 - (void)makeAliasable
 {
     webmetal::MakeAliasable(self, _cmd, _state, false);

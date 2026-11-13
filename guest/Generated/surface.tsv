@@ -228,7 +228,7 @@ AGXA10FamilyBuffer	instance	initWithPrimaryBuffer:heapIndex:bufferIndex:bufferOf
 AGXA10FamilyBuffer	instance	initWithResource:	-	iogpu	driver	WebMetalBuffer	loud
 AGXA10FamilyBuffer	instance	iosurface	-	iogpu	driver	WebMetalBuffer	implemented
 AGXA10FamilyBuffer	instance	isAliasable	MTLResource	iogpu	driver	WebMetalBuffer	implemented
-AGXA10FamilyBuffer	instance	isComplete	MTLResourceSPI	iogpu	driver	WebMetalBuffer	loud
+AGXA10FamilyBuffer	instance	isComplete	MTLResourceSPI	iogpu	driver	WebMetalBuffer	implemented
 AGXA10FamilyBuffer	instance	isPurgeable	MTLResourceSPI	iogpu	driver	WebMetalBuffer	implemented
 AGXA10FamilyBuffer	instance	label	MTLResource	iogpu	driver	WebMetalBuffer	implemented
 AGXA10FamilyBuffer	instance	length	MTLBuffer	iogpu	driver	WebMetalBuffer	implemented
@@ -252,7 +252,7 @@ AGXA10FamilyBuffer	instance	setResponsibleProcess:	MTLResourceSPI	iogpu	driver	W
 AGXA10FamilyBuffer	instance	storageMode	MTLResource	iogpu	driver	WebMetalBuffer	implemented
 AGXA10FamilyBuffer	instance	unfilteredResourceOptions	MTLResourceSPI	iogpu	driver	WebMetalBuffer	implemented
 AGXA10FamilyBuffer	instance	virtualAddress	-	iogpu	driver	WebMetalBuffer	implemented
-AGXA10FamilyBuffer	instance	waitUntilComplete	MTLResourceSPI	iogpu	driver	WebMetalBuffer	loud
+AGXA10FamilyBuffer	instance	waitUntilComplete	MTLResourceSPI	iogpu	driver	WebMetalBuffer	implemented
 AGXA10FamilyCommandBuffer	instance	GPUEndTime	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited
 AGXA10FamilyCommandBuffer	instance	GPUStartTime	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited
 AGXA10FamilyCommandBuffer	instance	_accelerationStructureCommandEncoderWithDescriptor:	-	agx	driver	WebMetalCommandBuffer	loud
@@ -2311,7 +2311,7 @@ AGXA10FamilyTexture	instance	initWithTextureInternal:pixelFormat:textureType:lev
 AGXA10FamilyTexture	instance	iosurface	MTLTexture,MTLTextureSPI	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	iosurfacePlane	MTLTexture,MTLTextureSPI	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	isAliasable	MTLResource	iogpu	driver	WebMetalTexture	implemented
-AGXA10FamilyTexture	instance	isComplete	MTLResourceSPI	iogpu	driver	WebMetalTexture	loud
+AGXA10FamilyTexture	instance	isComplete	MTLResourceSPI	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	isCompressed	MTLTextureSPI	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	isDrawable	MTLTextureSPI	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	isFramebufferOnly	MTLTexture	iogpu	driver	WebMetalTexture	implemented
@@ -2374,7 +2374,7 @@ AGXA10FamilyTexture	instance	updateBindDataWithTexture:pixelFormat:textureType:l
 AGXA10FamilyTexture	instance	usage	MTLTexture	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	validateBufferTextureWithSize:	-	agx	driver	WebMetalTexture	loud
 AGXA10FamilyTexture	instance	virtualAddress	-	iogpu	driver	WebMetalTexture	loud
-AGXA10FamilyTexture	instance	waitUntilComplete	MTLResourceSPI	iogpu	driver	WebMetalTexture	loud
+AGXA10FamilyTexture	instance	waitUntilComplete	MTLResourceSPI	iogpu	driver	WebMetalTexture	implemented
 AGXA10FamilyTexture	instance	width	MTLTexture	iogpu	driver	WebMetalTexture	implemented
 AGXTextureLayout	instance	alignment	MTLTextureLayout	agx	driver	WebMetalTextureLayout	implemented
 AGXTextureLayout	instance	copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:textureLevel:textureRegion:	MTLTextureLayout	agx	driver	WebMetalTextureLayout	loud
