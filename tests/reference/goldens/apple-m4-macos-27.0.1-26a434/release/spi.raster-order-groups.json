@@ -1,0 +1,18 @@
+{
+  "area": "spi.feature-probes",
+  "case": "spi.raster-order-groups",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"value","name":"raster-order-groups-supported","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"value","name":"pipeline-made","rule":{"compare":"device"},"type":"bool","value":true},
+    {"kind":"error","name":"pipeline-error","nil":1,"rule":{"compare":"device"}},
+    {"count":256,"elem":"u8","hex":"4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff4080c0ff","kind":"data","name":"color","rule":{"compare":"exact"}}
+  ],
+  "status": "ok",
+  "title": "A render pipeline whose fragment color output is in a raster order group, and a draw with it",
+  "variant": "release"
+}

@@ -191,6 +191,9 @@ compared exactly.
 | Command queue GPU priority and background GPU priority | `spi.queue-priority` |
 | Command buffer cache hints over resource groups | `spi.cache-hints` |
 | `imageblockSampleLength` and `staticThreadgroupMemoryLength` of a render pipeline without tile functions | `spi.render-pipeline-answers` |
+| `commitAndWaitUntilSubmitted`, kernel start and end times across the command buffers of a queue | `spi.commit-and-wait-until-submitted` |
+| A memoryless depth attachment on a device that reports `supportsMemorylessRenderTargets` | `spi.memoryless-render-target` |
+| A raster order group on a fragment output, with the device's `rasterOrderGroupsSupported` answer | `spi.raster-order-groups` |
 
 ## Not covered
 
