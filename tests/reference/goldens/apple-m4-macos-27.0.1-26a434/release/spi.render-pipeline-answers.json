@@ -1,0 +1,17 @@
+{
+  "area": "spi.pipelines",
+  "case": "spi.render-pipeline-answers",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"spi.render-pipeline-answers","value":true},
+    {"kind":"value","name":"imageblock-sample-length","rule":{"compare":"device"},"type":"u64","value":4},
+    {"kind":"value","name":"static-threadgroup-memory-length","rule":{"compare":"device"},"type":"u64","value":0}
+  ],
+  "status": "ok",
+  "title": "imageblockSampleLength and staticThreadgroupMemoryLength of a render pipeline without tile functions",
+  "variant": "release"
+}

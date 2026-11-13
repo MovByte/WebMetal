@@ -178,12 +178,26 @@ the process outcome: `validation.buffer-length-zero`,
 `validation.private-texture-initial-contents`. The misuse cases of the other
 areas are listed in their tables.
 
+## System-client SPI
+
+The driver SPI that QuartzCore, CoreImage, Metal Performance Shaders,
+AppleMetalGLRenderer and WebKit send. The answers are the GPU driver's, so
+they carry the device rule; Metal's handling of the work around them is
+compared exactly.
+
+| Behavior | Cases |
+| --- | --- |
+| `vendorName`, `familyName`, `productName` | `spi.device-names` |
+| Command queue GPU priority and background GPU priority | `spi.queue-priority` |
+| Command buffer cache hints over resource groups | `spi.cache-hints` |
+| `imageblockSampleLength` and `staticThreadgroupMemoryLength` of a render pipeline without tile functions | `spi.render-pipeline-answers` |
+
 ## Not covered
 
 | Behavior | Reason |
 | --- | --- |
-| Private device SPI, `registryID` | Private interfaces are out of scope; `registryID` changes between boots |
-| GPU role and priority, `setOwnerWithIdentity:`, background GPU priority | Private, with no observable effect on results |
+| Private device SPI outside the system-client list, `registryID` | Only the SPI the system frameworks send is covered; `registryID` changes between boots |
+| GPU role, `setOwnerWithIdentity:` | Private, with no observable effect on results |
 | `MTLCaptureManager`, statistic counter sets, deadline profiles, performance-state assertions | No observable result; the measured device advertises only the timestamp counter set |
 | Shared event handles across processes | Only the in-process handle round trip is covered |
 | Command buffer error status with a defined cause | Every documented cause (timeout, page fault, out of memory) needs a GPU hang or fault |

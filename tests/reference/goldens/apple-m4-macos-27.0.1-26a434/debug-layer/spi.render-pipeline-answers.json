@@ -1,0 +1,16 @@
+{
+  "area": "spi.pipelines",
+  "case": "spi.render-pipeline-answers",
+  "format": "webmetal-reference/1",
+  "message": "requirement spi.render-pipeline-answers is not met",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"spi.render-pipeline-answers","value":false}
+  ],
+  "status": "unsupported",
+  "title": "imageblockSampleLength and staticThreadgroupMemoryLength of a render pipeline without tile functions",
+  "variant": "debug-layer"
+}

@@ -1,0 +1,18 @@
+{
+  "area": "spi.device",
+  "case": "spi.device-names",
+  "format": "webmetal-reference/1",
+  "outcome": {
+    "code": 0,
+    "kind": "exit"
+  },
+  "records": [
+    {"kind":"require","name":"spi.device-names","value":true},
+    {"kind":"value","name":"vendor-name","rule":{"compare":"device"},"type":"string","value":"Apple"},
+    {"kind":"value","name":"family-name","rule":{"compare":"device"},"type":"string","value":"M4"},
+    {"kind":"value","name":"product-name","rule":{"compare":"device"},"type":"string","value":""}
+  ],
+  "status": "ok",
+  "title": "vendorName, familyName and productName of the device",
+  "variant": "debug-layer"
+}

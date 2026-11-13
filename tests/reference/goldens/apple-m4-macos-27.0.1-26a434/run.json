@@ -8,7 +8,7 @@
     "sdk": "macosx",
     "sdk_build": "26B118",
     "sdk_version": "27.2",
-    "source_sha256": "da057a04b5117c76378a27baeff89cfcc82da194089057d87bd159d15808a05c",
+    "source_sha256": "7178ed979c9682b211b1b6b41b3c799355d4b6b2736fdc1eaf1e92dcb8a1f509",
     "target": "arm64-apple-macos14.0"
   },
   "cases": [
@@ -878,6 +878,14 @@
     {"case":"sampler.properties","outcome":"exit 0","sha256":"2d2757af6a21d51917c128b28ac571cde00b9d364a5534edf78fe55f31aa1b8c","status":"ok","variant":"debug-layer"},
     {"case":"sampler.unnormalized-coordinates","outcome":"exit 0","sha256":"c8b55a8549a874ac7328a2093c2c8edff7441a939f249a64a90b5d0dd038578e","status":"ok","variant":"release"},
     {"case":"sampler.unnormalized-coordinates","outcome":"exit 0","sha256":"d409edef8b7d72b5de9358fb72ce0aa399d9903fe70fd50f401121b9faec507e","status":"ok","variant":"debug-layer"},
+    {"case":"spi.cache-hints","outcome":"exit 0","sha256":"2994264b975824dfad79ff8eec416e9a7c2cd9c137f6f7e750e970eead7acca7","status":"ok","variant":"release"},
+    {"case":"spi.cache-hints","outcome":"exit 0","sha256":"ab583cfb998fd7ac6a30cf724d3f006bb1644ed7af8e3fd75cdda6e7e5c6b046","status":"ok","variant":"debug-layer"},
+    {"case":"spi.device-names","outcome":"exit 0","sha256":"9138833ffdabc19a6750f164f10d0b8e5248cd5d505a79b58f91d49ccb43fdd9","status":"ok","variant":"release"},
+    {"case":"spi.device-names","outcome":"exit 0","sha256":"83f18b563de84219d6d196b6f07831e1cd9515508060df651bce91c4f2ec2e07","status":"ok","variant":"debug-layer"},
+    {"case":"spi.queue-priority","outcome":"exit 0","sha256":"03f8d88a79e183b4c54d7017776bef1bbba565bf92e0023a201348e27f695cad","status":"ok","variant":"release"},
+    {"case":"spi.queue-priority","outcome":"exit 0","sha256":"a20ea8a5449c976780ac5a02d4aba3a150f6fddf03680936b32fac89c4b9ddb0","status":"ok","variant":"debug-layer"},
+    {"case":"spi.render-pipeline-answers","outcome":"exit 0","sha256":"591e9eae6b4137054c4bc1569e25a906b3229196bd959be030ff756b89373408","status":"ok","variant":"release"},
+    {"case":"spi.render-pipeline-answers","outcome":"exit 0","sha256":"2bba8ecfd185bd333f68d2a42d2a63773d6a90c1ccc65929b62205056c121e42","status":"unsupported","variant":"debug-layer"},
     {"case":"storage.buffer-backed-texture","outcome":"exit 0","sha256":"2ac586ae3b11d1edfd3142177ba2adfacded3614c13a75640eddc5749c2d6517","status":"ok","variant":"release"},
     {"case":"storage.buffer-backed-texture","outcome":"exit 0","sha256":"e29aae11ebe8dfcd1ecb2d1716ccbdc6dce987eae244e612e4258c9ab3d73f5a","status":"ok","variant":"debug-layer"},
     {"case":"storage.buffer-length-zero","outcome":"exit 0","sha256":"8fbacec95e656564f251d59111fbba13e56b4c8af222faeb590b6183ee9affeb","status":"ok","variant":"release"},
