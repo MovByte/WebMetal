@@ -172,3 +172,56 @@ fragment uint tess_order_fragment(TessOrderOut in [[stage_in]], float3 b [[baryc
         lists[pixel * args.capacity + length] = uint4(in.first, second, third, decoded);
     return length + 1u;
 }
+
+// Rendered patch draws (tessellation.render). Each point is placed at a window
+// position hashed from its position in the patch, its patch identifier and its
+// instance, so that the generated triangles overlap, and carries a flat code
+// that mixes the hash with two of its patch's control points and the patch's
+// per-patch attribute. A pixel of the target holds the code of the last
+// triangle drawn over it: the result depends on every triangle, on its first
+// point (the provoking vertex) and on the order of the triangles.
+
+struct TessDrawPoint {
+    float4 p [[attribute(0)]];
+};
+
+struct TessDrawPatch {
+    patch_control_point<TessDrawPoint> cp;
+    uint tag [[attribute(1)]];
+};
+
+struct TessDrawOut {
+    float4 position [[position]];
+    uint code [[flat]];
+};
+
+static TessDrawOut tess_place(uint a, uint b, uint c, uint patch, uint instance, uint tag, float4 cp0, float4 cp1)
+{
+    uint h = tess_hash(a ^ tess_hash(b ^ tess_hash(c ^ tess_hash(patch * 31u + instance))));
+    // Clip-space positions on a grid of 1/64, exact in binary32 (the control points' offsets are on the grid too).
+    float2 xy = float2(float(h & 0x7fu), float((h >> 7) & 0x7fu)) / 64.0f - 1.0f + cp0.xy;
+    TessDrawOut o;
+    o.position = float4(xy, 0.5f, 1.0f);
+    o.code = (h | 1u) ^ tag ^ as_type<uint>(cp1.w);
+    return o;
+}
+
+[[patch(quad, 4)]]
+vertex TessDrawOut tess_draw_quad(TessDrawPatch in [[stage_in]], float2 p [[position_in_patch]],
+                                  uint patch [[patch_id]], uint instance [[instance_id]])
+{
+    return tess_place(as_type<uint>(p.x), as_type<uint>(p.y), 0u, patch, instance, in.tag, in.cp[0].p, in.cp[3].p);
+}
+
+[[patch(triangle, 3)]]
+vertex TessDrawOut tess_draw_triangle(TessDrawPatch in [[stage_in]], float3 p [[position_in_patch]],
+                                      uint patch [[patch_id]], uint instance [[instance_id]])
+{
+    return tess_place(as_type<uint>(p.x), as_type<uint>(p.y), as_type<uint>(p.z), patch, instance, in.tag,
+                      in.cp[1].p, in.cp[2].p);
+}
+
+fragment uint tess_draw_fragment(TessDrawOut in [[stage_in]])
+{
+    return in.code;
+}
