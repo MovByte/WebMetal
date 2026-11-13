@@ -13,6 +13,7 @@
 #import <objc/runtime.h>
 
 #include <dlfcn.h>
+#include <unistd.h>
 
 #include <cstdio>
 #include <cstring>
@@ -378,6 +379,54 @@ void checkResources(id<MTLDevice> device)
     free(bytes);
 }
 
+// -[IOGPUMetalResource isComplete] tests event 0, which the A10X kernel stamps when it processes an encoder that lists
+// the resource (render -useResource:usage: lists it with flags 5). The kernel stays at a wait on a shared event until
+// the event reaches the value (IOGPUCommandQueue::processKernelCommand, kernelcache 0xfffffff005bd8d54 to
+// 0xfffffff005bd8e18), so an encoder after the wait has stamped nothing until then.
+void checkStamps(id<MTLDevice> device)
+{
+    id<MTLBuffer> late = [device newBufferWithLength:256
+                                             options:MTLResourceStorageModeShared |
+                                                     MTLResourceHazardTrackingModeTracked];
+    id<MTLSharedEvent> event = [device newSharedEvent];
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                  width:8 height:8 mipmapped:NO];
+    td.usage = MTLTextureUsageRenderTarget;
+    td.storageMode = MTLStorageModePrivate;
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = [device newTextureWithDescriptor:td];
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    check(late && event && queue && pass.colorAttachments[0].texture, "the stamp check's objects are made");
+    id<MTLCommandBuffer> buffer = [queue commandBuffer];
+    [buffer encodeWaitForEvent:event value:1];
+    id<MTLRenderCommandEncoder> after = [buffer renderCommandEncoderWithDescriptor:pass];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    [after useResource:late usage:MTLResourceUsageRead];
+#pragma clang diagnostic pop
+    [after endEncoding];
+    [buffer commit];
+    usleep(100000);
+    __block BOOL complete = NO;
+    NSString *reason = loudReason(^{
+        complete = [(id<SPIResources>)late isComplete];
+    });
+    check(!reason && complete, "a buffer only an encoder after an unpassed shared-event wait lists is complete");
+    event.signaledValue = 1;
+    [buffer waitUntilScheduled];
+    complete = NO;
+    reason = loudReason(^{
+        [(id<SPIResources>)late waitUntilComplete];
+        complete = [(id<SPIResources>)late isComplete];
+    });
+    check(!reason && complete, "once the wait is passed the buffer completes with the encoder after it");
+    [buffer waitUntilCompleted];
+    check(buffer.status == MTLCommandBufferStatusCompleted && buffer.error == nil,
+          "the command buffer with the wait completes");
+}
+
 void checkConstants()
 {
     // -[AGXA10FamilyRenderPipeline ...] 0x21c977a54 to 0x21c977c20.
@@ -433,6 +482,7 @@ int main(int argc, char **argv)
         checkDevice(device);
         checkQueue(device);
         checkResources(device);
+        checkStamps(device);
         checkConstants();
         printf("%s: %u of %u SPI checks failed\n", gFailures ? "FAIL" : "PASS", gFailures, gChecks);
         return gFailures ? 1 : 0;

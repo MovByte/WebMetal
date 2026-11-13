@@ -60,12 +60,11 @@ static const char kUntracedUse[] =
     "list, which decides whether the kernel stamps event 0 (AGXAllocationList2 0xfffffff005bf1914, IOGPUResource's stamp "
     "0xfffffff005bc4e68, kernelcache), is not traced: the draw-time vertex and fragment binds the driver lists by masks of "
     "the bound pipeline (0x21c96ad3c), which come from its compiler (packages G4 and G5), and the uses not read yet";
-static const char kDeferredStamp[] =
-    "an encoder that lists the resource follows an event wait that has not been passed (in its command buffer, or an "
-    "earlier one of its queue): on the Apple M4 the kernel processes, and stamps, such an encoder only after the wait "
-    "(spi.resource-complete-per-encoder), while the A10X's IOGPUCommandQueue::processKernelCommand (kernelcache "
-    "0xfffffff005bd8a90 to 0xfffffff005bd8bb4) turns the wait into an event that later work depends on, and whether it "
-    "stamps the later encoders at submission is not established";
+static const char kRacingStamp[] =
+    "the kernel stamped the resource for another encoder while the wait was blocked on an earlier stamp: the kernel's "
+    "finish takes the event's channel mask once and reads each channel's stamp when it reaches the channel "
+    "(IOGPUEventMachine, kernelcache 0xfffffff005bbddc0), so whether it waits for the new stamp depends on the GPU "
+    "channel of that encoder's work, which is not modeled";
 bool CheckEventComplete(id self, SEL _cmd, uint64_t key, const ResourceState &kernel, bool iosurface, bool wait)
 {
     if (kernel.storageMode == MTLStorageModeMemoryless)
@@ -78,16 +77,17 @@ bool CheckEventComplete(id self, SEL _cmd, uint64_t key, const ResourceState &ke
     if ((kernel.options & kHazardTrackingModeMask) ==
         (uint64_t(MTLHazardTrackingModeUntracked) << kHazardTrackingModeShift))
         return true;
-    // A tracked kernel resource: event 0 holds the stamps of the encoders that list it, each complete once the host
-    // reports that encoder's work done (EncoderCompleted) or its command buffer completed. A pending traced stamp
-    // decides the answer; without one, a pending use whose stamp is not established leaves it open.
+    // A tracked kernel resource: event 0 holds the stamps of the encoders the kernel has processed that list it, each
+    // complete once the host reports that encoder's work done (EncoderCompleted) or its command buffer completed. A
+    // pending traced stamp decides the answer; without one, a pending use whose stamp is not established leaves it
+    // open.
     const PendingStamps pending = wait ? WaitStamps(key) : QueryStamps(key);
+    if (pending.racing)
+        WMLoudMethod(self, _cmd, kRacingStamp);
     if (pending.stamped)
         return false;
     if (pending.untraced)
         WMLoudMethod(self, _cmd, kUntracedUse);
-    if (pending.deferred)
-        WMLoudMethod(self, _cmd, kDeferredStamp);
     return true;
 }
 

@@ -148,10 +148,22 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
                 continue;
             }
             webmetal::EncoderStampsCompleted(buffer->_state->stamps, encoder->encoder);
+        } else if (auto *passed = std::get_if<webmetal::wire::EventWaitPassed>(&event)) {
+            WebMetalCommandBuffer *buffer = nil;
+            {
+                std::lock_guard<std::mutex> guard(state->lock);
+                auto found = state->inFlight.find(passed->commandBuffer);
+                buffer = found == state->inFlight.end() ? nil : found->second;
+            }
+            if (!buffer) {
+                WMReport("EventWaitPassed", "the host passed a wait of a command buffer this queue has not committed");
+                continue;
+            }
+            webmetal::CommandBufferStampsWaitPassed(buffer->_state->stamps, passed->waits);
         } else {
             WMReport("-[WebMetalCommandQueue dispatchAvailableCompletionNotifications]",
-                     "not implemented: an event record other than CommandBufferScheduled, EncoderCompleted or "
-                     "CommandBufferCompleted arrived on a command queue");
+                     "not implemented: an event record other than CommandBufferScheduled, EncoderCompleted, "
+                     "EventWaitPassed or CommandBufferCompleted arrived on a command queue");
         }
     }
 }
@@ -443,15 +455,16 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
         request.stream = (uint64_t)(uintptr_t)cb.stream.bytes().data();
         request.streamLength = cb.stream.bytes().size();
         request.resources = {cb.stream.resources().data(), cb.stream.resources().size()};
-        bool behindWait = false;
+        std::vector<std::shared_ptr<webmetal::StampCompletion>> behind;
         {
             std::lock_guard<std::mutex> guard(state->lock);
             for (const auto &other : state->inFlight)
-                behindWait = behindWait || webmetal::StampsWaiting(other.second->_state->stamps);
+                if (webmetal::StampsHoldQueue(other.second->_state->stamps))
+                    behind.push_back(other.second->_state->stamps);
             state->inFlight[cb.handle] = buffer;
             [state->retained addObject:buffer];
         }
-        cb.stamps = webmetal::RegisterStamps(cb.stream, behindWait);
+        cb.stamps = webmetal::RegisterStamps(cb.stream, std::move(behind));
         webmetal::wire::Reply<webmetal::wire::CommitReply> reply;
         std::string problem;
         const bool delivered = _connection->TryCall(request, &reply, &problem);

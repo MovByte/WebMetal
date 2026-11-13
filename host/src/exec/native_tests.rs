@@ -629,7 +629,7 @@ fn queue_events(
 ) -> Vec<(Handle, &'static str, Option<CommandBufferCompleted>)> {
     posted
         .iter()
-        .filter(|(_, q, e)| *q == Some(queue) && !matches!(e, Event::EncoderCompleted(_)))
+        .filter(|(_, q, e)| *q == Some(queue) && !matches!(e, Event::EncoderCompleted(_) | Event::EventWaitPassed(_)))
         .map(|(_, _, e)| match e {
             Event::CommandBufferScheduled(s) => (s.command_buffer, "scheduled", None),
             Event::CommandBufferCompleted(c) => (c.command_buffer, "completed", Some(c.clone())),
@@ -1109,6 +1109,59 @@ fn encoders_complete_before_their_command_buffer() {
     assert!(encoder_at < completed_at, "{posted:?}");
     assert_completed(&completion(&posted, waiting));
     assert_eq!(x.guest(T1, second_addr, 1024), vec![0x22; 1024]);
+}
+
+/// Each event wait the host passes is reported with EventWaitPassed, in order and before the encoders after it complete:
+/// a wait already satisfied when the run reaches it at once, a blocked one once it is satisfied, and a wait that times
+/// out never.
+#[test]
+fn passed_waits_are_reported() {
+    let x = Harness::new();
+    x.open(T1);
+    let (waiting_q, signalling_q) = (x.queue(T1), x.queue(T1));
+    let (satisfied, held) = (x.event(T1), x.event(T1));
+    let (target, _) = x.buffer(T1, 256);
+    x.commit(T1, signalling_q, &[signal(satisfied, 1)], &[satisfied]);
+    x.idle();
+    x.em.take_posted();
+    let after = x.handle();
+    let cb = x.commit(
+        T1,
+        waiting_q,
+        &[vec![wait(satisfied, 1), wait(held, 1)], blit(after, vec![fill(target, 256, 7)])].concat(),
+        &[satisfied, held, target],
+    );
+    x.idle();
+    let passed = |posted: &[(TaskId, Option<Handle>, Event)]| -> Vec<u32> {
+        posted
+            .iter()
+            .filter_map(|(_, q, e)| match e {
+                Event::EventWaitPassed(p) if p.command_buffer == cb && *q == Some(waiting_q) => Some(p.waits),
+                _ => None,
+            })
+            .collect()
+    };
+    let posted = x.em.take_posted();
+    assert_eq!(passed(&posted), vec![1], "{posted:?}");
+    x.commit(T1, signalling_q, &[signal(held, 1)], &[held]);
+    x.idle();
+    let posted = x.em.take_posted();
+    assert_eq!(passed(&posted), vec![2], "{posted:?}");
+    let passed_at = posted.iter().position(|p| matches!(&p.2, Event::EventWaitPassed(_))).expect("posted");
+    let encoder_at =
+        posted.iter().position(|p| matches!(&p.2, Event::EncoderCompleted(c) if c.encoder == after)).expect("posted");
+    assert!(passed_at < encoder_at, "{posted:?}");
+    assert_completed(&completion(&posted, cb));
+
+    // A wait that times out is not passed.
+    let never = x.event(T1);
+    let timed_out = x.commit(T1, waiting_q, &[wait_timeout(never, 1, 1)], &[never]);
+    x.idle();
+    x.em.skipped.set(x.em.skipped.get() + SECOND);
+    x.idle();
+    let posted = x.em.take_posted();
+    assert_eq!(completion(&posted, timed_out).status, command_buffer_status::ERROR);
+    assert!(!posted.iter().any(|p| matches!(&p.2, Event::EventWaitPassed(_))), "{posted:?}");
 }
 
 /// Reference case `event.cross-queue-signal-wait`: a command buffer waiting on an MTLEvent does not complete before a

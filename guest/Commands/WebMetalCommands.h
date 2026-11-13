@@ -177,27 +177,27 @@ public:
 
     // How a record names a resource, for the stamps of its kernel resource's event 0: where the A10X driver is traced to
     // list it in the encoder's IOGPU resource list with flags the kernel stamps, or where that is not traced.
-    // Deferred: a Stamped use of an encoder an event wait precedes, in its command buffer or in an earlier one of its
-    // queue that has not completed, while that encoder has not completed.
-    enum class UseKind : uint8_t { Stamped, Deferred, Untraced };
+    enum class UseKind : uint8_t { Stamped, Untraced };
     struct Use {
         // The encoder whose work the host reports (EncoderCompleted): a top-level encoder; 0 outside any encoder.
         uint64_t encoder;
         // KernelResourceKey of the resource.
         uint64_t key;
+        // The command-buffer-level event waits recorded before the use: the kernel processes the encoder, and stamps
+        // what it lists, only once it has passed them.
+        uint32_t waits;
         UseKind kind;
     };
     // The encoder whose records follow (`topLevel`: not a sub-encoder of a parallel render encoder), and its end.
     void beginEncoder(uint64_t handle, bool topLevel);
     void endEncoder() { current_ = 0; }
-    void noteUse(uint64_t key, UseKind kind) { uses_.push_back(Use{current_, key, kind}); }
+    void noteUse(uint64_t key, UseKind kind) { uses_.push_back(Use{current_, key, waits_, kind}); }
     const std::vector<Use> &uses() const { return uses_; }
-    // The top-level encoders, in stream order: the host's encoder segments; and whether an event wait precedes each.
+    // The top-level encoders, in stream order: the host's encoder segments.
     const std::vector<uint64_t> &segments() const { return segments_; }
-    const std::vector<bool> &segmentsAfterWait() const { return afterWait_; }
-    // A command-buffer-level event wait was recorded.
-    void noteWait() { waited_ = true; }
-    bool waited() const { return waited_; }
+    // A command-buffer-level event wait was recorded; how many were.
+    void noteWait() { waits_++; }
+    uint32_t waits() const { return waits_; }
 
     const std::vector<uint64_t> &resources() const { return resources_; }
 
@@ -217,8 +217,7 @@ private:
     uint64_t current_ = 0;
     std::vector<Use> uses_;
     std::vector<uint64_t> segments_;
-    std::vector<bool> afterWait_;
-    bool waited_ = false;
+    uint32_t waits_ = 0;
 };
 
 // Handles whose Release must wait until the host has bound them (encoders, bound at their command buffer's Commit).

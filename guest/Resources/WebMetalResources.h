@@ -148,18 +148,18 @@ bool CheckEventComplete(id self, SEL _cmd, uint64_t key, const ResourceState &ke
 // (-[IOGPUMetalResource initWithResource:]). 0 for any other object.
 uint64_t KernelResourceKey(id resource);
 
-// The stamps of a kernel resource that committed command buffers have pending (guest/Commands/WebMetalCommandBuffer.mm):
-// `stamped` when an encoder that has not completed lists it where the A10X driver is traced to stamp event 0,
-// `deferred` when such an encoder follows an event wait that may not be passed yet (its command buffer is not scheduled),
-// `untraced` when an
-// encoder names it where the driver's listing is not traced (or a record outside any encoder names it).
+// The stamps of a kernel resource that committed command buffers have pending (guest/Commands/WebMetalCommandBuffer.mm),
+// counting only the encoders the kernel has processed (an encoder after an event wait it has not passed has stamped
+// nothing): `stamped` when an encoder that has not completed lists it where the A10X driver is traced to stamp event 0,
+// `untraced` when an encoder names it where the driver's listing is not traced (or a record outside any encoder names
+// it). `racing`: WaitStamps saw a traced stamp added while it waited for the earlier ones.
 struct PendingStamps {
     bool stamped = false;
-    bool deferred = false;
     bool untraced = false;
+    bool racing = false;
 };
 PendingStamps QueryStamps(uint64_t key);
-// Blocks while a traced stamp of `key` is pending, and returns what is pending then.
+// Blocks while the traced stamps of `key` pending when it is called are, and returns what is pending then.
 PendingStamps WaitStamps(uint64_t key);
 MTLResourceOptions ResourceOptions(const ResourceState &state);
 NSUInteger HeapOffset(const ResourceState &state);

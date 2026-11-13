@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: 1dd6f29882ec566216b93ac05882793c6c968bc6d0f256c8f9ecd9b91d90aed9
+// Schema SHA-256: 3156d472fd78a9307bfd2977ab843a183ae59d6defc26e4750f93f9340a8c22a
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0x1d, 0xd6, 0xf2, 0x98, 0x82, 0xec, 0x56, 0x62, 0x16, 0xb9, 0x3a, 0xc0, 0x58, 0x82, 0x79, 0x3c, 0x6c, 0x96, 0x8b, 0xc6, 0xd0, 0xf2, 0x56, 0xc8, 0xf9, 0xec, 0xd9, 0xb9, 0x1d, 0x90, 0xae, 0xd9};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0x31, 0x56, 0xd4, 0x72, 0xfd, 0x78, 0xa9, 0x30, 0x7b, 0xfd, 0x29, 0x77, 0xab, 0x84, 0x3a, 0x18, 0x3a, 0xe5, 0x9d, 0x6d, 0xef, 0xc2, 0x6e, 0x47, 0x50, 0xf9, 0x3f, 0x93, 0x40, 0xa8, 0xc2, 0x2a};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -687,6 +687,7 @@ constexpr uint16_t kParallelSetStencilStoreActionOptions = 0x1606;
 constexpr uint16_t kCommandBufferScheduled = 0x7001;
 constexpr uint16_t kCommandBufferCompleted = 0x7002;
 constexpr uint16_t kEncoderCompleted = 0x7005;
+constexpr uint16_t kEventWaitPassed = 0x7006;
 constexpr uint16_t kSharedEventListener = 0x7003;
 constexpr uint16_t kDeviceLost = 0x7004;
 }  // namespace opcode
@@ -12410,6 +12411,27 @@ inline bool decodeFields(Reader& r, EncoderCompleted& v) {
     return true;
 }
 
+// 0x7006 event record. The host has passed the first `waits` event waits (EncodeWaitForEvent and
+// EncodeWaitForEventTimeout records, in stream order) of the command buffer and goes on processing the commands
+// after them. The A10X kernel processes a queue's kernel commands in order and stays at a wait until it is passed (a
+// wait on a shared event sleeps until the event reaches the value, IOGPUCommandQueue::processKernelCommand
+// kernelcache 0xfffffff005bd8d54 to 0xfffffff005bd8e18; a wait on an MTLEvent until a signal of the value has been
+// processed, 0xfffffff005bdce38), so it stamps the resources of the encoders after a wait only then (the AGX kick,
+// kernel command 0x10000, 0xfffffff005bf7a60). Posted once per passed wait, before the EncoderCompleted of any
+// encoder after it; a wait that times out gets none.
+struct EventWaitPassed {
+    static constexpr uint16_t kOpcode = 0x7006;
+    uint64_t commandBuffer = 0;  // wire type `CommandBuffer`.
+    uint32_t waits = 0;  // wire type `u32`.
+};
+
+inline bool decodeFields(Reader& r, EventWaitPassed& v) {
+    if (!r.u64(v.commandBuffer)) return false;
+    if (v.commandBuffer == 0) return r.fail(DecodeError::NullHandle);
+    if (!r.u32(v.waits)) return false;
+    return true;
+}
+
 // 0x7003 event record. A NotifyListener registration was reached; value is the event's signaled value at that time.
 struct SharedEventListener {
     static constexpr uint16_t kOpcode = 0x7003;
@@ -12439,7 +12461,7 @@ inline bool decodeFields(Reader& r, DeviceLost& v) {
 }
 
 // One decoded event record.
-using Event = std::variant<CommandBufferScheduled, CommandBufferCompleted, EncoderCompleted, SharedEventListener, DeviceLost>;
+using Event = std::variant<CommandBufferScheduled, CommandBufferCompleted, EncoderCompleted, EventWaitPassed, SharedEventListener, DeviceLost>;
 
 // Decode the event record at the start of data; stores its length in *consumed.
 inline bool decodeEvent(const uint8_t* data, size_t size, Event& out, size_t* consumed, DecodeError* error = nullptr) {
@@ -12464,6 +12486,12 @@ inline bool decodeEvent(const uint8_t* data, size_t size, Event& out, size_t* co
     }
     case EncoderCompleted::kOpcode: {
         EncoderCompleted v;
+        if (!decodeFields(r, v) || !r.finish()) return false;
+        out = std::move(v);
+        break;
+    }
+    case EventWaitPassed::kOpcode: {
+        EventWaitPassed v;
         if (!decodeFields(r, v) || !r.finish()) return false;
         out = std::move(v);
         break;

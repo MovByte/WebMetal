@@ -4378,6 +4378,16 @@ inline bool same(const EncoderCompleted& a, const EncoderCompleted& b) {
            a.encoder == b.encoder;
 }
 
+inline void random(Gen& g, EventWaitPassed& v) {
+    v.commandBuffer = g.handle();
+    v.waits = g.u32();
+}
+
+inline bool same(const EventWaitPassed& a, const EventWaitPassed& b) {
+    return a.commandBuffer == b.commandBuffer &&
+           a.waits == b.waits;
+}
+
 inline void random(Gen& g, SharedEventListener& v) {
     v.event = g.handle();
     v.token = g.u64();
@@ -5199,7 +5209,7 @@ inline bool checkRandomReply(Gen& g, const uint8_t* data, size_t size, size_t* c
 inline bool checkRandomEvent(Gen& g, const uint8_t* data, size_t size, size_t* consumed) {
     Event got;
     if (!decodeEvent(data, size, got, consumed)) return false;
-    switch (g.below(5)) {
+    switch (g.below(6)) {
     case 0: {
         CommandBufferScheduled expected;
         random(g, expected);
@@ -5219,12 +5229,18 @@ inline bool checkRandomEvent(Gen& g, const uint8_t* data, size_t size, size_t* c
         return v && same(*v, expected);
     }
     case 3: {
+        EventWaitPassed expected;
+        random(g, expected);
+        const EventWaitPassed* v = std::get_if<EventWaitPassed>(&got);
+        return v && same(*v, expected);
+    }
+    case 4: {
         SharedEventListener expected;
         random(g, expected);
         const SharedEventListener* v = std::get_if<SharedEventListener>(&got);
         return v && same(*v, expected);
     }
-    case 4: {
+    case 5: {
         DeviceLost expected;
         random(g, expected);
         const DeviceLost* v = std::get_if<DeviceLost>(&got);

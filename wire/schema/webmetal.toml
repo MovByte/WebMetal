@@ -3392,6 +3392,13 @@ args = ["command_buffer: CommandBuffer", "encoder: Encoder"]
 doc = "The GPU work of one encoder of the command buffer has finished, and its writes to CPU-visible memory are in guest memory: the host submits each encoder's work on its own and posts this once that submission's work is done. The A10X kernel stamps the resources an encoder lists with the GPU channel stamp of that encoder's work (IOGPUResource's stamp, kernelcache 0xfffffff005bc4e68), so a resource's -isComplete follows its encoders, not its command buffer. encoder is the handle of the encoder's Begin record (a parallel render encoder's, for the work of its sub-encoders). Posted in encoder order, before the command buffer's CommandBufferCompleted; an encoder the command buffer did not run (it failed or stopped at a timed-out wait earlier) gets none, and CommandBufferCompleted ends them all."
 
 [[op]]
+code = 0x7006
+name = "EventWaitPassed"
+channel = "event"
+args = ["command_buffer: CommandBuffer", "waits: u32"]
+doc = "The host has passed the first `waits` event waits (EncodeWaitForEvent and EncodeWaitForEventTimeout records, in stream order) of the command buffer and goes on processing the commands after them. The A10X kernel processes a queue's kernel commands in order and stays at a wait until it is passed (a wait on a shared event sleeps until the event reaches the value, IOGPUCommandQueue::processKernelCommand kernelcache 0xfffffff005bd8d54 to 0xfffffff005bd8e18; a wait on an MTLEvent until a signal of the value has been processed, 0xfffffff005bdce38), so it stamps the resources of the encoders after a wait only then (the AGX kick, kernel command 0x10000, 0xfffffff005bf7a60). Posted once per passed wait, before the EncoderCompleted of any encoder after it; a wait that times out gets none."
+
+[[op]]
 code = 0x7003
 name = "SharedEventListener"
 channel = "event"

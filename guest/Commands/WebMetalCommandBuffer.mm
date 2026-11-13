@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <unordered_map>
+#include <unordered_set>
 
 #pragma clang diagnostic ignored "-Wprotocol"
 #pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
@@ -35,17 +36,17 @@ void Stream::use(id object, uint64_t handle)
 void Stream::beginEncoder(uint64_t handle, bool topLevel)
 {
     current_ = handle;
-    if (topLevel) {
+    if (topLevel)
         segments_.push_back(handle);
-        afterWait_.push_back(waited_);
-    }
 }
 
 void Stream::splice(Stream &other, uint64_t parent)
 {
     writer_.out.insert(writer_.out.end(), other.writer_.out.begin(), other.writer_.out.end());
+    // No wait can be encoded while the parallel encoder is open: its sub-encoders follow the waits recorded before it.
     for (Use use : other.uses_) {
         use.encoder = parent;
+        use.waits = waits_;
         uses_.push_back(use);
     }
     for (uint64_t handle : other.resources_)
@@ -139,11 +140,15 @@ namespace {
 
 std::mutex gStampsLock;
 std::condition_variable gStampsChanged;
+uint64_t gNextStamp = 1;
 
 struct StampEntry {
+    uint64_t id;
     std::shared_ptr<StampCompletion> commandBuffer;
     // Index into the command buffer's segments; SIZE_MAX for a use outside any encoder.
     size_t encoder;
+    // The command buffer's event waits before the use.
+    uint32_t waits;
     Stream::UseKind kind;
 };
 std::unordered_map<uint64_t, std::vector<StampEntry>> gStamps;
@@ -154,8 +159,27 @@ bool pending(const StampEntry &entry)
     return !c.done && (entry.encoder == SIZE_MAX || entry.encoder >= c.completed);
 }
 
-// Called with gStampsLock held: what `key` has pending, dropping the entries that have completed.
-PendingStamps pendingLocked(uint64_t key)
+// Whether the kernel has processed the encoder of the use, and so stamped what it lists. The A10X kernel processes a
+// queue's kernel commands in order on submission and stays at an event wait until it is passed: a wait on a shared
+// event sleeps in IOGPUCommandQueue::processKernelCommand until the event reaches the value (kernelcache
+// 0xfffffff005bd8d54 to 0xfffffff005bd8e18, IOSurface's wait 0xfffffff005b97400), one on an MTLEvent until a signal of
+// the value has been processed (0xfffffff005bdce38); the kick that stamps an encoder's resources is a later kernel
+// command of the same loop (AGX kernel command 0x10000, 0xfffffff005bf7a60). The host passes waits the same way and
+// reports each (EventWaitPassed), and processes a queue's command buffers in order.
+bool processed(const StampEntry &entry)
+{
+    const StampCompletion &c = *entry.commandBuffer;
+    if (c.passed < entry.waits)
+        return false;
+    for (const auto &earlier : c.behind)
+        if (!earlier->scheduled && !earlier->done)
+            return false;
+    return true;
+}
+
+// Called with gStampsLock held: what `key` has pending, dropping the entries that have completed. `stamps` receives
+// the ids of the pending traced stamps.
+PendingStamps pendingLocked(uint64_t key, std::vector<uint64_t> *stamps = nullptr)
 {
     PendingStamps out;
     auto found = gStamps.find(key);
@@ -165,13 +189,13 @@ PendingStamps pendingLocked(uint64_t key)
     entries.erase(std::remove_if(entries.begin(), entries.end(), [](const StampEntry &e) { return !pending(e); }),
                   entries.end());
     for (const StampEntry &e : entries) {
+        if (!processed(e))
+            continue;
         switch (e.kind) {
         case Stream::UseKind::Stamped:
             out.stamped = true;
-            break;
-        case Stream::UseKind::Deferred:
-            // Once the command buffer is scheduled, its waits and the earlier ones of its queue are passed.
-            (e.commandBuffer->scheduled ? out.stamped : out.deferred) = true;
+            if (stamps)
+                stamps->push_back(e.id);
             break;
         case Stream::UseKind::Untraced:
             out.untraced = true;
@@ -185,17 +209,15 @@ PendingStamps pendingLocked(uint64_t key)
 
 }  // namespace
 
-// An encoder an event wait precedes is processed by the kernel once the wait is passed (measured on Apple M4, macOS
-// 27.0.1: a tracked buffer only such an encoder uses reports complete while the command buffer waits) or, if the A10X
-// kernel turns the wait into a fence later work depends on (IOGPUCommandQueue::processKernelCommand, kernelcache
-// 0xfffffff005bd8a90 to 0xfffffff005bd8bb4, merges the wait's event into the queue's), already at submission; which
-// the A10X does is not established, so its traced uses are Deferred until it completes.
-std::shared_ptr<StampCompletion> RegisterStamps(const Stream &stream, bool behindWait)
+std::shared_ptr<StampCompletion> RegisterStamps(const Stream &stream,
+                                                std::vector<std::shared_ptr<StampCompletion>> behind)
 {
     auto completion = std::make_shared<StampCompletion>();
     completion->segments = stream.segments();
-    completion->waits = stream.waited();
+    completion->waits = stream.waits();
+    completion->behind = std::move(behind);
     std::lock_guard<std::mutex> guard(gStampsLock);
+    std::unordered_set<uint64_t> keys;
     for (const Stream::Use &use : stream.uses()) {
         size_t index = SIZE_MAX;
         if (use.encoder) {
@@ -203,19 +225,17 @@ std::shared_ptr<StampCompletion> RegisterStamps(const Stream &stream, bool behin
             if (at != completion->segments.end())
                 index = static_cast<size_t>(at - completion->segments.begin());
         }
-        Stream::UseKind kind = use.kind;
-        if (kind == Stream::UseKind::Stamped &&
-            (behindWait || (index != SIZE_MAX && stream.segmentsAfterWait()[index])))
-            kind = Stream::UseKind::Deferred;
-        gStamps[use.key].push_back(StampEntry{completion, index, kind});
+        gStamps[use.key].push_back(StampEntry{gNextStamp++, completion, index, use.waits, use.kind});
+        if (keys.insert(use.key).second)
+            completion->keys.push_back(use.key);
     }
     return completion;
 }
 
-bool StampsWaiting(const std::shared_ptr<StampCompletion> &completion)
+bool StampsHoldQueue(const std::shared_ptr<StampCompletion> &completion)
 {
     std::lock_guard<std::mutex> guard(gStampsLock);
-    return completion && completion->waits && !completion->done;
+    return completion && completion->waits && !completion->scheduled && !completion->done;
 }
 
 void EncoderStampsCompleted(const std::shared_ptr<StampCompletion> &completion, uint64_t encoder)
@@ -232,12 +252,28 @@ void EncoderStampsCompleted(const std::shared_ptr<StampCompletion> &completion, 
     gStampsChanged.notify_all();
 }
 
+void CommandBufferStampsWaitPassed(const std::shared_ptr<StampCompletion> &completion, uint32_t waits)
+{
+    if (!completion)
+        return;
+    {
+        std::lock_guard<std::mutex> guard(gStampsLock);
+        completion->passed = std::max(completion->passed, waits);
+    }
+    gStampsChanged.notify_all();
+}
+
 void CommandBufferStampsScheduled(const std::shared_ptr<StampCompletion> &completion)
 {
     if (!completion)
         return;
-    std::lock_guard<std::mutex> guard(gStampsLock);
-    completion->scheduled = true;
+    {
+        std::lock_guard<std::mutex> guard(gStampsLock);
+        completion->scheduled = true;
+        // Its own processing came after that of the earlier command buffers of its queue.
+        completion->behind.clear();
+    }
+    gStampsChanged.notify_all();
 }
 
 void CommandBufferStampsCompleted(const std::shared_ptr<StampCompletion> &completion)
@@ -247,6 +283,18 @@ void CommandBufferStampsCompleted(const std::shared_ptr<StampCompletion> &comple
     {
         std::lock_guard<std::mutex> guard(gStampsLock);
         completion->done = true;
+        completion->behind.clear();
+        for (uint64_t key : completion->keys) {
+            auto found = gStamps.find(key);
+            if (found == gStamps.end())
+                continue;
+            std::vector<StampEntry> &entries = found->second;
+            entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                         [&](const StampEntry &e) { return e.commandBuffer == completion; }),
+                          entries.end());
+            if (entries.empty())
+                gStamps.erase(found);
+        }
     }
     gStampsChanged.notify_all();
 }
@@ -257,14 +305,33 @@ PendingStamps QueryStamps(uint64_t key)
     return pendingLocked(key);
 }
 
+// IOGPUResourceFinishEvent enters the kernel while the test fails; the kernel's finish (IOGPUEventMachine, kernelcache
+// 0xfffffff005bbddc0) takes the event's channel mask once and waits for each channel's stamp in turn, reading that
+// channel's stamp when it reaches it (waitForStamp 0xfffffff005bbd830). It returns once the stamps it took have passed;
+// whether it waits for a stamp the kernel adds meanwhile depends on the GPU channel of that work and the order of the
+// channels, which are not modeled, so that case is `racing`.
 PendingStamps WaitStamps(uint64_t key)
 {
     std::unique_lock<std::mutex> guard(gStampsLock);
+    std::vector<uint64_t> started;
+    PendingStamps first = pendingLocked(key, &started);
+    if (!first.stamped)
+        return first;
     for (;;) {
-        const PendingStamps p = pendingLocked(key);
-        if (!p.stamped)
-            return p;
         gStampsChanged.wait(guard);
+        std::vector<uint64_t> now;
+        PendingStamps p = pendingLocked(key, &now);
+        bool waiting = false, added = false;
+        for (uint64_t id : now)
+            (std::find(started.begin(), started.end(), id) != started.end() ? waiting : added) = true;
+        if (!waiting) {
+            p.stamped = false;
+            return p;
+        }
+        if (added) {
+            p.racing = true;
+            return p;
+        }
     }
 }
 

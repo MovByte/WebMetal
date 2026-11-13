@@ -11,29 +11,37 @@
 namespace webmetal {
 
 // The stamps of one committed command buffer's encoders (WebMetalCommandBuffer.mm): its top-level encoders in order,
-// how many of them have completed (the host reports them in order with EncoderCompleted), and whether the whole
-// command buffer has. Read and written under the registry's lock.
+// how many of them have completed (the host reports them in order with EncoderCompleted), how far the kernel has
+// processed it, and whether the whole command buffer has completed. Read and written under the registry's lock.
 struct StampCompletion {
     std::vector<uint64_t> segments;
     size_t completed = 0;
     bool done = false;
-    // The command buffer records an event wait.
-    bool waits = false;
-    // The host has processed all of it (CommandBufferScheduled): its waits, and those of the earlier command buffers of
-    // its queue, are passed.
+    // The command-buffer-level event waits it records, and how many of them the host has passed (EventWaitPassed).
+    uint32_t waits = 0;
+    uint32_t passed = 0;
+    // The host has processed all of it (CommandBufferScheduled).
     bool scheduled = false;
+    // The earlier command buffers of its queue that record a wait and had not been processed when it was committed:
+    // the kernel processes a queue's command buffers in order, so this one only after them.
+    std::vector<std::shared_ptr<StampCompletion>> behind;
+    // The kernel resources its uses are registered under.
+    std::vector<uint64_t> keys;
 };
 
-// Registers the resource uses of a stream about to be committed: the kernel stamps an encoder's listed resources when
-// it processes the encoder. `behindWait`: an earlier command buffer of the queue that waits on an event has not
-// completed.
-std::shared_ptr<StampCompletion> RegisterStamps(const Stream &stream, bool behindWait);
-// Whether a registered command buffer records an event wait and has not completed.
-bool StampsWaiting(const std::shared_ptr<StampCompletion> &completion);
-// The host reported encoder `encoder`'s work done, or the command buffer completed.
+// Registers the resource uses of a stream about to be committed, behind the earlier command buffers `behind` of its
+// queue (StampsHoldQueue): the kernel stamps an encoder's listed resources when it processes the encoder.
+std::shared_ptr<StampCompletion> RegisterStamps(const Stream &stream,
+                                                std::vector<std::shared_ptr<StampCompletion>> behind);
+// Whether a registered command buffer may still hold the later ones of its queue: it records an event wait and the
+// host has not processed all of it.
+bool StampsHoldQueue(const std::shared_ptr<StampCompletion> &completion);
+// The host reported encoder `encoder`'s work done, passed the command buffer's first `waits` event waits, processed all
+// of it, or completed it.
 void EncoderStampsCompleted(const std::shared_ptr<StampCompletion> &completion, uint64_t encoder);
-void CommandBufferStampsCompleted(const std::shared_ptr<StampCompletion> &completion);
+void CommandBufferStampsWaitPassed(const std::shared_ptr<StampCompletion> &completion, uint32_t waits);
 void CommandBufferStampsScheduled(const std::shared_ptr<StampCompletion> &completion);
+void CommandBufferStampsCompleted(const std::shared_ptr<StampCompletion> &completion);
 
 // One command buffer, from creation to completion.
 struct CommandBufferState {

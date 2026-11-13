@@ -38,7 +38,8 @@
 //! A wait (`encodeWaitForEvent:value:`) holds its queue until the event's value is at least the value; the work before
 //! it is submitted first. As the kernel's, the wait times out (after 5 seconds for `encodeWaitForEvent:value:`, after
 //! its own timeout for `encodeWaitForEvent:value:timeout:`): its command buffer then stops there and fails with the
-//! kernel's timeout status, and the queue goes on. A signal splits the submission: an `MTLEvent`'s value (kept here, starting at 0, never
+//! kernel's timeout status, and the queue goes on. Each wait the run passes is reported with an EventWaitPassed event: the
+//! kernel stamps the resources of the encoders after a wait only once it has passed it. A signal splits the submission: an `MTLEvent`'s value (kept here, starting at 0, never
 //! decreasing) is set as soon as the work before the signal is on the queue, since only GPU work submitted later can
 //! observe it; an `MTLSharedEvent` (a kernel object reached through the embedder) is signalled once that work has
 //! completed and been written back, because the CPU observes it. Each rule is measured on real Metal; the comments at

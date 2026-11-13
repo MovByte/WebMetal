@@ -8,7 +8,8 @@ use std::rc::{Rc, Weak};
 use webmetal_wire::{
     Command, CommandBufferCompleted, CommandBufferScheduled, Commit, CommitReply, CreateCommandQueueReply,
     CreateCommandQueueWithDescriptorReply, CreateEventReply, CreateFenceReply, DeviceLost, EncoderCompleted, Event,
-    Failure, Handle, OpenReply, RegisterSharedEventReply, ReleaseReply, Reply, Request, SetLabelReply, opcode, status,
+    EventWaitPassed, Failure, Handle, OpenReply, RegisterSharedEventReply, ReleaseReply, Reply, Request, SetLabelReply,
+    opcode, status,
 };
 
 use super::failure::{self, GpuCause, NO_RECORD, command_buffer_status};
@@ -160,6 +161,8 @@ struct Run<A: Api, E: Embedder> {
     complete: bool,
     /// The wait the run is blocked on.
     wait: Option<WaitClock>,
+    /// The event waits the run has passed.
+    waits_passed: u32,
 }
 
 impl<A: Api, E: Embedder> Run<A, E> {
@@ -723,6 +726,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
             actions: VecDeque::new(),
             complete: false,
             wait: None,
+            waits_passed: 0,
         };
         if let Some(f) = settle(&self.scopes, &self.calls) {
             add_job(&mut self.jobs, &mut run, id, settled(f));
@@ -971,6 +975,17 @@ impl<A: Api, E: Embedder> Core<A, E> {
                         run.cursor = run.steps.len();
                         break;
                     }
+                    // The kernel goes on to the commands after a wait once it has passed it, and only then stamps the
+                    // resources the encoders after it list: the guest learns which waits are passed from this event.
+                    run.waits_passed += 1;
+                    self.embedder.post(
+                        run.task,
+                        Some(run.queue),
+                        Event::EventWaitPassed(EventWaitPassed {
+                            command_buffer: run.info.command_buffer,
+                            waits: run.waits_passed,
+                        }),
+                    );
                 }
                 Step::Signal { event, value, offset } => {
                     // Split the submission: everything before the signal is on the queue before anything a waiter
