@@ -23,9 +23,18 @@
 //! [`VariantKey`] of each draw and [`RenderPipeline::variant`] creates the WebGPU pipeline for it once, keeping it for
 //! later draws with the same key (plan section 6.5). Variants share the pipeline layout, so bind groups made for one
 //! serve all.
+//!
+//! **Binding variants.** The textures and sampler states a draw binds decide generated code as well (plan section
+//! 5.5): the WGSL texture type and storage format, a written texture's levels, the format conversions and swizzles
+//! the shader applies, the sampler binding type. A `RenderPipelineState` handle's payload is a
+//! [`RenderPipelineState`]: the pipeline compiled at creation, for no bound textures, and the source of the
+//! pipeline compiled for a draw's [`BindingKey`] ([`RenderVariants`], the pipeline service), which has its own
+//! dynamic-state variants. A pipeline built from WGSL, as the tests build them, has no binding variants: its code
+//! does not change with what a draw binds.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::gpu::idl::{
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferBindingLayout, BufferBindingType, ColorTargetState,
@@ -284,9 +293,80 @@ pub struct RenderPipelineDesc {
     /// builtin is produced by the shader"), so its draws need the viewport depth range [0, 1] (AirWgsl
     /// `tables/intrinsics.toml`, `air.depth`, measured on Apple M4).
     pub writes_depth: bool,
+    /// The stages were compiled for the textures and samplers a draw binds ([`BindingKey`]): each texture binding's
+    /// type, storage format and levels, and the shader's format conversions and swizzles, are those of the bound
+    /// texture.
+    pub bound: bool,
+}
+
+/// The texture and sampler arguments of one stage's function: the argument table slots whose bound objects decide its
+/// generated code.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StageArguments {
+    pub textures: Vec<crate::pipeline::bound::TextureArgument>,
+    /// Sampler arguments: (first index, number of indices).
+    pub samplers: Vec<(u64, u64)>,
+}
+
+impl StageArguments {
+    /// The texture indices the function's texture arguments take.
+    pub fn texture_indices(&self) -> impl Iterator<Item = u64> + '_ {
+        self.textures.iter().flat_map(|a| a.index..a.index + a.count)
+    }
+
+    /// The sampler indices the function's sampler arguments take.
+    pub fn sampler_indices(&self) -> impl Iterator<Item = u64> + '_ {
+        self.samplers.iter().flat_map(|&(first, count)| first..first + count)
+    }
+}
+
+/// What one stage binds at its function's texture and sampler arguments, in index order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct StageKey {
+    pub textures: Vec<crate::compute::pipeline::TextureSlot>,
+    pub samplers: Vec<crate::compute::pipeline::SamplerSlot>,
+}
+
+/// What a draw binds that decides the pipeline's generated code (AirWgsl's `StageBindings` of the vertex and fragment
+/// stages). Objects bound at indices no argument of the stage's function takes are not part of it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct BindingKey {
+    pub vertex: StageKey,
+    pub fragment: StageKey,
+}
+
+/// The source of a render pipeline's binding variants (the pipeline service).
+pub trait RenderVariants<A: Api> {
+    /// The texture and sampler arguments of the stage's function (none for a stage the pipeline does not have).
+    fn arguments(&self, stage: MetalStage) -> &StageArguments;
+
+    /// The pipeline compiled for a draw that binds `key`, made once and kept. A variant the service cannot make is a
+    /// failure the command buffer completes with (status 2 for what is not implemented, 3 for what the host lacks);
+    /// it never returns a stand-in.
+    fn variant(
+        &self,
+        g: &crate::exec::Gpu<'_, A>,
+        key: &BindingKey,
+    ) -> core::result::Result<Rc<RenderPipeline<A>>, webmetal_wire::Failure>;
 }
 
 /// The payload of a `RenderPipelineState` handle.
+pub struct RenderPipelineState<A: Api> {
+    /// The pipeline compiled at creation, for no bound textures. Its Metal descriptor state (attachment formats,
+    /// sample count, topology class, rasterization, per-draw uniform block) is every binding variant's.
+    pub creation: Rc<RenderPipeline<A>>,
+    /// The binding variants; `None` for a pipeline whose code does not depend on what a draw binds.
+    pub variants: Option<Rc<dyn RenderVariants<A>>>,
+}
+
+impl<A: Api> RenderPipelineState<A> {
+    /// A pipeline without binding variants.
+    pub fn fixed(pipeline: RenderPipeline<A>) -> RenderPipelineState<A> {
+        RenderPipelineState { creation: Rc::new(pipeline), variants: None }
+    }
+}
+
+/// A compiled render pipeline: the WebGPU objects of one binding variant.
 pub struct RenderPipeline<A: Api> {
     pub label: String,
     pub vertex: Stage<A>,
@@ -306,6 +386,8 @@ pub struct RenderPipeline<A: Api> {
     pub passes: PassPlan,
     /// See [`RenderPipelineDesc::writes_depth`].
     pub writes_depth: bool,
+    /// See [`RenderPipelineDesc::bound`].
+    pub bound: bool,
     /// The size of the largest uniform block of the pipeline's bindings (0 without one).
     pub uniform_size: u64,
     variants: RefCell<HashMap<VariantKey, A::RenderPipeline>>,
@@ -477,6 +559,7 @@ impl<A: Api> RenderPipeline<A> {
             rasterization: desc.rasterization,
             passes: desc.passes,
             writes_depth: desc.writes_depth,
+            bound: desc.bound,
             uniform_size,
             variants: RefCell::new(HashMap::new()),
         })
@@ -548,5 +631,17 @@ impl<A: Api> RenderPipeline<A> {
     /// The number of variants created so far.
     pub fn variant_count(&self) -> usize {
         self.variants.borrow().len()
+    }
+
+    /// The per-draw uniform blocks of the pipeline's bindings, in group and binding order.
+    pub fn uniform_blocks(&self) -> Vec<&UniformBlock> {
+        self.groups
+            .iter()
+            .flat_map(|g| &g.bindings)
+            .filter_map(|b| match &b.source {
+                Source::Uniforms(u) => Some(u),
+                _ => None,
+            })
+            .collect()
     }
 }

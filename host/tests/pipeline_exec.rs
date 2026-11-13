@@ -756,3 +756,194 @@ fn mem_common_pattern(len: usize, seed: u32) -> Vec<u8> {
         })
         .collect()
 }
+
+/// `texture.fragment-access` with the compiler's pipelines: fragment functions write an R32Uint texture at levels
+/// computed at run time, directly and through a level-range view, write an RGBA8Unorm texture of two levels with float
+/// values, and read through a swizzled view, each access one fragment of a draw of its own. The render encoder draws
+/// with each pipeline compiled for the textures the draw binds (their storage formats, level counts and swizzles), and
+/// every `exact` record equals Metal's.
+#[test]
+fn fragment_functions_access_textures_as_metal_does() {
+    use pipeline_common::render_descriptor;
+    const RGBA8_UINT: u64 = 73;
+    const RGBA32_UINT: u64 = 123;
+    let h = Harness::new();
+    let lib = reference_library();
+    let g = Golden::load("texture.fragment-access");
+    let quads = |name: &str| -> Vec<[u32; 8]> {
+        let b = g.bytes(name).unwrap_or_else(|| panic!("{name} is recorded"));
+        b.chunks(32)
+            .map(|c| std::array::from_fn(|i| u32::from_le_bytes(c[4 * i..4 * i + 4].try_into().unwrap())))
+            .collect()
+    };
+    let bytes_of = |q: &[u32]| -> Vec<u8> { q.iter().flat_map(|v| v.to_le_bytes()).collect() };
+    let fun = |name: &str| h.function(&lib[name].bitcode, name, lib[name].function_type);
+    let vertex = fun("tex_cover_vertex");
+    let pipeline = |fragment: &str, format: u64| -> Handle {
+        let p = h.handle();
+        let f = reply_failure(&h.render_pipeline(p, render_descriptor(Some(vertex), Some(fun(fragment)), format), 0));
+        assert_eq!(f.status, status::OK, "{}: {fragment}: {f:?}", h.name());
+        p
+    };
+    let texture = |d: TextureDescriptor| -> Handle {
+        let t = h.handle();
+        h.ok(Request::CreateTexture(CreateTexture { texture: t, descriptor: d }));
+        t
+    };
+    // MTLStorageModePrivate 2; MTLTextureUsageShaderRead 1, ShaderWrite 2, RenderTarget 4, PixelFormatView 0x10.
+    let target = |format: u64| texture(render_common::texture_descriptor(format, 1, 1, 2, 4));
+    let run = |records: Vec<Command>| {
+        let (f, at) = h.run(&records);
+        assert_eq!(f.status, status::OK, "{}: offset {at}: {f:?}", h.name());
+    };
+    let draw = |p: Handle, target: Handle, t: Handle, q: &[u32; 8], value: Option<Vec<u8>>| {
+        let (qb, _) = h.buffer_with(&bytes_of(q));
+        let mut body = vec![
+            Command::RenderSetRenderPipelineState(RenderSetRenderPipelineState { pipeline_state: Some(p) }),
+            Command::RenderSetFragmentTexture(RenderSetFragmentTexture { texture: Some(t), index: 0 }),
+            Command::RenderSetFragmentBuffer(RenderSetFragmentBuffer { buffer: Some(qb), offset: 0, index: 0 }),
+        ];
+        if let Some(v) = value {
+            let (vb, _) = h.buffer_with(&v);
+            body.push(Command::RenderSetFragmentBuffer(RenderSetFragmentBuffer {
+                buffer: Some(vb),
+                offset: 0,
+                index: 1,
+            }));
+        }
+        // MTLPrimitiveTypeTriangle 3.
+        body.push(Command::RenderDrawPrimitives(RenderDrawPrimitives {
+            primitive_type: 3,
+            vertex_start: 0,
+            vertex_count: 3,
+        }));
+        run(render_common::render(
+            h.handle(),
+            render_common::pass_color(target, render_common::clear(0.0, 0.0, 0.0, 0.0)),
+            body,
+        ));
+    };
+    let upload = |t: Handle, (w, hh): (u64, u64), level: u64, bytes: &[u8]| {
+        let (src, _) = h.buffer_with(bytes);
+        run(vec![
+            Command::BeginBlit(BeginBlit { encoder: h.handle() }),
+            Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+                source_buffer: Some(src),
+                source_offset: 0,
+                source_bytes_per_row: bytes.len() as u64 / hh,
+                source_bytes_per_image: 0,
+                source_size: Size { width: w, height: hh, depth: 1 },
+                destination_texture: Some(t),
+                destination_slice: 0,
+                destination_level: level,
+                destination_origin: Origin { x: 0, y: 0, z: 0 },
+            }),
+            Command::EncoderEndEncoding(EncoderEndEncoding {}),
+        ]);
+    };
+    let read = |t: Handle, (w, hh): (u64, u64), level: u64, texel: u64| -> Vec<u8> {
+        let len = (w * hh * texel) as usize;
+        let (out, addr) = h.buffer_with(&vec![0u8; len]);
+        run(vec![
+            Command::BeginBlit(BeginBlit { encoder: h.handle() }),
+            Command::BlitCopyTextureToBuffer(BlitCopyTextureToBuffer {
+                source_texture: Some(t),
+                source_slice: 0,
+                source_level: level,
+                source_origin: Origin { x: 0, y: 0, z: 0 },
+                source_size: Size { width: w, height: hh, depth: 1 },
+                destination_buffer: Some(out),
+                destination_offset: 0,
+                destination_bytes_per_row: w * texel,
+                destination_bytes_per_image: w * hh * texel,
+            }),
+            Command::EncoderEndEncoding(EncoderEndEncoding {}),
+        ]);
+        h.read(addr, len)
+    };
+    let mip = |size: u64, level: u64| (size >> level).max(1);
+    let mut exact = 0;
+    let mut compare = |name: &str, got: &[u8]| {
+        assert_eq!(g.rule(name), Some("exact"), "{name}");
+        assert_eq!(Some(got.to_vec()), g.bytes(name), "{}: {name}", h.name());
+        exact += 1;
+    };
+
+    // R32Uint, 4 levels, written at levels computed at run time: the texture, then a view of its levels 1 and 2.
+    let uint_target = target(R32_UINT);
+    let write_uint = pipeline("tex_fragment_write_2d", R32_UINT);
+    for (i, name) in ["levels", "level-view"].into_iter().enumerate() {
+        let mut d = render_common::texture_descriptor(R32_UINT, 8, 8, 2, 0x13);
+        d.mipmap_level_count = 4;
+        let root = texture(d);
+        for level in 0..4 {
+            let w = mip(8, level);
+            let texels: Vec<u32> =
+                (0..w).flat_map(|y| (0..w).map(move |x| 0xa000_0000 | (level << 24 | y << 8 | x) as u32)).collect();
+            upload(root, (w, w), level, &bytes_of(&texels));
+        }
+        let t = if name == "level-view" {
+            let v = h.handle();
+            h.ok(Request::CreateTextureViewLevelsSlices(CreateTextureViewLevelsSlices {
+                texture: root,
+                view: v,
+                pixel_format: R32_UINT,
+                texture_type: 2,
+                level_range: Range { location: 1, length: 2 },
+                slice_range: Range { location: 0, length: 1 },
+            }));
+            v
+        } else {
+            root
+        };
+        let queries = quads(&format!("{name}.writes"));
+        for (j, q) in queries.iter().enumerate() {
+            let value = [0xf7a0_0000 | (i as u32) << 8 | j as u32, 0, 0, 0];
+            draw(write_uint, uint_target, t, q, Some(bytes_of(&value)));
+        }
+        let contents: Vec<u8> = (0..4).flat_map(|level| read(root, (mip(8, level), mip(8, level)), level, 4)).collect();
+        compare(&format!("{name}.contents"), &contents);
+    }
+
+    // RGBA8Unorm, 2 levels, written with float values.
+    let mut ud = render_common::texture_descriptor(RGBA8_UNORM, 4, 4, 2, 0x2);
+    ud.mipmap_level_count = 2;
+    let unorm = texture(ud);
+    let initial = mem_common_pattern(64 + 16, 73);
+    upload(unorm, (4, 4), 0, &initial[..64]);
+    upload(unorm, (2, 2), 1, &initial[64..]);
+    let write_float = pipeline("tex_fragment_write_2d_float", R32_UINT);
+    let values = g.bytes("unorm.values").expect("unorm.values is recorded");
+    for (j, q) in quads("unorm.writes").iter().enumerate() {
+        draw(write_float, uint_target, unorm, q, Some(values[16 * j..16 * j + 16].to_vec()));
+    }
+    let contents: Vec<u8> = [read(unorm, (4, 4), 0, 4), read(unorm, (2, 2), 1, 4)].concat();
+    compare("unorm.contents", &contents);
+
+    // An RGBA8Uint view swizzled (blue, zero, one, red), read texel by texel.
+    let mut pattern = mem_common_pattern(64, 71);
+    pattern[..6].copy_from_slice(&[0, 255, 0, 255, 255, 0]);
+    let base = texture(render_common::texture_descriptor(RGBA8_UINT, 4, 4, 2, 0x11));
+    upload(base, (4, 4), 0, &pattern);
+    let view = h.handle();
+    // MTLTextureSwizzle: zero 0, one 1, red 2, green 3, blue 4, alpha 5.
+    h.ok(Request::CreateTextureViewLevelsSlicesSwizzle(CreateTextureViewLevelsSlicesSwizzle {
+        texture: base,
+        view,
+        pixel_format: RGBA8_UINT,
+        texture_type: 2,
+        level_range: Range { location: 0, length: 1 },
+        slice_range: Range { location: 0, length: 1 },
+        swizzle: TextureSwizzleChannels { red: 4, green: 0, blue: 1, alpha: 2 },
+    }));
+    let read_target = target(RGBA32_UINT);
+    let read_uint = pipeline("tex_fragment_read_2d", RGBA32_UINT);
+    let mut reads = Vec::new();
+    for q in quads("swizzled-view.reads.queries") {
+        draw(read_uint, read_target, view, &q, None);
+        reads.extend(read(read_target, (1, 1), 0, 16));
+    }
+    compare("swizzled-view.reads", &reads);
+    eprintln!("{}: {}: {exact} exact records equal", h.name(), g.case);
+    h.assert_no_errors();
+}

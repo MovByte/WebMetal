@@ -35,8 +35,8 @@ use webmetal_host::mem::buffer::Buffer;
 use webmetal_host::mem::texture::{Texture, idl_format};
 use webmetal_host::render::metal::TopologyClass;
 use webmetal_host::render::pipeline::{
-    BlendConstant, ColorTarget, GroupDesc, MetalStage, PassPlan, RenderPipeline, RenderPipelineDesc, Source,
-    StageSource, Stride, UniformBlock, UniformField, UniformValue, VertexBuffer,
+    BlendConstant, ColorTarget, GroupDesc, MetalStage, PassPlan, RenderPipeline, RenderPipelineDesc,
+    RenderPipelineState, Source, StageSource, Stride, UniformBlock, UniformField, UniformValue, VertexBuffer,
 };
 use webmetal_wire::*;
 
@@ -326,6 +326,7 @@ impl Pipelines {
             rasterization: d.rasterization_enabled,
             passes,
             writes_depth,
+            bound: false,
         };
         RenderPipeline::create(cx.gpu(), desc).map_err(|e| e.to_string())
     }
@@ -383,7 +384,7 @@ impl ControlService<A, E> for Pipelines {
             }
             Request::CreateRenderPipeline(r) => match self.render(cx, &r.descriptor) {
                 Ok(p) => {
-                    cx.attach(Rc::new(p) as Rc<dyn Any>);
+                    cx.attach(Rc::new(RenderPipelineState::fixed(p)) as Rc<dyn Any>);
                     Served::Ready(Reply::CreateRenderPipeline(Ok(CreateRenderPipelineReply {})))
                 }
                 Err(e) => fail(e),

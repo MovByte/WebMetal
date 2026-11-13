@@ -49,7 +49,6 @@ use crate::gpu::{
     Device as _, Size64, Texture as _,
 };
 use crate::mem::buffer::Buffer;
-use crate::mem::layout::TextureType;
 use crate::mem::texture::{Prepare, Texture, idl_format, usage};
 use crate::mem::view::{IDENTITY_SWIZZLE, PassCopies, TextureView, read_swizzle, swizzle_string};
 use crate::mem::{MemError, Memory};
@@ -617,44 +616,16 @@ impl<A: Api> ComputeService<A> {
             None => Vec::new(),
             Some(&last) => (0..=last).map(|i| st.threadgroup_memory.get(&i).copied().unwrap_or(0)).collect(),
         };
-        let textures = st
-            .textures
-            .iter()
-            .map(|(&index, e)| TextureSlot {
-                index,
-                texture_type: texture_type_value(e.tex.geometry().kind),
-                pixel_format: u64::from(e.tex.format()),
-                sample_count: u64::from(e.tex.geometry().sample_count),
-                swizzle: e.tex.swizzle(),
-                mipmap_level_count: e.tex.geometry().mip_levels,
-            })
-            .collect();
         Ok(VariantKey {
             threads_per_threadgroup: tg,
             threadgroup_memory_lengths: lengths,
             buffers: st.buffers.keys().copied().collect(),
-            textures,
-            samplers: st
-                .samplers
+            textures: st
+                .textures
                 .iter()
-                .map(|(&index, s)| {
-                    let d = &s.descriptor;
-                    SamplerSlot {
-                        index,
-                        min_filter: d.min_filter,
-                        mag_filter: d.mag_filter,
-                        mip_filter: d.mip_filter,
-                        address_modes: [d.s_address_mode, d.t_address_mode, d.r_address_mode],
-                        border_color: d.border_color,
-                        normalized_coordinates: d.normalized_coordinates,
-                        compare_function: d.compare_function,
-                        max_anisotropy: d.max_anisotropy,
-                        lod_min_clamp: d.lod_min_clamp.to_bits(),
-                        lod_max_clamp: d.lod_max_clamp.to_bits(),
-                        lod_average: d.lod_average,
-                    }
-                })
+                .map(|(&index, e)| TextureSlot::of(index, e.tex.geometry(), e.tex.format(), e.tex.swizzle()))
                 .collect(),
+            samplers: st.samplers.iter().map(|(&index, s)| SamplerSlot::of(index, &s.descriptor)).collect(),
         })
     }
 
@@ -980,23 +951,6 @@ fn view_mismatch<A: Api>(index: u64, v: &TextureView<A>, dimension: TextureViewD
         v.geometry.slices(),
         dimension.as_str()
     )
-}
-
-/// The `MTLTextureType` value of a texture type (`MTLTexture.h`).
-fn texture_type_value(kind: TextureType) -> u64 {
-    use TextureType as T;
-    match kind {
-        T::D1 => 0,
-        T::D1Array => 1,
-        T::D2 => 2,
-        T::D2Array => 3,
-        T::D2Multisample => 4,
-        T::Cube => 5,
-        T::CubeArray => 6,
-        T::D3 => 7,
-        T::D2MultisampleArray => 8,
-        T::TextureBuffer => 9,
-    }
 }
 
 /// The aspect a sampled view of `t` shows: the depth aspect of a combined depth-stencil texture read as depth or

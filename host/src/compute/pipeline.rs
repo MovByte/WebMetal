@@ -81,6 +81,26 @@ pub struct SamplerSlot {
     pub lod_average: bool,
 }
 
+impl SamplerSlot {
+    /// The slot of a sampler state with descriptor `d` bound at `index`.
+    pub fn of(index: u64, d: &webmetal_wire::SamplerDescriptor) -> SamplerSlot {
+        SamplerSlot {
+            index,
+            min_filter: d.min_filter,
+            mag_filter: d.mag_filter,
+            mip_filter: d.mip_filter,
+            address_modes: [d.s_address_mode, d.t_address_mode, d.r_address_mode],
+            border_color: d.border_color,
+            normalized_coordinates: d.normalized_coordinates,
+            compare_function: d.compare_function,
+            max_anisotropy: d.max_anisotropy,
+            lod_min_clamp: d.lod_min_clamp.to_bits(),
+            lod_max_clamp: d.lod_max_clamp.to_bits(),
+            lod_average: d.lod_average,
+        }
+    }
+}
+
 /// A bound texture: what of it changes the generated code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TextureSlot {
@@ -96,6 +116,20 @@ pub struct TextureSlot {
     /// `mipmapLevelCount` (a view's own): a function that writes the texture at a level computed at run time has a
     /// binding for each level.
     pub mipmap_level_count: u32,
+}
+
+impl TextureSlot {
+    /// The slot of a texture (a view's own geometry, pixel format and read swizzle) bound at `index`.
+    pub fn of(index: u64, geometry: &crate::mem::layout::Geometry, pixel_format: u32, swizzle: [u8; 4]) -> TextureSlot {
+        TextureSlot {
+            index,
+            texture_type: crate::pipeline::bound::texture_type_value(geometry.kind),
+            pixel_format: u64::from(pixel_format),
+            sample_count: u64::from(geometry.sample_count),
+            swizzle,
+            mipmap_level_count: geometry.mip_levels,
+        }
+    }
 }
 
 /// A compiled variant: the WebGPU pipeline and its bind groups.

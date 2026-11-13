@@ -17,11 +17,20 @@
 //! rasterization disabled) are detected from the functions' AIR records before compiling and fail as
 //! [`super::errors`] describes, since their A10X domain and code are not established.
 //!
-//! **Compilation.** The pipeline compiles at creation (the compiler takes no draw state for render pipelines yet:
-//! no bound resources, no primitive type).
+//! **Compilation.** The pipeline compiles at creation for no bound resources, which is the creation variant: a
+//! refusal there is the pipeline's and fails the creation. Each draw then names the textures and sampler states bound
+//! at its functions' texture and sampler arguments ([`BindingKey`]), and the pipeline is compiled for them once
+//! ([`Variants`]): the compiler takes each bound texture's type, pixel format, sample count, swizzle and level count
+//! and each sampler state's descriptor, as a compute dispatch's variant does. A bound texture the argument cannot
+//! take fails the draw as behavior Metal does not define before the compiler sees it (the render encoder checks it
+//! from the creation variant's reflection); any other refusal of a draw's variant is the bound state's
+//! ([`super::errors::variant_refusal`]). Variants that compile to the same WGSL and binding layout share one set of
+//! WebGPU objects and their dynamic-state pipelines; a draw that binds nothing at the functions' texture and sampler
+//! arguments uses the creation variant when the compiler produces the same WGSL and layout for that state.
 //!
-//! **Payload.** The handle's payload is the render path's [`RenderPipeline`] (`crate::render::pipeline`), built by
-//! [`RenderPipeline::create`] from the [`RenderPipelineDesc`] [`plan`] makes of the compiled stages: the binding
+//! **Payload.** The handle's payload is the render path's `RenderPipelineState` (`crate::render::pipeline`): the
+//! creation variant and the [`Variants`]. Each variant is a [`RenderPipeline`], built by [`RenderPipeline::create`]
+//! from the [`RenderPipelineDesc`] [`plan`] makes of the compiled stages: the binding
 //! layout with each binding's source, the WebGPU color targets (Metal's blend state as WebGPU's, with the blend
 //! constant holding the blend color or its alpha), the depth-stencil format, the sample count and the pass plan. A
 //! pipeline without a fragment function but with color attachments gets an empty fragment stage whose targets all have
@@ -31,14 +40,18 @@
 //! with rasterization disabled the vertex function has no side effects (vertex-stage writes are refused) and draws
 //! make no WebGPU pipeline.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use airwgsl::{
     BindingResource, BindingSource, ColorAttachment, Compiled, PipelineDesc, PipelineKind, RenderState, ShaderStage,
-    ShaderStages, StorageTextureAccess, Tessellation, VertexAttribute, VertexBufferLayout, VertexDescriptor,
+    ShaderStages, StageBindings, StorageTextureAccess, Tessellation, VertexAttribute, VertexBufferLayout,
+    VertexDescriptor,
 };
 use webmetal_wire::{Failure, Handle, RenderPipelineDescriptor};
 
+use super::Shared;
 use super::compute::{MUTABILITY_VALUES, function};
 use super::errors;
 use super::gpu;
@@ -54,9 +67,9 @@ use crate::gpu::idl::{
 use crate::mem::texture::idl_format;
 use crate::render::metal::TopologyClass;
 use crate::render::pipeline::{
-    Binding, BlendConstant, ColorTarget, DepthStencilKey, GroupDesc, MetalStage, PassPlan, RenderPipeline,
-    RenderPipelineDesc, Resource, Source, StageSource, StencilFaceKey, UniformBlock, UniformField, UniformValue,
-    VariantKey,
+    Binding, BindingKey, BlendConstant, ColorTarget, DepthStencilKey, GroupDesc, MetalStage, PassPlan, RenderPipeline,
+    RenderPipelineDesc, RenderVariants, Resource, Source, StageArguments, StageKey, StageSource, StencilFaceKey,
+    UniformBlock, UniformField, UniformValue, VariantKey,
 };
 
 /// `maxColorAttachments` of the A10X (device profile; Metal Feature Set Tables, Apple3: 8).
@@ -752,9 +765,81 @@ pub fn mask_all(settings: &mut RenderSettings) {
     }
 }
 
-/// The pipeline description the compiler takes.
+/// The pipeline description the compiler takes at creation: no bound resources.
 pub fn desc(settings: &RenderSettings) -> PipelineDesc {
     PipelineDesc { kind: PipelineKind::Render(settings.state.clone()), bindings: Vec::new() }
+}
+
+/// The compiler's form of what one stage binds.
+fn stage_bindings(stage: airwgsl::MetalStage, key: &StageKey) -> StageBindings {
+    StageBindings {
+        stage,
+        // Buffers change generated code only through the alias pattern of the bound ranges (plan section 5.5), which
+        // the key does not hold: slots are compiled as distinct buffers, as for a compute dispatch.
+        buffers: Vec::new(),
+        textures: key
+            .textures
+            .iter()
+            .map(|t| airwgsl::TextureSlot {
+                index: t.index,
+                texture_type: t.texture_type,
+                pixel_format: t.pixel_format,
+                sample_count: t.sample_count,
+                swizzle: t.swizzle,
+                mipmap_level_count: u64::from(t.mipmap_level_count),
+            })
+            .collect(),
+        samplers: key
+            .samplers
+            .iter()
+            .map(|s| airwgsl::SamplerSlot {
+                index: s.index,
+                min_filter: s.min_filter,
+                mag_filter: s.mag_filter,
+                mip_filter: s.mip_filter,
+                address_modes: s.address_modes,
+                border_color: s.border_color,
+                normalized_coordinates: s.normalized_coordinates,
+                compare_function: s.compare_function,
+                max_anisotropy: s.max_anisotropy,
+                lod_min_clamp: f32::from_bits(s.lod_min_clamp),
+                lod_max_clamp: f32::from_bits(s.lod_max_clamp),
+                lod_average: s.lod_average,
+            })
+            .collect(),
+        argument_buffers: Vec::new(),
+    }
+}
+
+/// The pipeline description of a draw that binds `key`.
+pub fn variant_desc(settings: &RenderSettings, key: &BindingKey) -> PipelineDesc {
+    PipelineDesc {
+        kind: PipelineKind::Render(settings.state.clone()),
+        bindings: vec![
+            stage_bindings(airwgsl::MetalStage::Vertex, &key.vertex),
+            stage_bindings(airwgsl::MetalStage::Fragment, &key.fragment),
+        ],
+    }
+}
+
+/// `MTLArgumentTypeSampler` (iPhoneOS SDK, `MTLArgument.h`).
+const ARGUMENT_SAMPLER: u64 = 3;
+
+/// The texture and sampler arguments of the stage with `MTLFunctionType` `function_type` (vertex 1, fragment 2) in
+/// a compiled pipeline's reflection.
+pub fn stage_arguments(reflection: &airwgsl::Reflection, function_type: u64) -> StageArguments {
+    let Some(stage) = reflection.stages.iter().find(|s| s.function_type == function_type) else {
+        return StageArguments::default();
+    };
+    StageArguments {
+        textures: super::bound::texture_arguments(stage),
+        samplers: stage
+            .arguments
+            .iter()
+            .filter(|a| a.r#type == ARGUMENT_SAMPLER)
+            .map(|a| (a.index, a.array_length.max(1)))
+            .collect(),
+    }
 }
 
 /// Refuse writable bindings the vertex stage sees: WebGPU allows only uniform and read-only bindings there.
@@ -892,8 +977,15 @@ fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflecti
     Ok(Binding { binding: e.binding, visibility: e.visibility.0, resource, source, texture })
 }
 
-/// The render path's description of a compiled render pipeline with `settings`.
-pub fn plan(call: &str, label: &str, settings: &RenderSettings, c: &Compiled) -> Result<RenderPipelineDesc, Failure> {
+/// The render path's description of a compiled render pipeline with `settings`; `bound` when `c` was compiled for a
+/// draw's [`BindingKey`].
+pub fn plan(
+    call: &str,
+    label: &str,
+    settings: &RenderSettings,
+    c: &Compiled,
+    bound: bool,
+) -> Result<RenderPipelineDesc, Failure> {
     let (vertex, fragment) = stages(call, c)?;
     let has_targets = settings.colors.iter().any(|t| t.state.is_some());
     let mut colors = settings.colors.clone();
@@ -942,7 +1034,108 @@ pub fn plan(call: &str, label: &str, settings: &RenderSettings, c: &Compiled) ->
         rasterization: settings.state.rasterization_enabled,
         passes,
         writes_depth: settings.writes_depth,
+        bound,
     })
+}
+
+/// The draw calls variants are made for, for messages.
+const DRAW: &str = "-[MTLRenderCommandEncoder draw...]";
+
+/// The binding variants of one render pipeline.
+pub struct Variants<A: Api> {
+    shared: Rc<Shared<A>>,
+    vertex: Rc<Function>,
+    fragment: Option<Rc<Function>>,
+    settings: RenderSettings,
+    label: String,
+    arguments: [StageArguments; 2],
+    creation: Rc<RenderPipeline<A>>,
+    /// [`gpu::objects_key`] of the creation variant.
+    creation_code: [u8; 32],
+    made: RefCell<HashMap<BindingKey, Rc<RenderPipeline<A>>>>,
+    /// The variants by the WGSL and binding layout they were made from ([`gpu::objects_key`]).
+    by_code: RefCell<HashMap<[u8; 32], Rc<RenderPipeline<A>>>>,
+}
+
+impl<A: Api> Variants<A> {
+    pub fn new(
+        shared: Rc<Shared<A>>,
+        (vertex, fragment): (Rc<Function>, Option<Rc<Function>>),
+        settings: RenderSettings,
+        label: String,
+        compiled: &Compiled,
+        creation: Rc<RenderPipeline<A>>,
+    ) -> Variants<A> {
+        let arguments = [stage_arguments(&compiled.reflection, 1), stage_arguments(&compiled.reflection, 2)];
+        let creation_code = gpu::objects_key(compiled);
+        Variants {
+            shared,
+            vertex,
+            fragment,
+            settings,
+            label,
+            arguments,
+            creation,
+            creation_code,
+            made: RefCell::new(HashMap::new()),
+            by_code: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// The number of binding variants made so far (the creation variant not counted).
+    pub fn count(&self) -> usize {
+        self.by_code.borrow().len()
+    }
+
+    /// The compiled description of a variant (the compiler cache's entry), for comparison with a fresh compilation.
+    pub fn compiled(&self, key: &BindingKey) -> super::compile::Outcome {
+        let mut modules = vec![self.vertex.stage_module()];
+        modules.extend(self.fragment.as_ref().map(|f| f.stage_module()));
+        self.shared.compiler.compile(&modules, &variant_desc(&self.settings, key))
+    }
+}
+
+impl<A: Api> RenderVariants<A> for Variants<A> {
+    fn arguments(&self, stage: MetalStage) -> &StageArguments {
+        match stage {
+            MetalStage::Vertex => &self.arguments[0],
+            MetalStage::Fragment => &self.arguments[1],
+        }
+    }
+
+    fn variant(&self, g: &crate::exec::Gpu<'_, A>, key: &BindingKey) -> Result<Rc<RenderPipeline<A>>, Failure> {
+        if let Some(p) = self.made.borrow().get(key) {
+            return Ok(p.clone());
+        }
+        let outcome = self.compiled(key);
+        let compiled = match &*outcome {
+            Ok(c) => c,
+            Err(r) => return Err(errors::variant_refusal(DRAW, r)),
+        };
+        check_vertex_writes(DRAW, compiled)?;
+        gpu::requirements::<A>(DRAW, g.device(), &self.shared.wgsl_language_features, &compiled.requirements)?;
+        let code = gpu::objects_key(compiled);
+        // With nothing bound at the functions' texture and sampler arguments the creation variant serves when it is
+        // the same code: its texture bindings then have no bound texture to differ from.
+        let empty = key.vertex == StageKey::default() && key.fragment == StageKey::default();
+        let shared = if empty && code == self.creation_code {
+            Some(self.creation.clone())
+        } else {
+            self.by_code.borrow().get(&code).cloned()
+        };
+        let p = match shared {
+            Some(p) => p,
+            None => {
+                gpu::check_layout::<A>(DRAW, g.device(), &compiled.layout)?;
+                let desc = plan(DRAW, &self.label, &self.settings, compiled, true)?;
+                let p = Rc::new(RenderPipeline::create(g, desc).map_err(|e| e.failure())?);
+                self.by_code.borrow_mut().insert(code, p.clone());
+                p
+            }
+        };
+        self.made.borrow_mut().insert(key.clone(), p.clone());
+        Ok(p)
+    }
 }
 
 /// The variant of a new render encoder's state: primitives of the topology class (triangles when unspecified),

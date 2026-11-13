@@ -50,7 +50,7 @@ use crate::gpu::{
     Queue as _, RenderCommands as _, RenderPassEncoder as _, Size64, Texture as _,
 };
 use crate::mem::buffer::Buffer;
-use crate::mem::texture::{Prepare, Texture};
+use crate::mem::texture::{Prepare, Texture, usage as texture_usage};
 use crate::mem::view::{IDENTITY_SWIZZLE, PassCopies, read_swizzle, swizzle_string};
 use crate::mem::{MemError, Memory};
 use crate::state::SamplerObject;
@@ -65,10 +65,11 @@ use super::metal::{
     stages,
 };
 use super::pipeline::{
-    BlendConstant, DepthStencilKey, MetalStage, PassPlan, RenderPipeline, Resource, Source, StencilFaceKey, Stride,
-    UniformValue, VariantKey,
+    BindingKey, BlendConstant, DepthStencilKey, MetalStage, PassPlan, RenderPipeline, RenderPipelineState, Resource,
+    Source, StencilFaceKey, Stride, UniformValue, VariantKey,
 };
 use super::visibility::Visibility;
+use crate::compute::pipeline::{SamplerSlot, TextureSlot};
 
 /// The render encoder service.
 pub struct RenderEncoder<A: Api> {
@@ -102,8 +103,8 @@ fn buffer<A: Api>(objects: &Table, handle: Handle, call: &str) -> Result<Rc<Buff
     })
 }
 
-fn pipeline<A: Api>(objects: &Table, handle: Handle) -> Result<Rc<RenderPipeline<A>>> {
-    payload::<RenderPipeline<A>>(objects, handle).ok_or_else(|| {
+fn pipeline<A: Api>(objects: &Table, handle: Handle) -> Result<Rc<RenderPipelineState<A>>> {
+    payload::<RenderPipelineState<A>>(objects, handle).ok_or_else(|| {
         RenderError::unimplemented(format!(
             "render pipeline {:#x} has no WebGPU pipeline (the pipeline service did not create one)",
             handle.get()
@@ -290,7 +291,10 @@ fn scan<A: Api>(items: &[(u64, &Command)], objects: &Table, uniform_align: u64) 
         match c {
             Command::BeginParallelSubEncoder(_) => current = None,
             Command::RenderSetRenderPipelineState(r) => {
-                current = r.pipeline_state.and_then(|h| payload::<RenderPipeline<A>>(objects, h));
+                current = r
+                    .pipeline_state
+                    .and_then(|h| payload::<RenderPipelineState<A>>(objects, h))
+                    .map(|p| p.creation.clone());
                 if let Some(p) = &current {
                     max_uniform = max_uniform.max(p.uniform_size);
                 }
@@ -472,7 +476,7 @@ impl<A: Api> Default for Slots<A> {
 
 /// A render command encoder's state.
 struct State<A: Api> {
-    pipeline: Option<Rc<RenderPipeline<A>>>,
+    pipeline: Option<Rc<RenderPipelineState<A>>>,
     depth_stencil: DepthStencilState,
     cull: CullMode,
     winding: Winding,
@@ -1349,11 +1353,11 @@ impl<A: Api> Run<'_, A> {
 
     /// One draw record.
     fn draw(&mut self, ordinal: usize, prim: PrimitiveType, kind: &DrawKind) -> Result<()> {
-        let p = self.state.pipeline.clone().ok_or_else(|| {
+        let state = self.state.pipeline.clone().ok_or_else(|| {
             RenderError::undefined(DRAW, "renderPipelineState must be set (debug-layer assertion); Metal faults")
         })?;
-        self.check_pipeline(&p, prim)?;
-        if !p.rasterization {
+        self.check_pipeline(&state.creation, prim)?;
+        if !state.creation.rasterization {
             // The vertex stage has no side effects (the pipeline service refuses vertex-stage writes) and nothing is
             // rasterized: the draw has no observable effect.
             return Ok(());
@@ -1389,6 +1393,7 @@ impl<A: Api> Run<'_, A> {
             }
             _ => None,
         };
+        let p = self.binding_variant(&state)?;
         let strides = self.strides(&p)?;
         let key = VariantKey {
             topology: prim.topology(),
@@ -1419,6 +1424,57 @@ impl<A: Api> Run<'_, A> {
         let FacePlan::One(values) = faces else { unreachable!("split handled above") };
         self.prepare_draw(&p, &key, values, &uniforms, None)?;
         self.issue(ordinal, kind, prim)
+    }
+
+    /// The pipeline compiled for the textures and sampler states the draw binds at its functions' texture and sampler
+    /// arguments (the pipeline service's binding variant), or the pipeline itself when its code does not depend on
+    /// them. A bound texture an argument cannot take is behavior Metal does not define (its validation layer rejects
+    /// the draw), reported before the compiler sees it.
+    fn binding_variant(&self, state: &RenderPipelineState<A>) -> Result<Rc<RenderPipeline<A>>> {
+        let Some(variants) = &state.variants else { return Ok(state.creation.clone()) };
+        let mut key = BindingKey::default();
+        for stage in [MetalStage::Vertex, MetalStage::Fragment] {
+            let arguments = variants.arguments(stage);
+            let slots = self.state.slots_ref(stage);
+            let k = match stage {
+                MetalStage::Vertex => &mut key.vertex,
+                MetalStage::Fragment => &mut key.fragment,
+            };
+            let mut textures: Vec<u64> =
+                arguments.texture_indices().filter(|i| slots.textures.contains_key(i)).collect();
+            textures.sort_unstable();
+            textures.dedup();
+            for index in textures {
+                let tex = &slots.textures[&index];
+                let g = tex.geometry();
+                if let Some(a) = crate::pipeline::bound::argument_at(&arguments.textures, index)
+                    && let Some(why) = crate::pipeline::bound::texture_mismatch(
+                        a,
+                        index,
+                        crate::pipeline::bound::texture_type_value(g.kind),
+                        u64::from(tex.format()),
+                    )
+                {
+                    return Err(RenderError::undefined(DRAW, format!("the {} function's {why}", stage.name())));
+                }
+                k.textures.push(TextureSlot::of(index, g, tex.format(), tex.swizzle()));
+            }
+            let mut samplers: Vec<u64> =
+                arguments.sampler_indices().filter(|i| slots.samplers.contains_key(i)).collect();
+            samplers.sort_unstable();
+            samplers.dedup();
+            k.samplers = samplers.into_iter().map(|i| SamplerSlot::of(i, &slots.samplers[&i].descriptor)).collect();
+        }
+        let p = variants.variant(self.g, &key)?;
+        // The encoder's scan placed the per-draw uniform blocks and split the passes by the pipeline as created.
+        if p.uniform_blocks() != state.creation.uniform_blocks() || p.passes != state.creation.passes {
+            return Err(RenderError::unimplemented(format!(
+                "render pipeline {}: the variant for the bound textures has another per-draw uniform block or pass plan \
+                 than the pipeline as created, which the encoder sized and split the pass by",
+                p.label
+            )));
+        }
+        Ok(p)
     }
 
     /// Check the pipeline against the pass (Metal requires them to agree; the debug layer asserts otherwise).
@@ -1737,10 +1793,10 @@ impl<A: Api> Run<'_, A> {
                             )
                         })?;
                         if let Some(a) = &b.texture {
-                            let t = tex.texture();
-                            let kind = crate::pipeline::bound::texture_type_value(t.geometry.kind);
+                            // The type and format the function sees: a view's own.
+                            let kind = crate::pipeline::bound::texture_type_value(tex.geometry().kind);
                             if let Some(why) =
-                                crate::pipeline::bound::texture_mismatch(a, *index, kind, u64::from(t.format))
+                                crate::pipeline::bound::texture_mismatch(a, *index, kind, u64::from(tex.format()))
                             {
                                 return Err(RenderError::undefined(
                                     DRAW,
@@ -1749,7 +1805,7 @@ impl<A: Api> Run<'_, A> {
                             }
                         }
                         self.copies.add(tex.texture(), tex.alias().map(|a| &**a), tex.root_window(), b.writable())?;
-                        let view = self.texture_view(&tex, resource, *stage, *index, level)?;
+                        let view = self.texture_view(&tex, resource, *stage, *index, level, p.bound)?;
                         if b.writable() {
                             // A storage binding is one level of the texture or view.
                             let (levels, slices) = tex.root_window();
@@ -1877,7 +1933,9 @@ impl<A: Api> Run<'_, A> {
     }
 
     /// The view of a bound texture for a binding: `level` is a storage binding's level (counted from a view's first
-    /// level), `None` a binding of the texture itself.
+    /// level), `None` a binding of the texture itself. `bound` when the pipeline was compiled for the textures the draw
+    /// binds ([`RenderPipeline::bound`]): its bindings then have the bound texture's storage format and levels, and
+    /// its shader converts emulated formats and applies swizzles the views do not.
     fn texture_view(
         &self,
         tex: &Tex<A>,
@@ -1885,6 +1943,7 @@ impl<A: Api> Run<'_, A> {
         stage: MetalStage,
         index: u64,
         level: Option<u32>,
+        bound: bool,
     ) -> Result<A::TextureView> {
         let t: &Texture<A> = tex.texture();
         // The root's subresources the binding sees: every level and slice of a texture, a view's own.
@@ -1914,10 +1973,12 @@ impl<A: Api> Run<'_, A> {
             Resolution::Native(_) | Resolution::StencilAspect => {}
             // A format read with its components rearranged: the view's swizzle below.
             Resolution::Emulated(e) if matches!(e.read, Read::Native | Read::Swizzle(_)) => {}
+            // The variant's shader reads and writes the stored format as the bound pixel format.
+            Resolution::Emulated(_) if bound => {}
             _ => {
                 return Err(RenderError::unimplemented(format!(
-                    "{} texture {index}: a texture whose format is emulated with a shader conversion; the conversion \
-                     is part of the pipeline variant the pipeline service builds (plan section 5.5)",
+                    "{} texture {index}: a texture whose format is emulated with a shader conversion, bound to a \
+                     pipeline whose code was not compiled for the bound textures",
                     stage.name()
                 )));
             }
@@ -1942,16 +2003,71 @@ impl<A: Api> Run<'_, A> {
                         || *sample_type == crate::gpu::idl::TextureSampleType::UnfilterableFloat,
                 );
             }
+            Resource::StorageTexture { view_dimension, format, .. } if bound => {
+                // A storage binding shows one level (WebGPU 8.2.1): a level binding's own, counted from a view's
+                // first level. A binding of the texture itself shows its level 0, which is all of it only when it has
+                // one level.
+                let levels_of = tex.geometry().mip_levels;
+                let level = match level {
+                    Some(l) if l < levels_of => l,
+                    Some(l) => {
+                        return Err(RenderError::invalid(format!(
+                            "the variant binds level {l} of {} texture {index}, which has {levels_of} levels; the \
+                             variant key holds the level count",
+                            stage.name()
+                        )));
+                    }
+                    None if levels_of > 1 => {
+                        return Err(RenderError::unimplemented(format!(
+                            "{} texture {index} is a mipmapped texture bound for writing; the binding layout does not \
+                             say which level the function writes",
+                            stage.name()
+                        )));
+                    }
+                    None => 0,
+                };
+                let writable = self.memory.features().allows(tex.resolution().storage().caps().storage_wo);
+                if tex.gpu().usage() & TextureUsage::STORAGE_BINDING == 0 || !writable {
+                    return Err(if t.usage != texture_usage::UNKNOWN && t.usage & texture_usage::SHADER_WRITE == 0 {
+                        RenderError::undefined(
+                            DRAW,
+                            format!("{} texture {index} is written and lacks MTLTextureUsageShaderWrite", stage.name()),
+                        )
+                    } else {
+                        RenderError::host(format!(
+                            "{} texture {index}: this host cannot write {} textures from shaders",
+                            stage.name(),
+                            tex.resolution().storage().name()
+                        ))
+                    });
+                }
+                d.dimension = Some(*view_dimension);
+                d.format = Some(*format);
+                d.base_mip_level = level;
+                d.mip_level_count = Some(1);
+                if let Some(v) = tex.view() {
+                    let stored = crate::mem::texture::idl_format(v.resolution.storage());
+                    if *format != stored {
+                        return Err(RenderError::unimplemented(format!(
+                            "{} texture {index} is a view stored as {} that the function writes as {}",
+                            stage.name(),
+                            stored.as_str(),
+                            format.as_str()
+                        )));
+                    }
+                    v.describe(&mut d, level..level + 1, TextureUsage::STORAGE_BINDING);
+                    d.format = Some(*format);
+                }
+            }
             Resource::StorageTexture { view_dimension, .. } => {
-                // Render pipelines are compiled without the textures a draw binds, so a written texture is compiled
-                // as one of one level: its write at a level computed at run time selects level 0 alone, and a level
-                // out of a texture's range is not known to be out of range. Only a texture of one level, written at
-                // level 0, is written as Metal writes it.
+                // A pipeline whose code was not compiled for the bound textures has a written texture's binding of
+                // one level: its write at a level computed at run time selects level 0 alone, and a level out of a
+                // texture's range is not known to be out of range. Only a texture of one level, written at level 0,
+                // is written as Metal writes it.
                 if tex.geometry().mip_levels != 1 {
                     return Err(RenderError::unimplemented(format!(
-                        "{} texture {index}: a read-write or write-only binding of a texture with {} levels: render \
-                         pipeline variants are not compiled for the bound textures' level counts, which the levels a \
-                         function writes at run time select among",
+                        "{} texture {index}: a read-write or write-only binding of a texture with {} levels, bound to \
+                         a pipeline whose code was not compiled for the bound textures' level counts",
                         stage.name(),
                         tex.geometry().mip_levels
                     )));
@@ -1959,7 +2075,7 @@ impl<A: Api> Run<'_, A> {
                 if level.unwrap_or(0) != 0 {
                     return Err(RenderError::unimplemented(format!(
                         "{} texture {index}: the function writes level {} of a texture of one level; Metal ignores \
-                         the write, and render pipeline variants are not compiled for the bound textures' level counts",
+                         the write, and the pipeline's code was not compiled for the bound textures' level counts",
                         stage.name(),
                         level.unwrap_or(0)
                     )));
@@ -2003,21 +2119,23 @@ impl<A: Api> Run<'_, A> {
         if let (Some(v), Resource::Texture { .. }) = (tex.view(), resource) {
             v.describe(&mut d, 0..v.geometry.mip_levels, TextureUsage::TEXTURE_BINDING);
         }
-        // The swizzle reads and samples apply (writes take none). Render pipelines have no variant per bound texture
-        // to apply it in the shader, so the WebGPU view applies it; depth reads take none, as in the compiler.
+        // The swizzle reads and samples apply (writes take none); depth reads take none, as in the compiler. The
+        // view applies it when the host has texture-component-swizzle; otherwise a pipeline compiled for the bound
+        // textures applies it in its shader, and one that was not cannot.
         let swizzle = read_swizzle(tex.resolution(), tex.swizzle());
         if let Resource::Texture { sample_type, .. } = resource
             && swizzle != IDENTITY_SWIZZLE
             && *sample_type != crate::gpu::idl::TextureSampleType::Depth
         {
-            if !self.memory.features().has(Feature::TextureComponentSwizzle) {
+            if self.memory.features().has(Feature::TextureComponentSwizzle) {
+                d.swizzle = swizzle_string(swizzle);
+            } else if !bound {
                 return Err(RenderError::unimplemented(format!(
-                    "{} texture {index}: swizzle {swizzle:?} needs texture-component-swizzle on this host; render \
-                     pipelines have no variant per bound texture to apply it in the shader",
+                    "{} texture {index}: swizzle {swizzle:?} needs texture-component-swizzle on this host, and the \
+                     pipeline's code was not compiled for the bound textures to apply it",
                     stage.name()
                 )));
             }
-            d.swizzle = swizzle_string(swizzle);
         }
         self.call("GPUTexture.createView", |_| tex.gpu().create_view(&d))
             .map_err(|e| RenderError::gpu("GPUTexture.createView", e))
