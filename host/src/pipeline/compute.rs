@@ -81,23 +81,49 @@ pub mod option {
     pub const BINDING_INFO: u64 = 1 << 0;
     pub const BUFFER_TYPE_INFO: u64 = 1 << 1;
     pub const FAIL_ON_BINARY_ARCHIVE_MISS: u64 = 1 << 2;
-    /// The options this service implements.
-    pub const ALL: u64 = BINDING_INFO | BUFFER_TYPE_INFO | FAIL_ON_BINARY_ARCHIVE_MISS;
 
-    /// The debug layer's options: `-[MTLToolsDevice debugPipelineOptions:includePipelinePerfStats:]` (MetalTools
-    /// 21H461, 0x216e6644c) ORs 0x810003 (bits 0, 1, 16 and 23) into the caller's options, and 0x40000 as well when
-    /// the caller did not pass FailOnBinaryArchiveMiss and asked for performance statistics.
+    /// Bits 16 and 23, which Metal's debug layer ORs into the options of every pipeline it creates: `-[MTLToolsDevice
+    /// debugPipelineOptions:includePipelinePerfStats:]` (MetalTools 21H461 0x216e6644c-0x216e66468; macOS 27
+    /// 0x1810a6798) returns the options | 0x810003 (bits 0, 1, 16 and 23), and | 0x40000 as well when it asks for
+    /// performance statistics (on 21H461 only when the caller did not pass FailOnBinaryArchiveMiss). No SDK names
+    /// either bit: `MTLDevice.h` of the iPhoneOS and macOS 27.2 SDKs defines bits 0 to 2 only.
     pub const DEBUG_16: u64 = 1 << 16;
     pub const DEBUG_23: u64 = 1 << 23;
-    /// Set by `-[MTLDebugDevice newRenderPipelineStateWithDescriptor:error:]` (MetalTools 21H461, 0x216ec2c60) and
-    /// cleared by the debug layer's forwarding methods (0x216ec2c58 and 0x216ec3148: `and x3, x3, #~0x20000`) before
-    /// the options reach the driver.
+    /// Bit 17: `MTLDebugDevice`'s creation methods without a reflection argument call its
+    /// `_new...PipelineStateWithDescriptor:options:reflection:error:` with options 0x20000 (MetalTools 21H461
+    /// 0x216ec3134 for compute, 0x216ec2c60 for render), which forwards the bit ORed with the debug bits; the methods
+    /// with a reflection argument clear it from the caller's options (0x216ec3148, 0x216ec2c58: `and x3, x3,
+    /// #~0x20000`). When the caller's options lack bit 0 or bit 1 the debug device creates the pipeline a second time
+    /// with the caller's options for the reflection it returns (0x216ec3298-0x216ec32a0), so a creation without a
+    /// reflection argument reaches the driver with 0x870003 and then with 0x20000.
     pub const DEBUG_17: u64 = 1 << 17;
-    /// The pipeline's performance statistics: the A10X driver reads the bit at creation (AGXMetalA10 21H461
-    /// 0x21c8df82c), asks its compiler for the pipeline's statistics (`getComputePipelinePerformanceStatistics`,
-    /// 0x21c8df834) and keeps them with `setPerformanceStatistics:`; `createComputeProgramVariant` masks the options
-    /// with 0xc0040000 (0x21c8a6508).
+    /// What the A10X driver does with bits 16, 17 and 23: nothing an application observes. It hands `options | 3` to
+    /// its program variant's compile request (`setPipelineOptions:`, AGXMetalA10 21H461 0x21c8a66b4) and counts bits
+    /// 0, 1, 16, 17, 20 and 21 as kinds of reflection to produce (the mask 0x330003 at 0x21c8a66b8-0x21c8a66c0; a
+    /// request without any of them gets 0x8000); the variant's key keeps only `options & 0xc0040000` (0x21c8a6508), so
+    /// none of the three selects other code, and `getOrCreateVariantEntry` tests only bit 2 besides that mask
+    /// (0x21c8a7290). The reflection is deserialized by Metal, whose readers test bit 1 and bits 19 to 21 only
+    /// (Metal 21H461 0x187abef8c, 0x187abf1dc, 0x187abf2e8, 0x187abf8d4, 0x187abfc30). The compiler service sees the
+    /// options only through `MTLGetCompilerOptions`, which turns on reflection generation for any bit of a mask that
+    /// bits 0 and 1 already meet on a GPU below Apple5 (0x187a9ad4c-0x187a9adc0), and through filters that keep none
+    /// of the three (0xc1280000 at 0x187a97f48, 0x11240000 at 0x187b95564, bit 24 at 0x187abc9a8, bit 34 at
+    /// 0x187a98228). The pipeline and the reflection are therefore those of the same creation without the bits,
+    /// which is what this service makes.
+    pub const NO_OBSERVABLE_EFFECT: u64 = DEBUG_16 | DEBUG_17 | DEBUG_23;
+    /// The pipeline's performance statistics, which the debug layer asks for whenever the descriptor has no pipeline
+    /// library (`includePipelinePerfStats:` is `pipelineLibrary == nil`, MetalTools 21H461 0x216ec3254-0x216ec3268).
+    /// The generated code is the same: the A10X driver keys a variant cache entry of its own on the bit (0x21c8a6508)
+    /// but compiles the same program key, and the compiler option 0x100 that `MTLGetCompilerOptions` makes of it
+    /// (Metal 21H461 0x187a9ad20-0x187a9ad24) reaches the A10X compiler plugin as bit 0 of its flags
+    /// (MTLCompiler 0x1c3e0ac38), which `MTLCompilerBuildRequestWithOptions` never tests (AGXCompilerCore-S2A8: only
+    /// bit 1, compile timing, at 0x208bd810c). What the bit adds is a dictionary of the compiled program's statistics
+    /// (ALU and instruction counts, registers, spills), built by the driver from Apple's compiler output
+    /// (`getComputePipelinePerformanceStatistics`, AGXMetalA10 0x21c8df834; render 0x21c8e7b90) and attached to the
+    /// pipeline's reflection object (`setPerformanceStatistics:`, 0x21c8df864; render 0x21c8e7bbc), where the private
+    /// `performanceStatistics` getter returns it to the shader-validation and telemetry layers.
     pub const PERFORMANCE_STATISTICS: u64 = 1 << 18;
+    /// The options this service implements.
+    pub const ALL: u64 = BINDING_INFO | BUFFER_TYPE_INFO | FAIL_ON_BINARY_ARCHIVE_MISS | NO_OBSERVABLE_EFFECT;
 
     /// Check `options` bit by bit: every bit outside [`ALL`] is a loud failure naming the bit and what is known of it.
     pub fn check(call: &str, options: u64) -> Result<(), Failure> {
@@ -106,16 +132,9 @@ pub mod option {
         };
         let why = match bit {
             PERFORMANCE_STATISTICS => {
-                "the A10X driver then gathers its GPU compiler's performance statistics for the pipeline (AGXMetalA10 \
-                 21H461 0x21c8df82c-0x21c8df834), which this host's compiler, AirWgsl over WebGPU, does not produce"
-            }
-            DEBUG_16 | DEBUG_23 | DEBUG_17 => {
-                "the A10X driver hands the options to its back-end compile request (createComputeProgramVariant, \
-                 AGXMetalA10 21H461: setPipelineOptions: at 0x21c8a66b4 with options | 3), and bits 16 and 17 are \
-                 among the bits (0x330003, tested at 0x21c8a66c0) that take creation down its reflection path; what \
-                 the back end (AGXCompilerCore, in MTLCompilerService) does with the bit is not established. \
-                 MetalTools' debug layer sets bits 16 and 23 (debugPipelineOptions:includePipelinePerfStats:, \
-                 0x216e6644c) and bit 17 (MTLDebugDevice, 0x216ec2c60)"
+                "the A10X driver then attaches its GPU compiler's performance statistics of the program to the \
+                 pipeline's reflection (AGXMetalA10 21H461 0x21c8df82c-0x21c8df864), which this host's compiler, \
+                 AirWgsl over WebGPU, does not produce; the generated code is the same"
             }
             _ => "it is not an MTLPipelineOption of the iPhoneOS SDK, nor a bit the 21H461 frameworks pass",
         };

@@ -178,17 +178,20 @@ fn creation_errors_metal_defines_fail_loudly() {
         reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 1 << 3)).status,
         status::UNIMPLEMENTED
     );
-    // The debug layer's options (0x870003 with performance statistics) fail on the first bit outside
-    // MTLPipelineOption, by name; the options this service implements create.
+    // The debug layer's options: bits 16, 17 and 23 change neither the A10X's pipeline nor its reflection, so the
+    // debug layer's 0x810003, the 0x20000 of its second creation and each bit alone create; with performance
+    // statistics (0x870003) the creation fails on bit 18, by name.
+    for options in [0x810003, 0x20000, 0x10000, 0x800000, 0x830003] {
+        let r = h.compute_pipeline(h.handle(), compute_descriptor(marker), options);
+        assert!(matches!(&r, Reply::CreateComputePipeline(Ok(_))), "options {options:#x}: {r:?}");
+    }
     let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x870003));
     assert_eq!(f.status, status::UNIMPLEMENTED);
-    assert!(f.message.contains("pipeline option 0x10000") && f.message.contains("0x216e6644c"), "{f:?}");
+    assert!(f.message.contains("pipeline option 0x40000") && f.message.contains("performance statistics"), "{f:?}");
     let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x40003));
     assert!(f.message.contains("pipeline option 0x40000") && f.message.contains("performance statistics"), "{f:?}");
-    let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x20000));
-    assert!(f.message.contains("pipeline option 0x20000"), "{f:?}");
-    let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x800000));
-    assert!(f.message.contains("pipeline option 0x800000"), "{f:?}");
+    let f = reply_failure(&h.compute_pipeline(h.handle(), compute_descriptor(marker), 0x1000000));
+    assert!(f.message.contains("pipeline option 0x1000000") && f.message.contains("not an MTLPipelineOption"), "{f:?}");
     // Descriptor state whose behavior is not established is named.
     let mut d = compute_descriptor(marker);
     d.open_gl_mode_enabled = true;
@@ -453,6 +456,12 @@ fn a_compiled_render_pipeline_draws_through_the_render_encoder() {
     let p = h.handle();
     let f = reply_failure(&h.render_pipeline(p, render_descriptor(Some(vertex), Some(fragment), RGBA8_UNORM), 0));
     assert_eq!(f.status, status::OK, "{f:?}");
+    // The debug layer's bits 16, 17 and 23 change neither the pipeline nor its reflection.
+    for options in [0x830003, 0x20000] {
+        let d = render_descriptor(Some(vertex), Some(fragment), RGBA8_UNORM);
+        let f = reply_failure(&h.render_pipeline(h.handle(), d, options));
+        assert_eq!(f.status, status::OK, "options {options:#x}: {f:?}");
+    }
     // MTLStorageModePrivate 2, MTLTextureUsageRenderTarget 4.
     let target = h.handle();
     h.ok(Request::CreateTexture(CreateTexture {
