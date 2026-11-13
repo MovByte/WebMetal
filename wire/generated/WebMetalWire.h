@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: 639d044a43b533b5c240cbd6cc36933d01de3493db4a90f0fc0519841ad46603
+// Schema SHA-256: 4cf8b85db802cb9aef652a565f4c19bd894f3241e7debcc52f5adb2a60b13c87
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0x63, 0x9d, 0x04, 0x4a, 0x43, 0xb5, 0x33, 0xb5, 0xc2, 0x40, 0xcb, 0xd6, 0xcc, 0x36, 0x93, 0x3d, 0x01, 0xde, 0x34, 0x93, 0xdb, 0x4a, 0x90, 0xf0, 0xfc, 0x05, 0x19, 0x84, 0x1a, 0xd4, 0x66, 0x03};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0x4c, 0xf8, 0xb8, 0x5d, 0xb8, 0x02, 0xcb, 0x9a, 0xef, 0x65, 0x2a, 0x56, 0x5f, 0x4c, 0x19, 0xbd, 0x89, 0x4f, 0x32, 0x41, 0xe7, 0xde, 0xbc, 0xc5, 0x2f, 0x5a, 0xdb, 0x2a, 0x60, 0xb1, 0x3c, 0x87};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -3061,7 +3061,11 @@ inline bool decodeReply(const uint8_t* data, size_t size, Reply<CreateTextureWit
 }
 
 // 0x0206 control record. Metal methods: -[MTLDeviceSPI newTextureWithBytesNoCopy:length:descriptor:deallocator:].
-// texture is the handle the guest allocated for the new object.
+// texture is the handle the guest allocated for the new object. The texture's memory is the calling task's, from
+// bytes on, in the A10X driver's layout for the descriptor; page_size and iosurface_alignment are the values that
+// layout reads from the running system (vm_page_size and IOSurfaceAlignProperty(kIOSurfaceOffset, 1)). The host
+// keeps the memory and the texture equal at the coherence points of buffers (plan section 6.2). The deallocator
+// block stays in the guest.
 struct CreateTextureNoCopy {
     static constexpr uint16_t kOpcode = 0x0206;
     uint64_t texture = 0;  // wire type `Texture`.
@@ -3069,6 +3073,8 @@ struct CreateTextureNoCopy {
     uint64_t length = 0;  // wire type `u64`.
     TextureDescriptor descriptor{};  // wire type `TextureDescriptor`.
     bool deallocator = false;  // wire type `block`.
+    uint64_t pageSize = 0;  // wire type `u64`.
+    uint64_t iosurfaceAlignment = 0;  // wire type `u64`.
 };
 
 inline bool encodeFields(Writer& w, const CreateTextureNoCopy& v) {
@@ -3078,6 +3084,8 @@ inline bool encodeFields(Writer& w, const CreateTextureNoCopy& v) {
     w.u64(v.length);
     if (!encodeFields(w, v.descriptor)) return false;
     w.boolean(v.deallocator);
+    w.u64(v.pageSize);
+    w.u64(v.iosurfaceAlignment);
     return true;
 }
 

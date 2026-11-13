@@ -13,6 +13,10 @@ namespace webmetal {
 // -[AGXA10FamilyDevice newTextureWithDescriptor:] (AGXMetalA10 0x21c8d64a4).
 WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor);
 
+// -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] (AGXMetalA10 0x21c8d62c8).
+WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes, NSUInteger length,
+                                  MTLTextureDescriptor *descriptor, void (^deallocator)(void *pointer, NSUInteger length));
+
 // -[AGXA10FamilyDevice newTextureWithDescriptor:iosurface:plane:] and its slice form.
 WebMetalTexture *NewSurfaceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor,
                                    IOSurfaceRef iosurface, NSUInteger plane, NSUInteger slice);

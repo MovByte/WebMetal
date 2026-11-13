@@ -71,16 +71,14 @@ id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, 
     return webmetal::NewSurfaceTexture(self, _cmd, descriptor, iosurface, plane, slice);
 }
 
-// -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] (AGXMetalA10 0x21c8d62cc) wraps caller
-// memory whose bytes are the texture's in the A10X layout (AGX::TextureGen2: twiddled blocks for most textures). The
-// host has no reader for that layout (it refuses CreateTextureNoCopy), so no texture can be made over the memory.
+// -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] (AGXMetalA10 0x21c8d62c8) wraps caller
+// memory whose bytes are the texture's in the A10X layout (AGX::TextureGen2: twiddled blocks for most textures).
 - (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes
                                      length:(NSUInteger)length
                                  descriptor:(MTLTextureDescriptor *)descriptor
                                 deallocator:(void (^)(void *pointer, NSUInteger length))deallocator
 {
-    WMLoudMethod(self, _cmd, "the texel layout the A10X driver gives a texture's bytes (AGX::TextureGen2, mostly "
-                             "twiddled blocks) has no reader at the host, which refuses CreateTextureNoCopy");
+    return webmetal::NewNoCopyTexture(self, _cmd, bytes, length, descriptor, deallocator);
 }
 
 // -[AGXA10FamilyDevice newHeapWithDescriptor:] (AGXMetalA10 0x21c8d6918): an AGXA10FamilySparseHeap for

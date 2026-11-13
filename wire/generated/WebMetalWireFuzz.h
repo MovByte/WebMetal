@@ -1444,6 +1444,8 @@ inline void random(Gen& g, CreateTextureNoCopy& v) {
     v.length = g.u64();
     random(g, v.descriptor);
     v.deallocator = g.boolean();
+    v.pageSize = g.u64();
+    v.iosurfaceAlignment = g.u64();
 }
 
 inline void random(Gen&, CreateTextureNoCopyReply&) {

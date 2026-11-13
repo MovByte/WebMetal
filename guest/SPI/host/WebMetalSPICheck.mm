@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 // The driver selectors the checks send; the plugin's classes answer them.
 @protocol SPIDevice
@@ -32,6 +33,21 @@
                                  descriptor:(MTLTextureDescriptor *)descriptor
                                 deallocator:(void (^)(void *pointer, NSUInteger length))deallocator;
 - (NSUInteger)gpuCoreCount;
+- (id)newTextureLayoutWithDescriptor:(MTLTextureDescriptor *)descriptor isHeapOrBufferBacked:(BOOL)heapOrBufferBacked;
+@end
+
+@protocol SPITextureLayout
+- (NSUInteger)size;
+- (NSUInteger)alignment;
+- (void)finalizeTextureMemory:(void *)memory;
+- (void)copyFromLinearBytes:(const void *)bytes
+               linearOffset:(NSUInteger)offset
+          linearBytesPerRow:(NSUInteger)bytesPerRow
+        linearBytesPerImage:(NSUInteger)bytesPerImage
+            toTextureMemory:(void *)memory
+               textureSlice:(NSUInteger)slice
+               textureLevel:(NSUInteger)level
+              textureRegion:(MTLRegion)region;
 @end
 
 @protocol SPIQueue
@@ -334,13 +350,38 @@ void checkResources(id<MTLDevice> device)
     check([trackedReason containsString:@"tracked kernel resource"] &&
               [trackedWait containsString:@"tracked kernel resource"],
           "a tracked kernel resource's event is LOUD");
-    // -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] fails: no host reads the layout.
-    void *bytes = calloc(1, 65536);
-    NSString *reason = loudReason(^{
-        (void)[(id<SPIDevice>)device newTextureWithBytesNoCopy:bytes length:65536 descriptor:td deallocator:nil];
-    });
+    // A texture over memory a texture layout filled (-[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:
+    // deallocator:]): its texels are the memory's, its deallocator receives the memory, and the size of its kernel
+    // resource is LOUD.
+    td.hazardTrackingMode = MTLHazardTrackingModeDefault;
+    id<SPITextureLayout> layout = [(id<SPIDevice>)device newTextureLayoutWithDescriptor:td isHeapOrBufferBacked:NO];
+    void *bytes = nullptr;
+    check(layout && posix_memalign(&bytes, layout.alignment, layout.size) == 0, "a texture layout and its memory");
+    std::vector<uint32_t> texels(64 * 64);
+    for (size_t i = 0; i < texels.size(); i++)
+        texels[i] = uint32_t(i * 2654435761u);
+    [layout copyFromLinearBytes:texels.data() linearOffset:0 linearBytesPerRow:256 linearBytesPerImage:256 * 64
+                toTextureMemory:bytes textureSlice:0 textureLevel:0 textureRegion:MTLRegionMake2D(0, 0, 64, 64)];
+    [layout finalizeTextureMemory:bytes];
+    __block void *released = nullptr;
+    __block NSUInteger releasedLength = 0;
+    @autoreleasepool {
+        id<MTLTexture> noCopy = [(id<SPIDevice>)device newTextureWithBytesNoCopy:bytes length:layout.size descriptor:td
+                                                                     deallocator:^(void *pointer, NSUInteger length) {
+            released = pointer;
+            releasedLength = length;
+        }];
+        check(noCopy != nil, "newTextureWithBytesNoCopy: makes a texture over the layout's memory");
+        std::vector<uint32_t> read(64 * 64);
+        [noCopy getBytes:read.data() bytesPerRow:256 fromRegion:MTLRegionMake2D(0, 0, 64, 64) mipmapLevel:0];
+        check(read == texels, "getBytes of a texture over caller memory reads the memory's texels");
+        NSString *reason = loudReason(^{
+            (void)noCopy.allocatedSize;
+        });
+        check([reason containsString:@"over caller memory"], "the kernel resource size of a no-copy texture is LOUD");
+    }
+    check(released == bytes && releasedLength == layout.size, "the deallocator receives the memory and its length");
     free(bytes);
-    check([reason containsString:@"has no reader at the host"], "newTextureWithBytesNoCopy: is LOUD");
 }
 
 void checkConstants()

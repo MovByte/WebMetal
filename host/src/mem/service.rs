@@ -46,8 +46,8 @@ use crate::format::webgpu::{HostFeatures, WebGpuFormat};
 use crate::gpu::{Api, GpuFuture};
 use webmetal_wire::{
     BufferDidModifyRangeReply, CreateBufferNoCopyReply, CreateBufferReply, CreateBufferTextureReply,
-    CreateBufferWithBytesReply, CreateHeapReply, CreateLinearTextureReply, CreateTextureReply,
-    CreateTextureViewLevelsSlicesReply, CreateTextureViewLevelsSlicesResourceIndexReply,
+    CreateBufferWithBytesReply, CreateHeapReply, CreateLinearTextureReply, CreateTextureNoCopyReply,
+    CreateTextureReply, CreateTextureViewLevelsSlicesReply, CreateTextureViewLevelsSlicesResourceIndexReply,
     CreateTextureViewLevelsSlicesSwizzleReply, CreateTextureViewLevelsSlicesSwizzleResourceIndexReply,
     CreateTextureViewReply, CreateTextureViewResourceIndexReply, CreateTextureWithIOSurfaceReply, Failure,
     GetBytesReply, GetBytesSliceReply, Handle, HeapCreateBufferReply, HeapCreateTextureReply, MakeAliasableReply,
@@ -63,6 +63,7 @@ use super::heap::Heap;
 use super::layout::RegionArgs;
 use super::linear::LinearTexture;
 use super::memory::Memory;
+use super::nocopy::{self, GuestReadback};
 use super::purgeable::Purgeable;
 use super::surface::SurfaceReadback;
 use super::texture::{
@@ -234,11 +235,9 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 attach = mem.create_texture_iosurface(g, e, task, r)?;
                 ok!(CreateTextureWithIOSurface, CreateTextureWithIOSurfaceReply)
             }
-            Request::CreateTextureNoCopy(_) => {
-                return Err(MemError::unimplemented(
-                    "-[MTLDeviceSPI newTextureWithBytesNoCopy:length:descriptor:deallocator:]: the texel layout the \
-                     A10X driver gives such a texture's bytes is not in the device profile",
-                ));
+            Request::CreateTextureNoCopy(r) => {
+                attach = mem.create_texture_no_copy(g, e, task, r)?;
+                ok!(CreateTextureNoCopy, CreateTextureNoCopyReply)
             }
             Request::CreateTextureView(r) => {
                 let a = ViewArgs {
@@ -326,7 +325,10 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 ok!(CreateLinearTexture, CreateLinearTextureReply)
             }
             Request::ReplaceRegion(r) => {
-                if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
+                if let Some(t) = payload::<Texture<A>>(objects, r.texture).filter(|t| t.guest.is_some()) {
+                    let (c, call) = nocopy::replace_region_copy(r);
+                    mem.replace_region_guest(e, call, &t, &c, r.pixel_bytes.0)?;
+                } else if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     mem.replace_region(g, e, task, &t, r)?;
                 } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
                     let a = args(&r.region, r.level, 0, r.bytes_per_row, 0);
@@ -344,7 +346,10 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 return Ok(Served::Ready(ok!(ReplaceRegion, ReplaceRegionReply)));
             }
             Request::ReplaceRegionSlice(r) => {
-                if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
+                if let Some(t) = payload::<Texture<A>>(objects, r.texture).filter(|t| t.guest.is_some()) {
+                    let (c, call) = nocopy::replace_region_slice_copy(r);
+                    mem.replace_region_guest(e, call, &t, &c, r.pixel_bytes.0)?;
+                } else if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     mem.replace_region_slice(g, e, task, &t, r)?;
                 } else if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
                     let a = args(&r.region, r.level, r.slice, r.bytes_per_row, r.bytes_per_image);
@@ -357,6 +362,11 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 return Ok(Served::Ready(ok!(ReplaceRegionSlice, ReplaceRegionSliceReply)));
             }
             Request::GetBytes(r) => {
+                if let Some(t) = payload::<Texture<A>>(objects, r.texture).filter(|t| t.guest.is_some()) {
+                    let (c, call) = nocopy::get_bytes_copy(r);
+                    mem.get_bytes_guest(e, call, &t, &c, r.pixel_bytes.0)?;
+                    return Ok(Served::Ready(ok!(GetBytes, GetBytesReply)));
+                }
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     let read = mem.get_bytes(g, &t, r)?;
                     return Ok(self.later(task, read, r.pixel_bytes.0, |res| match res {
@@ -377,6 +387,11 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                 return Ok(Served::Ready(ok!(GetBytes, GetBytesReply)));
             }
             Request::GetBytesSlice(r) => {
+                if let Some(t) = payload::<Texture<A>>(objects, r.texture).filter(|t| t.guest.is_some()) {
+                    let (c, call) = nocopy::get_bytes_slice_copy(r);
+                    mem.get_bytes_guest(e, call, &t, &c, r.pixel_bytes.0)?;
+                    return Ok(Served::Ready(ok!(GetBytesSlice, GetBytesSliceReply)));
+                }
                 if let Some(t) = payload::<Texture<A>>(objects, r.texture) {
                     let read = mem.get_bytes_slice(g, &t, r)?;
                     return Ok(self.later(task, read, r.pixel_bytes.0, |res| match res {
@@ -624,6 +639,11 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
                 if t.surface.is_some() {
                     mem.prepare_surface_texture(g, e, &t).map_err(|e| e.failure())?;
                 }
+                if t.guest.is_some() {
+                    mem.prepare_guest_texture(g, e, &t).map_err(|e| e.failure())?;
+                }
+            } else if let Some(v) = payload::<TextureView<A>>(objects, h).filter(|v| v.root.guest.is_some()) {
+                mem.prepare_guest_texture(g, e, &v.root).map_err(|e| e.failure())?;
             } else if let Some(lt) = payload::<LinearTexture<A>>(objects, h) {
                 mem.upload_buffer(g, e, &lt.buffer).map_err(|e| e.failure())?;
                 linear.push(lt);
@@ -656,6 +676,7 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         let objects = cx.objects();
         let mut buffers = Vec::new();
         let mut surfaces: Vec<SurfaceReadback<A>> = Vec::new();
+        let mut guests: Vec<GuestReadback<A>> = Vec::new();
         let mut decodes: Vec<(Rc<Texture<A>>, TextureRead<A>)> = Vec::new();
         // A texture named directly and through views of it is written back once.
         let mut textures: Vec<Rc<Texture<A>>> = Vec::new();
@@ -671,6 +692,9 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         for t in &textures {
             if t.surface.is_some() {
                 surfaces.extend(mem.read_back_surface_texture(g, &encoder, t).map_err(|e| e.failure())?);
+            }
+            if t.guest.is_some() {
+                guests.extend(mem.read_back_guest_texture(g, &encoder, t).map_err(|e| e.failure())?);
             }
             // Any subresource a blit left stale: every level, every slice.
             let stale = (0..t.geometry.mip_levels)
@@ -697,7 +721,7 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
             }
         }
         let readbacks: Readbacks<A> = mem.encode_readbacks(g, &encoder, &unique).map_err(|e| e.failure())?;
-        if readbacks.is_empty() && surfaces.is_empty() && decodes.is_empty() {
+        if readbacks.is_empty() && surfaces.is_empty() && guests.is_empty() && decodes.is_empty() {
             return Ok(None);
         }
         let (embedder, decoded) = (self.embedder.clone(), self.decoded.clone());
@@ -707,6 +731,10 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
             for s in surfaces {
                 let a = s.wait().await.map_err(|e| e.failure())?;
                 a.merge(&mem, embedder.as_ref()).map_err(|e| e.failure())?;
+            }
+            for r in guests {
+                let a = r.wait(mem.clone()).await.map_err(|e| e.failure())?;
+                a.merge(embedder.as_ref()).map_err(|e| e.failure())?;
             }
             for (t, read) in decodes {
                 let blocks = read.wait().await.map_err(|e| e.failure())?;

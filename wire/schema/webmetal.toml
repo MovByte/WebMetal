@@ -1023,7 +1023,9 @@ name = "CreateTextureNoCopy"
 channel = "control"
 methods = ["MTLDeviceSPI newTextureWithBytesNoCopy:length:descriptor:deallocator:"]
 result = "texture"
-args = ["texture: Texture", "bytes: guest_addr", "length: u64", "descriptor: TextureDescriptor", "deallocator: block"]
+extra = ["page_size", "iosurface_alignment"]
+args = ["texture: Texture", "bytes: guest_addr", "length: u64", "descriptor: TextureDescriptor", "deallocator: block", "page_size: u64", "iosurface_alignment: u64"]
+doc = "The texture's memory is the calling task's, from bytes on, in the A10X driver's layout for the descriptor; page_size and iosurface_alignment are the values that layout reads from the running system (vm_page_size and IOSurfaceAlignProperty(kIOSurfaceOffset, 1)). The host keeps the memory and the texture equal at the coherence points of buffers (plan section 6.2). The deallocator block stays in the guest."
 
 [[op]]
 code = 0x0207

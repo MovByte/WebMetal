@@ -839,3 +839,110 @@ fn texture_layout_copies_through_the_executor() {
     h.g.assert_no_errors();
 }
 
+/// A texture over caller memory (`newTextureWithBytesNoCopy:length:descriptor:deallocator:`) the texture layout's
+/// copies filled, through the executor: blits and getBytes see the memory's texels, replaceRegion writes the memory, a
+/// blit that writes the texture reaches the memory once the command buffer completes, and CPU writes to the memory
+/// reach the next command buffer.
+#[test]
+fn no_copy_texture_through_the_executor() {
+    let h = Harness::new();
+    let d = layout_texture();
+    let (memory, size, levels) = layout_fill(&h, &d);
+    let t = h.handle();
+    h.ok(Request::CreateTextureNoCopy(CreateTextureNoCopy {
+        texture: t,
+        bytes: GuestAddr(memory),
+        length: size,
+        descriptor: d.clone(),
+        deallocator: false,
+        page_size: 16384,
+        iosurface_alignment: 16384,
+    }));
+    let q = h.queue();
+    let read_level = |level: u64| -> Vec<u8> {
+        let (w, hh) = layout_extent(level);
+        let (out, out_addr) = h.buffer(&vec![0u8; (w * hh * 4) as usize], 0);
+        let copy_out = Command::BlitCopyTextureToBuffer(BlitCopyTextureToBuffer {
+            source_texture: Some(t),
+            source_slice: 0,
+            source_level: level,
+            source_origin: Origin { x: 0, y: 0, z: 0 },
+            source_size: Size { width: w, height: hh, depth: 1 },
+            destination_buffer: Some(out),
+            destination_offset: 0,
+            destination_bytes_per_row: w * 4,
+            destination_bytes_per_image: w * hh * 4,
+        });
+        h.commit(q, &blit(h.handle(), vec![copy_out]), &[t, out]);
+        h.idle();
+        h.guest.cpu_read(out_addr, (w * hh * 4) as usize)
+    };
+    for (level, texels) in levels.iter().enumerate() {
+        assert_eq!(&read_level(level as u64), texels, "the GPU reads level {level} from the memory");
+    }
+    let (w1, h1) = layout_extent(1);
+    let got = h.alloc(w1 * h1 * 4);
+    h.ok(Request::GetBytesSlice(GetBytesSlice {
+        texture: t,
+        pixel_bytes: GuestAddr(got),
+        bytes_per_row: w1 * 4,
+        bytes_per_image: w1 * h1 * 4,
+        region: region(w1, h1),
+        level: 1,
+        slice: 0,
+    }));
+    assert_eq!(h.guest.cpu_read(got, (w1 * h1 * 4) as usize), levels[1], "getBytes reads the memory");
+    let patch = layout_pattern(5 * 3 * 4, 77);
+    let patch_addr = h.alloc(patch.len() as u64);
+    h.guest.cpu_write(patch_addr, &patch);
+    h.ok(Request::ReplaceRegionSlice(ReplaceRegionSlice {
+        texture: t,
+        region: Region { origin: Origin { x: 30, y: 15, z: 0 }, size: Size { width: 5, height: 3, depth: 1 } },
+        level: 0,
+        slice: 0,
+        pixel_bytes: GuestAddr(patch_addr),
+        bytes_per_row: 20,
+        bytes_per_image: 0,
+    }));
+    let mut expected = levels[0].clone();
+    for y in 0..3 {
+        expected[((15 + y) * 37 + 30) * 4..][..20].copy_from_slice(&patch[y * 20..(y + 1) * 20]);
+    }
+    let out = h.alloc(expected.len() as u64);
+    h.request(layout_copy_out(&d, memory, out, 0, region(37, 21)));
+    assert_eq!(h.guest.cpu_read(out, expected.len()), expected, "replaceRegion wrote the memory");
+    assert_eq!(read_level(0), expected, "the next blit sees replaceRegion's texels");
+    let (w2, h2) = layout_extent(2);
+    let written = layout_pattern((w2 * h2 * 4) as usize, 1234);
+    let (input, _) = h.buffer(&written, 0);
+    let copy_in = Command::BlitCopyBufferToTexture(BlitCopyBufferToTexture {
+        source_buffer: Some(input),
+        source_offset: 0,
+        source_bytes_per_row: w2 * 4,
+        source_bytes_per_image: w2 * h2 * 4,
+        source_size: Size { width: w2, height: h2, depth: 1 },
+        destination_texture: Some(t),
+        destination_slice: 0,
+        destination_level: 2,
+        destination_origin: Origin { x: 0, y: 0, z: 0 },
+    });
+    h.commit(q, &blit(h.handle(), vec![copy_in]), &[t, input]);
+    h.idle();
+    let out = h.alloc(written.len() as u64);
+    h.request(layout_copy_out(&d, memory, out, 2, region(w2, h2)));
+    assert_eq!(h.guest.cpu_read(out, written.len()), written, "the GPU's write reached the memory");
+    for level in [0usize, 1, 3, 4, 5] {
+        let (w, hh) = layout_extent(level as u64);
+        let out = h.alloc(w * hh * 4);
+        h.request(layout_copy_out(&d, memory, out, level as u64, region(w, hh)));
+        let want = if level == 0 { &expected } else { &levels[level] };
+        assert_eq!(&h.guest.cpu_read(out, (w * hh * 4) as usize), want, "level {level} is kept");
+    }
+    let (w3, h3) = layout_extent(3);
+    let rewritten = layout_pattern((w3 * h3 * 4) as usize, 4321);
+    let src = h.alloc(rewritten.len() as u64);
+    h.guest.cpu_write(src, &rewritten);
+    h.request(layout_copy_in(&d, memory, src, 3, region(w3, h3)));
+    assert_eq!(read_level(3), rewritten, "the CPU's write reached the texture");
+    h.g.assert_no_errors();
+}

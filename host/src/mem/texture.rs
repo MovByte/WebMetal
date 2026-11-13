@@ -74,6 +74,7 @@ use super::error::MemError;
 use super::heap::Heap;
 use super::layout::{Blocks, Geometry, RegionArgs, RegionLayout, StagingPitch, TextureType};
 use super::memory::Memory;
+use super::nocopy::GuestTextureMemory;
 use super::options::{ResourceOptions, StorageMode};
 use super::purgeable::Purgeable;
 use super::surface::SurfacePlane;
@@ -131,10 +132,10 @@ struct State {
     /// Per alias (in the order of `Texture::aliases`), per subresource: the alias holds the current contents.
     aliases: Vec<Vec<bool>>,
     purgeable: Purgeable,
-    /// For an IOSurface texture: the plane version the texture holds, and whether GPU work wrote it since its last
-    /// write-back.
+    /// For an IOSurface texture: the plane version the texture holds. For it and for a texture over guest memory:
+    /// whether GPU work wrote it since its last write-back.
     surface_version: u64,
-    surface_written: bool,
+    backing_written: bool,
 }
 
 /// A second texture that holds a texture's contents in another WebGPU format: the storage of the texture's views in
@@ -229,6 +230,9 @@ pub struct Texture<A: Api> {
     pub blocks: Option<Blocks>,
     /// The IOSurface plane whose memory the texture is, for `newTextureWithDescriptor:iosurface:plane:`.
     pub surface: Option<Rc<SurfacePlane>>,
+    /// The guest memory whose bytes, in the A10X driver's layout, the texture is, for
+    /// `newTextureWithBytesNoCopy:length:descriptor:deallocator:`.
+    pub guest: Option<Rc<GuestTextureMemory>>,
     /// The heap the texture was made from (`HeapCreateTexture`), whose purgeable state is the texture's.
     pub heap_object: Option<Rc<RefCell<Heap>>>,
     pub label: String,
@@ -316,8 +320,8 @@ impl<A: Api> Texture<A> {
         for a in &mut st.aliases {
             a[i] = false;
         }
-        if self.surface.is_some() {
-            st.surface_written = true;
+        if self.surface.is_some() || self.guest.is_some() {
+            st.backing_written = true;
         }
     }
 
@@ -332,13 +336,13 @@ impl<A: Api> Texture<A> {
 
     pub(crate) fn surface_state(&self) -> (u64, bool) {
         let st = self.state.borrow();
-        (st.surface_version, st.surface_written)
+        (st.surface_version, st.backing_written)
     }
 
     pub(crate) fn set_surface_state(&self, version: u64, written: bool) {
         let mut st = self.state.borrow_mut();
         st.surface_version = version;
-        st.surface_written = written;
+        st.backing_written = written;
     }
 }
 
@@ -596,7 +600,7 @@ impl<A: Api> Memory<A> {
             aliases: Vec::new(),
             purgeable: Purgeable::NonVolatile,
             surface_version: 0,
-            surface_written: false,
+            backing_written: false,
         };
         let label = desc.label.clone();
         Ok(Rc::new(Texture {
@@ -608,6 +612,7 @@ impl<A: Api> Memory<A> {
             usage: d.usage,
             blocks,
             surface,
+            guest: None,
             heap_object: None,
             label,
             stored,
@@ -635,6 +640,12 @@ impl<A: Api> Memory<A> {
             return Err(MemError::unimplemented(format!(
                 "{call} of an IOSurface texture: the CPU's bytes are the surface's, which the kernel's IOSurface \
                  implementation serves"
+            )));
+        }
+        if t.guest.is_some() {
+            return Err(MemError::unimplemented(format!(
+                "{call} of a view of a texture over caller memory: the driver copies through the view's own layout of \
+                 the memory, which is not traced"
             )));
         }
         match t.storage {
@@ -1241,14 +1252,21 @@ impl<A: Api> Memory<A> {
                 }
             }
         }
-        if t.surface.is_some() {
-            st.surface_written = true;
+        if t.surface.is_some() || t.guest.is_some() {
+            st.backing_written = true;
         }
     }
 
     /// `setPurgeableState:` of a texture that is not in a heap. Emptying zero-fills the contents (plan section 6.2):
     /// a write of zero blocks to every subresource of every copy.
     pub fn set_texture_purgeable(&self, g: &impl Calls<A>, t: &Texture<A>, state: u64) -> Result<u64, MemError> {
+        // MTLPurgeableStateKeepCurrent (1) only reads the state.
+        if t.guest.is_some() && state != 1 {
+            return Err(MemError::unimplemented(
+                "-[MTLResource setPurgeableState:] of a texture over caller memory: what the kernel does with the \
+                 purgeability of a resource over a task's own pages is not traced",
+            ));
+        }
         let tr = t.state.borrow_mut().purgeable.set(state, "-[MTLResource setPurgeableState:]")?;
         if tr.discard && t.storage != StorageMode::Memoryless {
             self.zero_texture(g, t)?;
@@ -1370,8 +1388,8 @@ impl<A: Api> Memory<A> {
         for a in &mut st.aliases {
             a[i] = false;
         }
-        if t.surface.is_some() {
-            st.surface_written = true;
+        if t.surface.is_some() || t.guest.is_some() {
+            st.backing_written = true;
         }
         Ok(())
     }

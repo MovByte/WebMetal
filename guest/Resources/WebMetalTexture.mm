@@ -5,8 +5,8 @@
 // the texture out in its private memory format (AGX::Texture, the AGX layout), and creates the kernel resource. The
 // plugin calls the same validation, and the host executor holds the texture's contents (CreateTexture and the other
 // creation requests). The AGX layout's sizes, alignment and row pitch come from the port of AGX::TextureGen2
-// (WebMetalTextureLayout.h) for device and heap textures and their views; textures over IOSurfaces, buffers and caller
-// memory have no layout here, and what depends on it is LOUD for them.
+// (WebMetalTextureLayout.h) for device and heap textures, textures over caller memory and their views; textures over
+// IOSurfaces and buffers have no layout here, and what depends on it is LOUD for them.
 
 #import "WebMetalTexture.h"
 #import "WebMetalBuffer.h"
@@ -55,8 +55,10 @@ void _mtlValidateTextureUsage(MTLTextureUsage usage);
 
 namespace {
 
-constexpr char kLayout[] = "the A10X texture layout (AGX::TextureGen2 in AGXMetalA10) of a texture over an IOSurface, a "
-                           "buffer or caller memory is not ported";
+constexpr char kLayout[] = "the A10X texture layout (AGX::TextureGen2 in AGXMetalA10) of a texture over an IOSurface or "
+                           "a buffer is not ported";
+constexpr char kNoCopySize[] = "the size of the kernel resource IOGPU makes over caller memory for a texture "
+                               "(sysMemSize: the layout's size) is not established for 21H461";
 
 // The kernel's page size on 21H461 (page_size, set to 0x4000 at 0xfffffff007339070 of kernelcache.release.ipad7).
 // IOGPUResource::newResourceWithOptions (0xfffffff005bc3f94) rounds a resource's system memory up to it, and the
@@ -103,6 +105,12 @@ constexpr uint64_t kKernelPageSize = 0x4000;
     // is its CPU size, which it adds to the device total (_accounted).
     bool _suballocated;
     int64_t _accounted;
+    // A texture over caller memory (newTextureWithBytesNoCopy:length:descriptor:deallocator:): IOGPUMetalTexture's
+    // _pointer, _length and _deallocator.
+    bool _noCopy;
+    void *_pointer;
+    NSUInteger _length;
+    void (^_deallocator)(void *pointer, NSUInteger length);
 }
 @end
 
@@ -246,7 +254,7 @@ static void create(WebMetalDevice *device, SEL _cmd, WebMetalTexture *texture, c
     if (!reply.ok)
         WMLoudMethod(device, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
     texture->_state.created = true;
-    if (texture->_hasLayout) {
+    if (texture->_hasLayout && !texture->_noCopy) {
         texture->_accounted = static_cast<int64_t>(texture->_suballocated ? texture->_cpuSizeBytes
                                                                           : texture->_state.residentSize);
         DeviceAddAllocation(device, texture->_accounted);
@@ -303,6 +311,43 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
     request.texture = texture->_state.handle;
     request.descriptor = d;
     create<wire::CreateTexture, wire::CreateTextureReply>(device, _cmd, texture, request);
+    return texture;
+}
+
+// -[AGXA10FamilyDevice newTextureWithBytesNoCopy:length:descriptor:deallocator:] (AGXMetalA10 0x21c8d62c8):
+// -[AGXTexture initWithDevice:bytes:length:desc:deallocator:] (0x21c9d54e0) validates the descriptor, lays the texture
+// out as a device texture (initImplWithDevice:...allowNPOT:YES ... isHeapBacked:NO, nil when the layout is not valid)
+// and has -[IOGPUMetalTexture initWithDevice:descriptor:sysMemPointer:sysMemSize:sysMemLength:sysMemRowBytes:args:
+// argsSize:deallocator:] (IOGPU 0x1fcb30400) make the kernel resource over the caller's memory, the layout's size from
+// bytes on, keeping the pointer, the length and a copy of the deallocator. -validateBufferTextureWithSize: (0x21c982338)
+// checks the length and the watermark only for layouts with +0x17a set, which a texture without a buffer or an IOSurface
+// does not have. The memory holds the texels in the A10X layout; the host keeps it and the texture equal
+// (CreateTextureNoCopy).
+WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes, NSUInteger length,
+                                  MTLTextureDescriptor *descriptor, void (^deallocator)(void *pointer, NSUInteger length))
+{
+    if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
+        return nil;
+    const wire::TextureDescriptor d = WireTextureDescriptor(device, _cmd, descriptor);
+    const agx::TextureAllocation layout = agx::initImplDevice(LayoutDescriptorFields(d), LayoutSystemValues());
+    if (!layout.initialized)
+        return nil;
+    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    setLayout(texture, layout);
+    texture->_noCopy = true;
+    texture->_pointer = bytes;
+    texture->_length = length;
+    texture->_deallocator = [deallocator copy];
+    const agx::SystemValues system = LayoutSystemValues();
+    wire::CreateTextureNoCopy request;
+    request.texture = texture->_state.handle;
+    request.bytes = reinterpret_cast<uint64_t>(bytes);
+    request.length = length;
+    request.descriptor = d;
+    request.deallocator = deallocator != nil;
+    request.pageSize = system.vmPageSize;
+    request.iosurfaceAlignment = system.iosurfaceAlignment;
+    create<wire::CreateTextureNoCopy, wire::CreateTextureNoCopyReply>(device, _cmd, texture, request);
     return texture;
 }
 
@@ -589,9 +634,9 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
 
 @implementation WebMetalTexture
 
-// -[IOGPUMetalTexture dealloc] (IOGPU 0x1fcb2b634) releases the parent, buffer and surface and runs a no-copy
-// deallocator after the kernel resource is gone; here Release goes first so that the host has stopped using caller
-// memory when it is handed back. A heap resource that is not memoryless makes itself aliasable, and gives its range back
+// -[IOGPUMetalTexture dealloc] (IOGPU 0x1fcb2b634) releases the parent and the buffer, runs a no-copy deallocator with
+// the pointer and the length, releases the surface, and leaves the kernel resource to -[IOGPUMetalResource dealloc];
+// here Release goes first so that the host has stopped using caller memory when it is handed back. A heap resource that is not memoryless makes itself aliasable, and gives its range back
 // to the heap unless it is a view or a buffer's texture: a view's range is its parent's, which the view's
 // makeAliasable unpins. A view the host never created was never handed out and leaves its parent's range alone. A view
 // shares its parent's kernel resource and adds nothing to the device's total.
@@ -599,7 +644,7 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
 {
     using namespace webmetal;
     if (_state.created && !_state.heap && !_parentTexture) {
-        if (_hasLayout)
+        if (_hasLayout && !_noCopy)
             DeviceAddAllocation(_state.device, -_accounted);
         else
             DeviceAddUnsized(_state.device, -1);
@@ -611,6 +656,10 @@ static wire::TextureSwizzleChannels wireSwizzle(MTLTextureSwizzleChannels swizzl
             [(WebMetalHeap *)_state.heap deallocHeapSubResource];
     }
     ReleaseObject(_state, "-[WebMetalTexture dealloc]");
+    if (_deallocator) {
+        _deallocator(_pointer, _length);
+        _deallocator = nil;
+    }
 }
 
 // MTLResource ----------------------------------------------------------------------------------------------------------
@@ -717,6 +766,8 @@ static void checkTextureEvent(WebMetalTexture *self, SEL _cmd)
         return _state.heapLength;
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
+    if (_noCopy || (_parentTexture && _parentTexture->_noCopy))
+        WMLoudMethod(self, _cmd, kNoCopySize);
     return _state.residentSize;
 }
 
@@ -735,6 +786,8 @@ static void checkTextureEvent(WebMetalTexture *self, SEL _cmd)
         return [_state.heap currentAllocatedSize] & 0x00ffffffffffffffull;
     if (!_hasLayout)
         WMLoudMethod(self, _cmd, kLayout);
+    if (_noCopy)
+        WMLoudMethod(self, _cmd, kNoCopySize);
     return _state.residentSize & 0x00ffffffffffffffull;
 }
 
