@@ -760,6 +760,23 @@ fn views_of_each_plan() {
     // (texture.view-srgb-without-usage).
     let rgba = h.texture(texture_descriptor(T2D, fmt("RGBA8Unorm"), (4, 4, 1), 1, 1, SHARED, SHADER_READ, 1));
     format_view(&h, rgba, fmt("RGBA8Unorm_sRGB")).unwrap();
+    // Copy: views in other formats of a texture without the usage, which the A10X driver makes as well and Metal
+    // returns without its debug layer (texture.error-view-without-usage and
+    // validation.texture-view-without-format-view-usage, release).
+    let uint = format_view(&h, rgba, fmt("RGBA8Uint")).unwrap();
+    format_view(&h, rgba, fmt("R32Float")).unwrap();
+    let codes = pattern(64, 9);
+    let addr = h.alloc(64);
+    h.guest.cpu_write(addr, &codes);
+    h.ok(Request::ReplaceRegion(ReplaceRegion {
+        texture: rgba,
+        region: region((0, 0, 0), (4, 4, 1)),
+        level: 0,
+        pixel_bytes: GuestAddr(addr),
+        bytes_per_row: 16,
+    }));
+    let all: Vec<_> = (0..16).map(|i| query(i % 4, i / 4, 0, 0)).collect();
+    assert_eq!(run_reads(&h, "tex_read_2d", uint, &all), texel_bytes(&rgba8_texels(&codes)), "{}", h.name());
     // SharedStorage: R8Unorm as R8Unorm_sRGB (both r8unorm), B5G6R5Unorm as R16Uint (both r16uint).
     let r8 = h.texture(texture_descriptor(T2D, fmt("R8Unorm"), (4, 4, 1), 1, 1, SHARED, SHADER_READ, 1));
     format_view(&h, r8, fmt("R8Unorm_sRGB")).unwrap();
@@ -1067,11 +1084,6 @@ fn view_refusals() {
     }));
     undefined(f.clone());
     assert!(f.message.contains("MTLTextureSwizzle"), "{f:?}");
-    // A reinterpreting view of a texture without MTLTextureUsagePixelFormatView (the debug layer's rule).
-    let rgba = h.texture(texture_descriptor(T2D, fmt("RGBA8Unorm"), (4, 4, 1), 1, 1, PRIVATE, SHADER_READ, 1));
-    let f = format_view(&h, rgba, fmt("RGBA8Uint")).unwrap_err();
-    undefined(f.clone());
-    assert!(f.message.contains("MTLTextureUsagePixelFormatView"), "{f:?}");
     // A view in another format of a multisample texture.
     let ms = h.texture(texture_descriptor(
         T2D_MS,

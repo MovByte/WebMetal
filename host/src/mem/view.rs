@@ -36,16 +36,18 @@
 //! **What is checked when a view is made.** Metal's own validation of the arguments
 //! (`_mtlValidateArgumentsForTextureViewOnDevice`, which asserts in release builds as well) runs in the guest. The host
 //! checks what it relies on and refuses the rest with the rule it breaks: levels and slices inside the parent; the
-//! type casts the documentation lists; the slice count of the view's type; the `pixelFormatView` usage for a view that
-//! does more than convert between sRGB and linear (the debug layer's `_validateTextureView`); and that the A10X makes
-//! the view at all (no view of a memoryless texture: its layout is nil).
+//! type casts the documentation lists; the slice count of the view's type; and that the A10X makes the view at all (no
+//! view of a memoryless texture: its layout is nil). The `pixelFormatView` usage is the debug layer's rule
+//! (`_validateTextureView`: "texture usage (0x01) doesn't specify MTLTextureUsagePixelFormatView (0x10)"), which the
+//! debug layer applies in the guest before the driver is reached. Without it the A10X driver makes the view as it
+//! does any other (`-[AGXA10FamilyTexture initImplWithTexture:...]` reads no usage), and Metal returns it
+//! (`texture.error-view-without-usage`, release), so the host makes it too.
 
 use std::ops::Range;
 use std::rc::Rc;
 
 use crate::format::handling::{self, Dimension, Read, Resolution, Swizzle, Unavailable};
 use crate::format::reinterpret::{ViewPlan, view_plan};
-use crate::format::table::METAL_FORMATS;
 use crate::format::webgpu::WebGpuFormat;
 use crate::gpu::Api;
 use crate::gpu::idl::{TextureAspect, TextureFormat, TextureViewDescriptor, TextureViewDimension};
@@ -57,7 +59,7 @@ use super::error::MemError;
 use super::layout::{Geometry, RegionArgs, RegionLayout, TextureType};
 use super::memory::Memory;
 use super::options::StorageMode;
-use super::texture::{Alias, Texture, TextureRead, idl_format, usage};
+use super::texture::{Alias, Texture, TextureRead, idl_format};
 use crate::embed::{Embedder, TaskId};
 
 /// `MTLTextureSwizzleChannelsDefault`: red 2, green 3, blue 4, alpha 5 (`MTLTextureSwizzle` of `MTLTexture.h`).
@@ -283,24 +285,6 @@ fn castable(parent: TextureType, view: TextureType) -> bool {
         || matches!((parent, view), (D2, D2Array) | (D2Array | Cube | CubeArray, D2 | D2Array | Cube | CubeArray))
 }
 
-/// The name of a Metal pixel format without its `MTLPixelFormat` prefix.
-fn format_name(value: u32) -> Option<&'static str> {
-    METAL_FORMATS.iter().find(|r| r.value == value).and_then(|r| r.name.strip_prefix("MTLPixelFormat"))
-}
-
-/// Do two Metal formats differ only in converting between sRGB and linear? `MTLPixelFormat.h` names the sRGB form of a
-/// format with the suffix `_sRGB`, and that of an ASTC LDR format by replacing `_LDR` with `_sRGB`.
-fn srgb_pair(a: u32, b: u32) -> bool {
-    let linear = |v: u32| {
-        format_name(v).map(|n| match n.strip_suffix("_sRGB") {
-            Some(base) if base.starts_with("ASTC_") => format!("{base}_LDR"),
-            Some(base) => base.to_string(),
-            None => n.to_string(),
-        })
-    };
-    a != b && linear(a).is_some_and(|l| Some(l) == linear(b))
-}
-
 fn range_u32(call: &'static str, what: &str, r: &WireRange, within: u32) -> Result<Range<u32>, MemError> {
     let end = r.location.checked_add(r.length);
     if r.length == 0 || end.is_none_or(|e| e > u64::from(within)) {
@@ -322,10 +306,10 @@ impl<A: Api> Memory<A> {
         a: &ViewArgs<'_>,
     ) -> Result<Rc<TextureView<A>>, MemError> {
         let call = a.call;
-        // The parent's view of the root: its geometry, bases, format and swizzle.
-        let (root, pg, (pbase_level, pbase_slice), pformat, pswizzle) = match parent {
-            Parent::Texture(t) => (t.clone(), t.geometry, (0, 0), t.format, t.swizzle),
-            Parent::View(v) => (v.root.clone(), v.geometry, (v.base_level, v.base_slice), v.format, v.swizzle),
+        // The parent's view of the root: its geometry, bases and swizzle.
+        let (root, pg, (pbase_level, pbase_slice), pswizzle) = match parent {
+            Parent::Texture(t) => (t.clone(), t.geometry, (0, 0), t.swizzle),
+            Parent::View(v) => (v.root.clone(), v.geometry, (v.base_level, v.base_slice), v.swizzle),
         };
         if root.surface.is_some() {
             return Err(MemError::unimplemented(format!(
@@ -409,23 +393,6 @@ impl<A: Api> Memory<A> {
         // Pixel format.
         let format = u32::try_from(a.pixel_format)
             .map_err(|_| MemError::undefined(call, format!("pixel format {}", a.pixel_format)))?;
-        if format != pformat
-            && !srgb_pair(format, pformat)
-            && root.usage != usage::UNKNOWN
-            && root.usage & usage::PIXEL_FORMAT_VIEW == 0
-        {
-            // The debug layer: "texture usage (0x01) doesn't specify MTLTextureUsagePixelFormatView (0x10)"
-            // (`texture.error-view-without-usage`); a view between sRGB and linear passes it
-            // (`texture.view-srgb-without-usage`).
-            return Err(MemError::undefined(
-                call,
-                format!(
-                    "a view in pixel format {format} of a texture in pixel format {pformat} whose usage {:#x} lacks \
-                     MTLTextureUsagePixelFormatView (debug layer, _validateTextureView)",
-                    root.usage
-                ),
-            ));
-        }
         let unavailable = |u: Unavailable| match u {
             Unavailable::NotOnDevice(why) => MemError::undefined(call, why.to_string()),
             Unavailable::Refused(r) => MemError::refused(r),
@@ -549,15 +516,6 @@ mod tests {
         assert!(castable(D1, D1) && !castable(D1, D1Array) && castable(D1Array, D1Array));
         assert!(castable(D3, D3) && !castable(D3, D2) && !castable(D2, D3));
         assert!(castable(D2Multisample, D2Multisample) && !castable(D2Multisample, D2));
-    }
-
-    #[test]
-    fn srgb_pairs() {
-        // RGBA8Unorm 70 and RGBA8Unorm_sRGB 71; RGBA8Uint 73; ASTC_4x4_sRGB 186 and ASTC_4x4_LDR 204; R8Unorm 10 and
-        // R8Unorm_sRGB 11; BGRA8Unorm 80.
-        assert!(srgb_pair(70, 71) && srgb_pair(71, 70));
-        assert!(srgb_pair(186, 204) && srgb_pair(10, 11));
-        assert!(!srgb_pair(70, 73) && !srgb_pair(70, 70) && !srgb_pair(80, 71));
     }
 
     #[test]
