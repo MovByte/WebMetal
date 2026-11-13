@@ -13,13 +13,13 @@ use webmetal_wire::{
 
 use super::archive::{self, Archive};
 use super::compute::{self, option};
-use super::registry::AirRegistry;
+use super::registry::{AirRegistry, Function};
 use super::render;
 use super::{Shared, errors, gpu, reflection};
 use crate::embed::{Embedder, TaskId};
 use crate::exec::{ControlService, Entry, Served, ServiceCx, failure};
 use crate::gpu::{Api, GpuFuture};
-use crate::render::pipeline::RenderPipeline;
+use crate::render::pipeline::{RenderPipeline, RenderPipelineState};
 
 /// The control service of the pipeline module.
 pub struct PipelineService<A: Api, E: Embedder> {
@@ -125,6 +125,7 @@ impl<A: Api, E: Embedder + 'static> PipelineService<A, E> {
 /// A render pipeline checked and compiled.
 struct RenderCreation {
     settings: render::RenderSettings,
+    functions: (Rc<Function>, Option<Rc<Function>>),
     outcome: super::compile::Outcome,
     record: Vec<u8>,
 }
@@ -159,7 +160,7 @@ impl<A: Api, E: Embedder + 'static> PipelineService<A, E> {
             w.u32(settings.sample_mask);
             w.bool(settings.support_indirect_command_buffers);
         });
-        Ok(RenderCreation { settings, outcome, record })
+        Ok(RenderCreation { settings, functions: (vertex, fragment), outcome, record })
     }
 
     /// The `CreateRenderPipeline` records: the reflection to reply with. The render path creates its WebGPU pipelines
@@ -192,12 +193,14 @@ impl<A: Api, E: Embedder + 'static> PipelineService<A, E> {
             c.settings.label.clone()
         };
         gpu::check_layout::<A>(call, cx.gpu().device(), &compiled_ref.layout)?;
-        let desc = render::plan(call, &label, &c.settings, compiled_ref)?;
-        let pipeline = RenderPipeline::create(cx.gpu(), desc).map_err(|e| e.failure())?;
+        let desc = render::plan(call, &label, &c.settings, compiled_ref, false)?;
+        let pipeline = Rc::new(RenderPipeline::create(cx.gpu(), desc).map_err(|e| e.failure())?);
         if pipeline.rasterization {
             pipeline.variant(cx.gpu(), &render::creation_key(&pipeline)).map_err(|e| e.failure())?;
         }
-        cx.attach(Rc::new(pipeline));
+        let variants =
+            render::Variants::new(self.shared.clone(), c.functions, c.settings, label, compiled_ref, pipeline.clone());
+        cx.attach(Rc::new(RenderPipelineState { creation: pipeline, variants: Some(Rc::new(variants)) }));
         Ok(reflect.then(|| reflection::to_wire(&compiled_ref.reflection)))
     }
 }

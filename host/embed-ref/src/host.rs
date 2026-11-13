@@ -121,12 +121,11 @@ impl<A: Api> RefHost<A> {
 pub mod native {
     use std::time::Duration;
 
-    use webmetal_host::gpu::idl::{DeviceDescriptor, FeatureName, RequestAdapterOptions};
+    use webmetal_host::gpu::idl::RequestAdapterOptions;
     use webmetal_host::gpu::native::{NativeDevice, NativeGpu};
     use webmetal_host::gpu::{Adapter as _, Gpu as _, negotiate};
 
-    /// The instance and a device with the features and limits the negotiation asks for. An adapter without
-    /// "core-features-and-limits" (wgpu-native reports none) gets every feature it offers with the default limits.
+    /// The instance and a device with the features and limits the negotiation asks for.
     pub fn device(label: &str) -> Result<(NativeGpu, NativeDevice), String> {
         let gpu = NativeGpu::new();
         let device = gpu
@@ -137,17 +136,9 @@ pub mod native {
                         .await
                         .map_err(|e| format!("requestAdapter: {e}"))?
                         .ok_or("no adapter")?;
-                    let mut d = match negotiate::plan(&adapter.features(), &adapter.limits()) {
-                        Ok(p) => p.descriptor,
-                        Err(negotiate::NegotiationError::NotCore) => {
-                            let offered = adapter.features();
-                            let mut d = DeviceDescriptor::new();
-                            d.required_features =
-                                FeatureName::ALL.into_iter().filter(|f| offered.contains(f.as_str())).collect();
-                            d
-                        }
-                        Err(e) => return Err(format!("negotiation: {e}")),
-                    };
+                    let mut d = negotiate::plan(&adapter.features(), &adapter.limits())
+                        .map_err(|e| format!("negotiation: {e}"))?
+                        .descriptor;
                     d.label = label.into();
                     adapter.request_device(&d).await.map_err(|e| format!("requestDevice: {e}"))
                 },

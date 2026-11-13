@@ -5,6 +5,13 @@
 //! and, by running the specification's "a new device" steps (dependencies, default feature level, limit
 //! normalization), the features and limits the device must then have; [`verify`] checks the device against them.
 //!
+//! The request is the same for every adapter. What the device then has depends on the adapter's default feature
+//! level (§4.2.2): an adapter of feature level "core" always offers "core-features-and-limits" (§25.1: the feature
+//! "may only be unavailable if featureLevel is set to \"compatibility\""), so an adapter without it is a
+//! Compatibility-defaulting one, and its device follows the Compatibility Mode rules: no default features, the
+//! Compatibility Mode default limits for every limit not requested, and no core normalization of the per-stage
+//! storage limits.
+//!
 //! A limit the implementation does not expose (an older browser, or a header without the field) is not requested and
 //! is recorded as not exposed; it is never given a substitute value. An adapter that breaks the specification's
 //! capability guarantees (a limit worse than the default, an alignment that is not a power of two, a feature without
@@ -41,9 +48,27 @@ pub struct FeatureRecord {
     pub expected: bool,
 }
 
+/// A feature level string (§4.2.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FeatureLevel {
+    Core,
+    Compatibility,
+}
+
+impl FeatureLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FeatureLevel::Core => "core",
+            FeatureLevel::Compatibility => "compatibility",
+        }
+    }
+}
+
 /// The device request and the device it must produce.
 #[derive(Clone, Debug)]
 pub struct Plan {
+    /// The adapter's default feature level, as its features show it.
+    pub level: FeatureLevel,
     pub descriptor: DeviceDescriptor,
     pub limits: Vec<LimitRecord>,
     pub features: Vec<FeatureRecord>,
@@ -80,8 +105,6 @@ pub enum NegotiationError {
     AlignmentNotPowerOfTwo { name: &'static str, adapter: u64 },
     /// The adapter offers a feature without a feature it requires (§3.6.1.2, §4.2.1).
     MissingDependency { feature: FeatureName, requires: FeatureName },
-    /// A core adapter (feature level "core", which the executor requests) must offer "core-features-and-limits".
-    NotCore,
 }
 
 impl fmt::Display for NegotiationError {
@@ -96,7 +119,6 @@ impl fmt::Display for NegotiationError {
             NegotiationError::MissingDependency { feature, requires } => {
                 write!(f, "adapter offers {} without {}", feature.as_str(), requires.as_str())
             }
-            NegotiationError::NotCore => write!(f, "adapter does not offer core-features-and-limits"),
         }
     }
 }
@@ -110,7 +132,7 @@ fn better(class: LimitClass, a: u64, b: u64) -> bool {
     }
 }
 
-/// Build the device request for an adapter returned for feature level "core".
+/// Build the device request for an adapter, and the device "a new device" makes of it.
 pub fn plan(adapter_features: &BTreeSet<String>, adapter_limits: &SupportedLimits) -> Result<Plan, NegotiationError> {
     // Adapter capability guarantees.
     for l in LIMITS.iter() {
@@ -132,9 +154,14 @@ pub fn plan(adapter_features: &BTreeSet<String>, adapter_limits: &SupportedLimit
             }
         }
     }
-    if !adapter_features.contains(FeatureName::CoreFeaturesAndLimits.as_str()) {
-        return Err(NegotiationError::NotCore);
-    }
+    // Only a Compatibility-defaulting adapter lacks "core-features-and-limits" (§25.1). One that offers it may still be
+    // Compatibility-defaulting, but the feature is requested below, so its device is the one a core adapter makes:
+    // every exposed limit is requested at the adapter's value, which is the default or better (§4.2.1).
+    let level = if adapter_features.contains(FeatureName::CoreFeaturesAndLimits.as_str()) {
+        FeatureLevel::Core
+    } else {
+        FeatureLevel::Compatibility
+    };
 
     // requiredFeatures: everything offered, in IDL order.
     let mut descriptor = DeviceDescriptor::new();
@@ -152,8 +179,11 @@ pub fn plan(adapter_features: &BTreeSet<String>, adapter_limits: &SupportedLimit
 
     // "a new device": features.
     let mut features: BTreeSet<FeatureName> = descriptor.required_features.iter().copied().collect();
-    // The default features of feature level "core".
-    features.insert(FeatureName::CoreFeaturesAndLimits);
+    // The default features of the adapter's default feature level: "core-features-and-limits" for "core", none for
+    // "compatibility".
+    if level == FeatureLevel::Core {
+        features.insert(FeatureName::CoreFeaturesAndLimits);
+    }
     loop {
         let before = features.len();
         for f in FEATURES.iter() {
@@ -166,8 +196,19 @@ pub fn plan(adapter_features: &BTreeSet<String>, adapter_limits: &SupportedLimit
         }
     }
 
-    // "a new device": limits, starting from the core defaults.
-    let mut expected: Vec<(&'static Limit, Option<u64>)> = LIMITS.iter().map(|l| (l, Some(l.default))).collect();
+    // "a new device": limits, starting from the default limits of the adapter's default feature level.
+    let mut expected: Vec<(&'static Limit, Option<u64>)> = LIMITS
+        .iter()
+        .map(|l| {
+            (
+                l,
+                Some(match level {
+                    FeatureLevel::Core => l.default,
+                    FeatureLevel::Compatibility => l.compat_default,
+                }),
+            )
+        })
+        .collect();
     for (name, value) in &descriptor.required_limits {
         if let Some(v) = value {
             let e = expected.iter_mut().find(|(l, _)| l.name == name).unwrap();
@@ -214,7 +255,7 @@ pub fn plan(adapter_features: &BTreeSet<String>, adapter_limits: &SupportedLimit
         .collect();
     let unknown_adapter_features =
         adapter_features.iter().filter(|n| FeatureName::from_idl(n).is_none()).cloned().collect();
-    Ok(Plan { descriptor, limits, features: feature_records, unknown_adapter_features })
+    Ok(Plan { level, descriptor, limits, features: feature_records, unknown_adapter_features })
 }
 
 /// A difference between the device and the plan.
@@ -350,7 +391,57 @@ mod tests {
         let mut a = defaults();
         a.min_storage_buffer_offset_alignment = Some(48);
         assert!(matches!(plan(&core(), &a), Err(NegotiationError::AlignmentNotPowerOfTwo { .. })));
-        assert_eq!(plan(&BTreeSet::new(), &defaults()).unwrap_err(), NegotiationError::NotCore);
+        let mut a = defaults();
+        a.max_storage_textures_in_fragment_stage = Some(2);
+        assert!(matches!(
+            plan(&BTreeSet::new(), &a),
+            Err(NegotiationError::LimitBelowDefault { name: "maxStorageTexturesInFragmentStage", .. })
+        ));
+    }
+
+    #[test]
+    fn compatibility_adapters_get_their_limits_and_compatibility_rules() {
+        // An adapter without "core-features-and-limits" is Compatibility-defaulting. Its limits are requested as a
+        // core adapter's are; the device has no default features and keeps its per-stage storage limits.
+        let mut a = defaults();
+        a.max_storage_textures_per_shader_stage = Some(128);
+        a.max_storage_textures_in_vertex_stage = Some(4);
+        a.max_storage_textures_in_fragment_stage = Some(8);
+        a.max_storage_buffers_per_shader_stage = Some(31);
+        a.max_color_attachments = Some(8);
+        let mut f = BTreeSet::new();
+        f.insert("shader-f16".to_string());
+        let p = plan(&f, &a).unwrap();
+        assert_eq!(p.level, FeatureLevel::Compatibility);
+        assert_eq!(p.descriptor.required_features, vec![FeatureName::ShaderF16]);
+        assert_eq!(p.expected_features(), f);
+        let req: Vec<_> = p.descriptor.required_limits.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(req.len(), LIMITS.len());
+        assert_eq!(p.limit("maxStorageTexturesPerShaderStage").unwrap().expected, Some(128));
+        assert_eq!(p.limit("maxStorageTexturesInVertexStage").unwrap().expected, Some(4));
+        assert_eq!(p.limit("maxStorageTexturesInFragmentStage").unwrap().expected, Some(8));
+        assert_eq!(p.limit("maxStorageBuffersInVertexStage").unwrap().expected, Some(8));
+        assert_eq!(p.limit("maxColorAttachments").unwrap().expected, Some(8));
+        assert!(verify(&p, &f, &p.expected_limits()).is_empty());
+        // A limit the implementation does not expose is neither requested nor given the core default.
+        a.max_color_attachments = None;
+        let p = plan(&f, &a).unwrap();
+        assert_eq!(p.limit("maxColorAttachments").unwrap().expected, None);
+        assert!(!p.descriptor.required_limits.iter().any(|(k, _)| k == "maxColorAttachments"));
+    }
+
+    #[test]
+    fn core_adapters_request_every_limit_at_the_adapter_value() {
+        let mut a = defaults();
+        a.max_storage_textures_per_shader_stage = Some(128);
+        a.max_storage_textures_in_vertex_stage = None;
+        a.max_storage_textures_in_fragment_stage = None;
+        let p = plan(&core(), &a).unwrap();
+        assert_eq!(p.level, FeatureLevel::Core);
+        let req = |n: &str| p.descriptor.required_limits.iter().find(|(k, _)| k == n).and_then(|(_, v)| *v);
+        assert_eq!(req("maxStorageTexturesPerShaderStage").map(|v| v.get()), Some(128));
+        assert_eq!(p.limit("maxStorageTexturesPerShaderStage").unwrap().expected, Some(128));
+        assert_eq!(p.limit("maxStorageTexturesInFragmentStage").unwrap().expected, None);
     }
 
     #[test]

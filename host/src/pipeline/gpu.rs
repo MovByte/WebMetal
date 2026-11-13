@@ -264,8 +264,11 @@ pub fn check_layout<A: Api>(call: &str, device: &A::Device, layout: &BindingLayo
     }
     // The binding slot limits (WebGPU 8.1.1, "exceeds the binding slot limits"): storage buffers and storage
     // textures of the vertex and fragment stages count against their stage's own limit, the compute stage's
-    // against the per-stage limit. An implementation that does not report a stage's own limit (a webgpu.h without
-    // the field) predates it and counts those bindings against the per-stage limit.
+    // against the per-stage limit. On a device with "core-features-and-limits", "a new device" sets each stage's own
+    // limit to the per-stage one (§3.5.2), so an implementation that does not report the stage's own limit (a
+    // webgpu.h without the field) is held to the per-stage limit; on a Compatibility Mode device the two differ and
+    // an unreported stage limit is refused.
+    let core = features.has(Feature::CoreFeaturesAndLimits);
     let slot = |stage: usize, category: usize| -> &'static str {
         match (stage, category) {
             (_, 0) => "maxSampledTexturesPerShaderStage",
@@ -286,7 +289,7 @@ pub fn check_layout<A: Api>(call: &str, device: &A::Device, layout: &BindingLayo
             }
             let mut name = slot(i, k);
             let mut limit = limits.get(name);
-            if limit.is_none() && matches!(k, 2 | 3) {
+            if limit.is_none() && core && matches!(k, 2 | 3) {
                 name = slot(2, k);
                 limit = limits.get(name);
             }

@@ -25,6 +25,9 @@ pub enum RenderError {
     /// A WebGPU call threw. The executor validates before it calls WebGPU, so this is an executor or implementation
     /// defect.
     Gpu { op: &'static str, exception: Exception },
+    /// The pipeline service could not make the pipeline variant a draw needs; its failure (`webmetal_wire::Failure`)
+    /// is reported as it is.
+    Pipeline { status: u32, domain: Option<String>, code: i64, message: String },
 }
 
 impl RenderError {
@@ -62,6 +65,7 @@ impl RenderError {
             RenderError::HostUnsupported { .. } => status::HOST_UNSUPPORTED,
             RenderError::Invalid { .. } => status::INVALID,
             RenderError::Mem(e) => e.status(),
+            RenderError::Pipeline { status, .. } => *status,
         }
     }
 
@@ -69,6 +73,9 @@ impl RenderError {
     pub fn failure(&self) -> Failure {
         match self {
             RenderError::Mem(e) => e.failure(),
+            RenderError::Pipeline { status, domain, code, message } => {
+                Failure { status: *status, domain: domain.clone(), code: *code, message: message.clone() }
+            }
             other => Failure { status: other.status(), domain: None, code: 0, message: other.to_string() },
         }
     }
@@ -83,6 +90,7 @@ impl fmt::Display for RenderError {
             RenderError::Invalid { what } => write!(f, "invalid stream: {what}"),
             RenderError::Mem(e) => write!(f, "{e}"),
             RenderError::Gpu { op, exception } => write!(f, "{op}: {exception}"),
+            RenderError::Pipeline { message, .. } => write!(f, "{message}"),
         }
     }
 }
@@ -92,6 +100,12 @@ impl std::error::Error for RenderError {}
 impl From<MemError> for RenderError {
     fn from(e: MemError) -> RenderError {
         RenderError::Mem(e)
+    }
+}
+
+impl From<Failure> for RenderError {
+    fn from(f: Failure) -> RenderError {
+        RenderError::Pipeline { status: f.status, domain: f.domain, code: f.code, message: f.message }
     }
 }
 

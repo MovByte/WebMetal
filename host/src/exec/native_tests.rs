@@ -22,8 +22,8 @@ use super::failure::{NO_RECORD, command_buffer_status};
 use super::*;
 use crate::embed::*;
 use crate::gpu::idl::{
-    BufferDescriptor, BufferUsage, DeviceDescriptor, Extent3D, Extent3DDict, MapMode, RequestAdapterOptions,
-    TextureDescriptor, TextureFormat, TextureUsage,
+    BufferDescriptor, BufferUsage, Extent3D, Extent3DDict, MapMode, RequestAdapterOptions, TextureDescriptor,
+    TextureFormat, TextureUsage,
 };
 use crate::gpu::native::{Native, NativeDevice, NativeGpu};
 use crate::gpu::scope::{Granularity, Policy};
@@ -566,9 +566,6 @@ fn test_device(gpu: &NativeGpu) -> NativeDevice {
         gpu.block_on(gpu.request_adapter(&RequestAdapterOptions::new()), WAIT).unwrap().unwrap().expect("an adapter");
     let descriptor = match negotiate::plan(&adapter.features(), &adapter.limits()) {
         Ok(plan) => plan.descriptor,
-        // wgpu-native's adapter does not report "core-features-and-limits" (tests/gpu_smoke_known_wgpu-native.txt); as
-        // the smoke test does, the executor then runs on a device with the default features and limits.
-        Err(negotiate::NegotiationError::NotCore) if cfg!(webgpu_native = "wgpu-native") => DeviceDescriptor::new(),
         Err(e) => panic!("negotiation: {e}"),
     };
     gpu.block_on(adapter.request_device(&descriptor), WAIT).unwrap().expect("a device")

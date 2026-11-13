@@ -577,6 +577,55 @@ fn write_levels() {
     h.assert_no_errors();
 }
 
+/// Writes at levels computed at run time to a texture of six levels: the variant binds a storage texture for each level
+/// (WebGPU 8.2.1: a storage binding shows one level), six of the stage's storage textures, which the device's
+/// `maxStorageTexturesPerShaderStage` (the adapter's own, as the negotiation requests it) allows on both hosts. Each
+/// write lands in its level, and the writes at levels 6 and 2^32 - 1 are out of range and ignored (MSL 4.1 section
+/// 6.13).
+#[test]
+fn write_levels_past_the_default_storage_limit() {
+    use webmetal_host::gpu::Device as _;
+    let h = Harness::new();
+    let d = texture_descriptor(T2D, fmt("R32Uint"), (32, 32, 1), 1, 6, PRIVATE, SHADER_READ | SHADER_WRITE, 1);
+    let limit = h.g.device.limits().get("maxStorageTexturesPerShaderStage").expect("the device reports the limit");
+    assert!(
+        limit >= 6,
+        "{}: maxStorageTexturesPerShaderStage is {limit}; the negotiation requests the adapter's",
+        h.name()
+    );
+    let root = h.texture(d.clone());
+    upload_volume(&h, root, &d);
+    let all = Through { kind: T2D, levels: (0, 6), slices: (0, 1) };
+    let queries = [
+        query(5, 7, 0, 0),
+        query(3, 1, 0, 1),
+        query(6, 2, 0, 2),
+        query(1, 3, 0, 3),
+        query(1, 0, 0, 4),
+        query(0, 0, 0, 5),
+    ];
+    let ignored = [query(0, 0, 0, 6), query(0, 0, 0, 0xffff_ffff)];
+    let mut expected = initial_contents(&d);
+    for (j, &w) in queries.iter().chain(&ignored).enumerate() {
+        let value = 0xc0de_0600 | j as u32;
+        h.compute(write_records(&h, "tex_write_2d", root, &[w], &[[value, 0, 0, 0]]));
+        apply_write(&mut expected, &d, all, w, value);
+    }
+    let mut contents = Vec::new();
+    for level in 0..d.mipmap_level_count {
+        contents.extend(h.read_texture(root, &d, level, 0, mip(d.width, level) * 4));
+    }
+    let expected: Vec<u8> = expected.iter().flat_map(|v| v.to_le_bytes()).collect();
+    assert_eq!(
+        contents,
+        expected,
+        "{}: the writes land in their levels and the out-of-range ones are ignored",
+        h.name()
+    );
+    assert!(h.compiled.borrow().contains("tex_write_2d"), "{}: tex_write_2d is not a compiled kernel", h.name());
+    h.assert_no_errors();
+}
+
 /// The `TexRGBA8Pattern` bytes of Textures.m: `WMPattern(64, 71)` with the corner codes 0 and 255 in texel 0.
 fn rgba8_pattern() -> Vec<u8> {
     let mut p = pattern(64, 71);

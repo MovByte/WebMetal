@@ -8,7 +8,7 @@
     "sdk": "macosx",
     "sdk_build": "26B118",
     "sdk_version": "27.2",
-    "source_sha256": "a61c67a0d8b7c2400d9eb0df62c72176076438fa20f5d746d50bef9ab078aa92",
+    "source_sha256": "2271089738b64bd5b7216f644f9d76c2030f66998a5e8b8e4431f8a79ffdad5d",
     "target": "arm64-apple-macos14.0"
   },
   "cases": [
@@ -940,6 +940,8 @@
     {"case":"texture.error-view-size-mismatch","outcome":"signal 6","sha256":"9bdd6dc3ebed9d63a66e9269dc089410fc23f8d4d4958d4a19c3f1997baaee05","status":"terminated","variant":"debug-layer"},
     {"case":"texture.error-view-without-usage","outcome":"exit 0","sha256":"abc63bbaf296a0b51ab45bcafcd68b6993eef7efbddd3e9017e060c4181d43c5","status":"ok","variant":"release"},
     {"case":"texture.error-view-without-usage","outcome":"signal 6","sha256":"4a23bf389028216a83a74f81bff1e99f1dc097730418c9b1e19639954a0d613c","status":"terminated","variant":"debug-layer"},
+    {"case":"texture.fragment-access","outcome":"exit 0","sha256":"a515b27f799f8e0b1f287821af71765feb61f03aab3add7a118ccc68c7dc2b0c","status":"ok","variant":"release"},
+    {"case":"texture.fragment-access","outcome":"exit 0","sha256":"0904b542d57fd0c0d62cd291e6ea60c3a89e55d9b9722402d7d88190391c43fe","status":"ok","variant":"debug-layer"},
     {"case":"texture.generate-mipmaps","outcome":"exit 0","sha256":"241faca3e00960aa14b9c4ebf5a9d6380125a840bef3e8799fa32937477cd387","status":"ok","variant":"release"},
     {"case":"texture.generate-mipmaps","outcome":"exit 0","sha256":"9e08f0a3004f74c559529f35e88c0270362330edf052886c32895450949b437c","status":"ok","variant":"debug-layer"},
     {"case":"texture.properties","outcome":"exit 0","sha256":"9515f1f05a8c1fc2d1aa6ebc3dde5edcebf2c9965e18fcd0dc45e77be470c146","status":"ok","variant":"release"},

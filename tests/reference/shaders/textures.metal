@@ -338,3 +338,42 @@ fragment uint4 tex_ms_layered_fragment(TexLayeredOut in [[stage_in]], uint sampl
     uint y = uint(floor(in.position.y));
     return uint4(0xab000000u | (in.layer << 20) | (sample << 16) | (y << 8) | x, 0, 0, 0);
 }
+
+// A triangle over the whole target: over a target of one pixel, one
+// fragment per draw.
+constant float2 tex_cover_corners[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+
+vertex TexRectOut tex_cover_vertex(uint vid [[vertex_id]])
+{
+    TexRectOut out;
+    out.position = float4(tex_cover_corners[vid], 0, 1);
+    return out;
+}
+
+// Fragment writes: the query (two uint4, as for the kernels) and the value
+// come from buffers 0 and 1; the fragment's own output is 1.
+fragment uint tex_fragment_write_2d(TexRectOut in [[stage_in]],
+                                    texture2d<uint, access::write> t [[texture(0)]],
+                                    constant uint4 *q [[buffer(0)]],
+                                    constant uint4 *value [[buffer(1)]])
+{
+    t.write(value[0], q[0].xy, q[1].x);
+    return 1;
+}
+
+fragment uint tex_fragment_write_2d_float(TexRectOut in [[stage_in]],
+                                          texture2d<float, access::write> t [[texture(0)]],
+                                          constant uint4 *q [[buffer(0)]],
+                                          constant float4 *value [[buffer(1)]])
+{
+    t.write(value[0], q[0].xy, q[1].x);
+    return 1;
+}
+
+// A fragment read: the texel at the query is the fragment's output.
+fragment uint4 tex_fragment_read_2d(TexRectOut in [[stage_in]],
+                                    texture2d<uint, access::read> t [[texture(0)]],
+                                    constant uint4 *q [[buffer(0)]])
+{
+    return t.read(q[0].xy, q[1].x);
+}

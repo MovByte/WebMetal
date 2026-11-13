@@ -14,7 +14,7 @@ use webmetal_host::embed::{
     SharedEventError, SharedEventId, SurfaceDesc, SurfaceError, TaskId,
 };
 use webmetal_host::format::webgpu::{Feature, HostFeatures};
-use webmetal_host::gpu::idl::{DeviceDescriptor, FeatureName, RequestAdapterOptions};
+use webmetal_host::gpu::idl::{DeviceDescriptor, RequestAdapterOptions};
 use webmetal_host::gpu::native::{Native, NativeDevice, NativeGpu};
 use webmetal_host::gpu::{Adapter as _, Device as _, Gpu as _, GpuError, negotiate};
 use webmetal_wire::{Event, Handle, SurfaceId};
@@ -42,16 +42,6 @@ impl Gpu {
                     } else {
                         match negotiate::plan(&adapter.features(), &adapter.limits()) {
                             Ok(p) => p.descriptor,
-                            // wgpu-native reports no "core-features-and-limits" (host/tests/gpu_smoke_known_wgpu-native.txt),
-                            // so the negotiation refuses its adapter; the memory tests then ask for every feature it
-                            // offers with the default limits.
-                            Err(negotiate::NegotiationError::NotCore) => {
-                                let offered = adapter.features();
-                                let mut d = DeviceDescriptor::new();
-                                d.required_features =
-                                    FeatureName::ALL.into_iter().filter(|f| offered.contains(f.as_str())).collect();
-                                d
-                            }
                             Err(e) => panic!("negotiation: {e}"),
                         }
                     };

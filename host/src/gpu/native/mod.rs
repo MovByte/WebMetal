@@ -69,6 +69,19 @@ pub mod quirks {
     /// operation fails with a device-lost error (`ErrorSinkRaw::handle_error`). The binding then performs "lose the
     /// device" itself when `destroy()` is called, as `destroy()` requires.
     pub const LOST_ON_DESTROY: bool = !cfg!(webgpu_native = "wgpu-native");
+    /// The implementation lists "core-features-and-limits" among the features of a Core-defaulting adapter and of the
+    /// devices made from it (§4.2.2 "core"; §25.1: the feature is always available unless featureLevel is
+    /// "compatibility"). wgpu-native lists it for none: its feature conversion has no entry for
+    /// `WGPUFeatureName_CoreFeaturesAndLimits` (`src/conv.rs`, `features_to_native` and `map_feature`; wgpu-types has
+    /// no such feature), and it never reads `WGPURequestAdapterOptions.featureLevel` (`src/lib.rs`,
+    /// `wgpuInstanceRequestAdapter`). wgpu-core enforces no Compatibility Mode rule, so every adapter it returns is
+    /// returned as for "core" (§4.2.2: an implementation that cannot enforce Compatibility Mode treats the request as
+    /// one for "core"). What it does not check is the hardware: it opens an adapter that lacks a flag of
+    /// `DownlevelFlags::compliant()` with only a log message (wgpu-core `instance.rs`, `create_device_and_queue`). On
+    /// its Metal backend on macOS every such flag holds (wgpu-hal `metal/adapter.rs`: each needs at most
+    /// `macOS_GPUFamily1_v1`), so there the binding lists the feature itself, for the adapter and its devices; on any
+    /// other backend or system the adapter is reported as the implementation lists it, as Compatibility-defaulting.
+    pub const LISTS_CORE_FEATURES_AND_LIMITS: bool = !cfg!(webgpu_native = "wgpu-native");
 }
 
 /// The [`Api`] of this binding.
@@ -523,6 +536,9 @@ struct AdapterShared {
     /// The adapter's `[[state]]` is "expired" (a device was created from it).
     expired: Cell<bool>,
     features: BTreeSet<String>,
+    /// The binding lists "core-features-and-limits" for this adapter and its devices (see
+    /// [`quirks::LISTS_CORE_FEATURES_AND_LIMITS`]).
+    core_unlisted: bool,
     limits: SupportedLimits,
     info: AdapterInfo,
 }
@@ -569,11 +585,12 @@ fn read_limits(get: impl FnOnce(&mut sys::WGPULimits) -> sys::WGPUStatus) -> Res
     Ok(out)
 }
 
-fn read_info(raw: sys::WGPUAdapter) -> AdapterInfo {
+/// The adapter's info and its `WGPUBackendType` (`None` if the implementation cannot report them).
+fn read_info(raw: sys::WGPUAdapter) -> (AdapterInfo, Option<sys::WGPUBackendType>) {
     let mut i: sys::WGPUAdapterInfo = unsafe { std::mem::zeroed() };
     let st = unsafe { sys::wgpuAdapterGetInfo(raw, &mut i) };
     if !status_is(st, "WGPUStatus", "Success") {
-        return AdapterInfo::default();
+        return (AdapterInfo::default(), None);
     }
     let info = AdapterInfo {
         vendor: Some(from_sv(i.vendor)),
@@ -585,16 +602,33 @@ fn read_info(raw: sys::WGPUAdapter) -> AdapterInfo {
         // webgpu.h has no counterpart of isFallbackAdapter.
         is_fallback_adapter: None,
     };
+    let backend = i.backendType;
     unsafe { sys::wgpuAdapterInfoFreeMembers(i) };
-    info
+    (info, Some(backend))
 }
 
 impl NativeAdapter {
     fn wrap(inst: Rc<Instance>, raw: sys::WGPUAdapter) -> NativeAdapter {
-        let features = read_features(|f| unsafe { sys::wgpuAdapterGetFeatures(raw, f) });
+        let mut features = read_features(|f| unsafe { sys::wgpuAdapterGetFeatures(raw, f) });
         let limits = read_limits(|l| unsafe { sys::wgpuAdapterGetLimits(raw, l) }).unwrap_or_default();
-        let info = read_info(raw);
-        NativeAdapter(Rc::new(AdapterShared { inst, raw, expired: Cell::new(false), features, limits, info }))
+        let (info, backend) = read_info(raw);
+        let core = FeatureName::CoreFeaturesAndLimits.as_str();
+        let core_unlisted = !quirks::LISTS_CORE_FEATURES_AND_LIMITS
+            && cfg!(target_os = "macos")
+            && backend == Some(c_named("WGPUBackendType", "Metal") as sys::WGPUBackendType)
+            && !features.contains(core);
+        if core_unlisted {
+            features.insert(core.to_string());
+        }
+        NativeAdapter(Rc::new(AdapterShared {
+            inst,
+            raw,
+            expired: Cell::new(false),
+            features,
+            core_unlisted,
+            limits,
+            info,
+        }))
     }
 }
 
@@ -849,7 +883,11 @@ impl NativeDevice {
         label: String,
         queue_label: String,
     ) -> NativeDevice {
-        let features = read_features(|f| unsafe { sys::wgpuDeviceGetFeatures(raw, f) });
+        let mut features = read_features(|f| unsafe { sys::wgpuDeviceGetFeatures(raw, f) });
+        // "a new device" adds the default features of the adapter's default feature level.
+        if a.core_unlisted {
+            features.insert(FeatureName::CoreFeaturesAndLimits.as_str().to_string());
+        }
         let feature_set = features.iter().filter_map(|n| FeatureName::from_idl(n)).collect();
         let limits = read_limits(|l| unsafe { sys::wgpuDeviceGetLimits(raw, l) }).unwrap_or_default();
         let shared = Rc::new(DeviceShared {

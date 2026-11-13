@@ -288,6 +288,7 @@ pub async fn run_observed<A: Api>(gpu: &A::Gpu, observer: Option<Observer>) -> R
     let mut desc = match &plan {
         Ok(p) => {
             r.check("negotiate.plan", "ok");
+            r.check("negotiate.level", p.level.as_str());
             let unexposed: Vec<&str> = p.limits.iter().filter(|l| l.adapter.is_none()).map(|l| l.limit.name).collect();
             r.info("negotiate.unexposed_limits", unexposed.join(","));
             r.info("negotiate.unknown_adapter_features", p.unknown_adapter_features.join(","));
