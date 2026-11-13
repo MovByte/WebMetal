@@ -344,6 +344,11 @@ impl RegionLayout {
         {
             return refused(format!("region ({x}, {y}, {z}) {w}x{h}x{d} of level {level} of extent {lw}x{lh}x{ld}"));
         }
+        // agxaAssertBufferIsValid's pitch test, in 32 bits: a pitch other than 0 below one row of blocks.
+        let min_pitch = w.div_ceil(blocks.width).wrapping_mul(blocks.bytes);
+        if a.bytes_per_row != 0 && (a.bytes_per_row as u32) < min_pitch {
+            return refused(format!("bytesPerRow {} below a row of {min_pitch} bytes", a.bytes_per_row));
+        }
         if let Some(bpp) = blocks.pvrtc {
             let len = match bpp {
                 Bpp::Four => u64::from(w.wrapping_add(3) >> 2) * u64::from(h.wrapping_add(3) >> 2) * 8,

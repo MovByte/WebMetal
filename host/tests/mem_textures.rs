@@ -80,6 +80,15 @@ fn handle(n: u64) -> Handle {
     Handle::new(n).unwrap()
 }
 
+/// The bytes the A10X driver copies for a whole PVRTC level (`agxsTwiddleAddressPVRTC4` and `...PVRTC2`).
+fn pvrtc_copy_len(b: webmetal_host::mem::layout::Blocks, w: u32, h: u32) -> usize {
+    match b.pvrtc {
+        Some(pvrtc::Bpp::Four) => ((w + 3) >> 2) as usize * ((h + 3) >> 2) as usize * 8,
+        Some(pvrtc::Bpp::Two) => ((w + 7) & !7) as usize * ((h + 3) >> 2) as usize,
+        None => usize::MAX,
+    }
+}
+
 fn region(o: (u64, u64, u64), s: (u64, u64, u64)) -> Region {
     Region { origin: Origin { x: o.0, y: o.1, z: o.2 }, size: Size { width: s.0, height: s.1, depth: s.2 } }
 }
@@ -541,6 +550,15 @@ fn texture_types_and_regions() {
                     .unwrap();
                 ctx.prove(&t);
                 let geo = t.geometry;
+                if kind == 7 && (160..=184).contains(&format) {
+                    // The A10X driver copies 3D ETC2 and EAC levels by texel coordinates (its 3D twiddle sends them
+                    // to the bytes-per-pixel functions), which the host does not reproduce: LOUD.
+                    let (lw, lh, _) = geo.level_extent(0);
+                    let r =
+                        ctx.replace(&t, (0, 0), region((0, 0, 0), (u64::from(lw), u64::from(lh), 1)), &[0; 64], (0, 0));
+                    assert!(matches!(r, Err(MemError::Unimplemented { .. })), "{r:?}");
+                    continue;
+                }
                 let per_level = if kind == 7 { 1 } else { geo.slices() };
                 let mut model = Model { subs: Vec::new() };
                 // Fill every subresource whole.
@@ -554,14 +572,21 @@ fn texture_types_and_regions() {
                             (0..row * u64::from(by) * u64::from(images)).map(|_| next() as u8).collect();
                         let (bpr, bpi) =
                             if pvrtc { (0, 0) } else { (row, if images > 1 { row * u64::from(by) } else { 0 }) };
-                        ctx.replace(
+                        let r = ctx.replace(
                             &t,
                             (u64::from(level), u64::from(layer)),
                             region((0, 0, 0), (u64::from(lw), u64::from(lh), u64::from(images))),
                             &data,
                             (bpr, bpi),
-                        )
-                        .unwrap_or_else(|e| panic!("{}: format {format} type {kind} level {level}: {e}", g.name()));
+                        );
+                        if pvrtc && pvrtc_copy_len(b, lw, lh) < data.len() {
+                            // The A10X driver replaces only the level's first words; the rest are not kept on the
+                            // CPU, so the write is LOUD and the level keeps its zeros.
+                            assert!(matches!(r, Err(MemError::Unimplemented { .. })), "{r:?}");
+                            model.subs.push(vec![0; data.len()]);
+                            continue;
+                        }
+                        r.unwrap_or_else(|e| panic!("{}: format {format} type {kind} level {level}: {e}", g.name()));
                         model.subs.push(data);
                     }
                 }
@@ -624,7 +649,12 @@ fn texture_types_and_regions() {
                         let row = u64::from(bx) * u64::from(b.bytes);
                         let (bpr, bpi) =
                             if pvrtc { (0, 0) } else { (row, if images > 1 { row * u64::from(by) } else { 0 }) };
-                        let want = &model.subs[(level * per_level + layer) as usize];
+                        let mut want = model.subs[(level * per_level + layer) as usize].clone();
+                        if pvrtc {
+                            // A PVRTC read copies the level's first words for the region (all of them from 8x8 on).
+                            want.truncate(pvrtc_copy_len(b, lw, lh));
+                        }
+                        let want = &want;
                         let got = ctx
                             .get(
                                 &t,
@@ -881,32 +911,36 @@ fn texture_error_paths() {
         .mem
         .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, 70, (8, 8, 1), 1, 2, SHARED, 1))
         .unwrap();
+    // Regions the A10X driver's validateRegion refuses: the guest logs and drops them, so one reaching the host is an
+    // invalid request.
     for (o, s, bpr, why) in [
         ((4, 0, 0), (8, 8, 1), 32, "outside the level"),
         ((0, 0, 0), (8, 8, 1), 16, "short rows"),
-        ((0, 0, 0), (8, 8, 1), 0, "bytesPerRow 0 for several rows"),
-        ((0, 0, 0), (8, 8, 1), 34, "rows not a multiple of the texel"),
         ((0, 0, 0), (0, 8, 1), 32, "empty"),
     ] {
         assert!(
-            matches!(ctx.replace(&shared, (0, 0), region(o, s), &data, (bpr, 0)), Err(MemError::Undefined { .. })),
+            matches!(ctx.replace(&shared, (0, 0), region(o, s), &data, (bpr, 0)), Err(MemError::Invalid { .. })),
             "{why}"
         );
     }
     assert!(
         matches!(
             ctx.replace(&shared, (2, 0), region((0, 0, 0), (1, 1, 1)), &data, (4, 0)),
-            Err(MemError::Undefined { .. })
+            Err(MemError::Invalid { .. })
         ),
         "level"
     );
     assert!(
         matches!(
             ctx.replace(&shared, (0, 1), region((0, 0, 0), (1, 1, 1)), &data, (4, 0)),
-            Err(MemError::Undefined { .. })
+            Err(MemError::Invalid { .. })
         ),
         "slice"
     );
+    // The driver copies a pitch of 0 (every row from the first) and one that is no multiple of the texel.
+    for bpr in [0, 34] {
+        assert!(ctx.replace(&shared, (0, 0), region((0, 0, 0), (8, 8, 1)), &data, (bpr, 0)).is_ok(), "{bpr}");
+    }
     let mut msaa = descriptor(4, 70, (8, 8, 1), 1, 1, PRIVATE, 4);
     msaa.sample_count = 4;
     assert!(ctx.mem.create_texture(&ctx.direct, TASK, ctx.handle(), &msaa).is_ok());
