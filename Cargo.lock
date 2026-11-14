@@ -321,6 +321,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "webmetal-web-tests"
+version = "0.1.0"
+dependencies = [
+ "airwgsl",
+ "js-sys",
+ "wasm-bindgen",
+ "webmetal-host",
+ "webmetal-wire",
+]
+
+[[package]]
 name = "webmetal-wire"
 version = "0.1.0"
 

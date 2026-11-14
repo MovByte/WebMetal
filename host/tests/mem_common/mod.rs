@@ -1,11 +1,13 @@
 //! Shared pieces of the memory tests on a native WebGPU implementation: the device, a guest-memory embedder and the
 //! Metal reference outputs.
+//!
+//! The same tests run in a browser (`host/web-tests`): there the device is the browser's, through the blocking
+//! interface of `webmetal_web_tests::BlockingGpu`, and the repository's files come from the page's server ([`files`]).
 
 #![allow(dead_code)]
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -15,8 +17,11 @@ use webmetal_host::embed::{
 };
 use webmetal_host::format::webgpu::{Feature, HostFeatures};
 use webmetal_host::gpu::idl::{DeviceDescriptor, RequestAdapterOptions};
+#[cfg(not(target_arch = "wasm32"))]
 use webmetal_host::gpu::native::{Native, NativeDevice, NativeGpu};
 use webmetal_host::gpu::{Adapter as _, Device as _, Gpu as _, GpuError, negotiate};
+#[cfg(target_arch = "wasm32")]
+use webmetal_web_tests::{BlockingGpu as NativeGpu, Web as Native, WebDevice as NativeDevice};
 use webmetal_wire::{Event, Handle, SurfaceId};
 
 pub const TASK: TaskId = TaskId(1);
@@ -224,6 +229,57 @@ impl Embedder for Guest {
 /// The reference device whose outputs the tests compare with.
 pub const GOLDEN_DEVICE: &str = "apple-m4-macos-27.0.1-26a434";
 
+/// The files of the repository the tests read, by their path from the repository's root: from the checkout, or in a
+/// browser from the page's server.
+pub mod files {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn path(rel: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join(rel)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn read_to_string(rel: &str) -> std::io::Result<String> {
+        std::fs::read_to_string(path(rel))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub use webmetal_web_tests::fs::read_to_string;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn exists(rel: &str) -> bool {
+        path(rel).is_file()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn exists(rel: &str) -> bool {
+        webmetal_web_tests::fs::read(rel).is_ok()
+    }
+
+    /// The names of the files in directory `rel`.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn list(rel: &str) -> std::io::Result<Vec<String>> {
+        Ok(std::fs::read_dir(path(rel))?.filter_map(|e| e.ok()?.file_name().into_string().ok()).collect())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub use webmetal_web_tests::fs::list;
+}
+
+/// The path of a case file of the Metal reference outputs (release variant), from the repository's root.
+pub fn golden_path(case: &str) -> String {
+    format!("tests/reference/goldens/{GOLDEN_DEVICE}/release/{case}.json")
+}
+
+/// The names of the reference outputs' case files (release variant), without `.json`.
+pub fn golden_cases() -> Vec<String> {
+    let dir = format!("tests/reference/goldens/{GOLDEN_DEVICE}/release");
+    files::list(&dir)
+        .unwrap_or_else(|e| panic!("{dir}: {e}"))
+        .into_iter()
+        .filter_map(|n| n.strip_suffix(".json").map(str::to_string))
+        .collect()
+}
+
 /// A case file of the Metal reference outputs (release variant). Records are one per line.
 pub struct Golden {
     pub case: String,
@@ -232,22 +288,13 @@ pub struct Golden {
 
 impl Golden {
     pub fn load(case: &str) -> Golden {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/reference/goldens")
-            .join(GOLDEN_DEVICE)
-            .join("release")
-            .join(format!("{case}.json"));
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let path = golden_path(case);
+        let text = files::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
         Golden { case: case.to_string(), text }
     }
 
     pub fn exists(case: &str) -> bool {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/reference/goldens")
-            .join(GOLDEN_DEVICE)
-            .join("release")
-            .join(format!("{case}.json"))
-            .is_file()
+        files::exists(&golden_path(case))
     }
 
     pub fn status(&self) -> &str {

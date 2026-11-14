@@ -2284,16 +2284,8 @@ fn render_error_memory_barrier_after_fragment() {
 #[test]
 fn format_render() {
     let h = Harness::new();
-    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/reference/goldens")
-        .join(mem_common::GOLDEN_DEVICE)
-        .join("release");
-    let mut names: Vec<String> = std::fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(|e| e.ok()?.file_name().into_string().ok())
-        .filter(|n| n.starts_with("format.") && n.ends_with(".render.json"))
-        .map(|n| n.trim_end_matches(".json").to_string())
-        .collect();
+    let mut names: Vec<String> =
+        mem_common::golden_cases().into_iter().filter(|n| n.starts_with("format.") && n.ends_with(".render")).collect();
     names.sort();
     let (mut compared, mut skipped) = (0, Vec::new());
     for case in names {

@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebMetal reference cases</title>
+<pre id="out"></pre>
+<script type="module">
+// Runs the cases of the modules named in the query (`modules=a,b`), each case in a fresh Worker with a fresh
+// instance of its module (worker.js), and posts each result to the server as it arrives, then `/__done`.
+// `case=<module>.<name>` runs one case; `timeout` is the seconds a case may take.
+const q = new URLSearchParams(location.search);
+const modules = (q.get('modules') || '').split(',').filter(Boolean);
+const only = q.get('case');
+const timeout = Number(q.get('timeout') || 900) * 1000;
+const out = document.getElementById('out');
+const say = (s) => { out.textContent += s + '\n'; };
+
+async function post(path, value) {
+  await fetch(path, { method: 'POST', body: JSON.stringify(value) });
+}
+
+function work(message, limit) {
+  return new Promise((resolve) => {
+    const w = new Worker('./worker.js', { type: 'module' });
+    const timer = setTimeout(() => { w.terminate(); resolve({ status: 'timeout', seconds: limit / 1000 }); }, limit);
+    w.onmessage = (e) => { clearTimeout(timer); w.terminate(); resolve(e.data); };
+    w.onerror = (e) => { clearTimeout(timer); w.terminate(); resolve({ status: 'error', error: String(e.message || e) }); };
+    w.postMessage(message);
+  });
+}
+
+async function environment() {
+  const env = { userAgent: navigator.userAgent };
+  try {
+    const a = await navigator.gpu.requestAdapter();
+    env.adapter = a ? { vendor: a.info.vendor, architecture: a.info.architecture, device: a.info.device,
+                        description: a.info.description, features: [...a.features].sort() } : null;
+  } catch (e) {
+    env.adapterError = String(e);
+  }
+  env.jspi = typeof WebAssembly.Suspending === 'function' && typeof WebAssembly.promising === 'function';
+  return env;
+}
+
+try {
+  await post('/__environment', await environment());
+  for (const name of modules) {
+    const glue = `./${name}/${name}.js`;
+    const module = await WebAssembly.compileStreaming(fetch(`./${name}/${name}_bg.wasm`));
+    const listed = await work({ glue, module, list: true }, 60000);
+    if (listed.status !== 'listed') {
+      await post('/__result', { module: name, case: null, ...listed });
+      continue;
+    }
+    for (let i = 0; i < listed.names.length; i++) {
+      const id = `${name}.${listed.names[i]}`;
+      if (only && only !== id) continue;
+      const t0 = performance.now();
+      const r = await work({ glue, module, index: i }, timeout);
+      r.seconds = (performance.now() - t0) / 1000;
+      say(`${id}: ${r.status}`);
+      await post('/__result', { module: name, case: listed.names[i], ...r });
+    }
+  }
+  await post('/__done', {});
+} catch (e) {
+  await post('/__done', { failure: String(e && e.stack ? e.stack : e) });
+}
+</script>

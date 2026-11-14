@@ -5,11 +5,13 @@
 //! The reference library is the one `tests/reference/build.py` builds for iOS (`air64-apple-ios17.0`, the AIR the
 //! A10X's Metal.framework hands its driver): `WEBMETAL_REFERENCE_BUILD` names a build directory that holds
 //! `wmref.metallib`, or else the tests build one under Cargo's target directory (macOS with Xcode's Metal toolchain).
+//! In a browser (`host/web-tests`) the page's server serves the build that `host/tools/web_corpus.py` makes.
 
 #![allow(dead_code)]
 
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
@@ -42,6 +44,7 @@ pub struct LibraryFunction {
 
 /// The reference library's build directory: `WEBMETAL_REFERENCE_BUILD`, or an iOS build made once per test process
 /// (the tests of one binary run on parallel threads and must not build into the same directory at the same time).
+#[cfg(not(target_arch = "wasm32"))]
 fn reference_build() -> &'static PathBuf {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     DIR.get_or_init(|| match std::env::var_os("WEBMETAL_REFERENCE_BUILD") {
@@ -67,10 +70,21 @@ fn reference_build() -> &'static PathBuf {
     })
 }
 
+/// The bytes of the reference library.
+#[cfg(not(target_arch = "wasm32"))]
+fn reference_metallib() -> Vec<u8> {
+    std::fs::read(reference_build().join("wmref.metallib")).expect("wmref.metallib")
+}
+
+/// The bytes of the reference library, which the page's server serves at `__build/reference-ios`.
+#[cfg(target_arch = "wasm32")]
+fn reference_metallib() -> Vec<u8> {
+    webmetal_web_tests::fs::read("__build/reference-ios/wmref.metallib").expect("wmref.metallib")
+}
+
 /// The functions of the reference library by name.
 pub fn reference_library() -> HashMap<String, LibraryFunction> {
-    let dir = reference_build();
-    let data = std::fs::read(dir.join("wmref.metallib")).expect("wmref.metallib");
+    let data = reference_metallib();
     let lib = airwgsl::parse_metallib(&data).expect("a metallib");
     let mut out = HashMap::new();
     for f in &lib.functions {

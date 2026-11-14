@@ -1,0 +1,70 @@
+[package]
+name = "webmetal-web-tests"
+version = "0.1.0"
+description = "WebMetal's executor tests in a browser: the reference cases replayed on the browser's WebGPU"
+edition.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[features]
+# Build the test modules for a browser (wasm32): the executor on the browser's WebGPU.
+web = ["webmetal-host/web", "dep:wasm-bindgen", "dep:js-sys"]
+
+[dependencies]
+webmetal-host = { path = ".." }
+webmetal-wire = { path = "../../wire" }
+# The compiler the executor links (host/Cargo.toml pins the same commit); the pipeline tests read the reference
+# library with it.
+airwgsl = { git = "https://github.com/MovByte/AirWgsl", rev = "8dc0da5acb091beda089f2b0f46ed4d436d077c9" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# The versions host/Cargo.toml pins; the wasm-bindgen CLI that post-processes the modules must match.
+wasm-bindgen = { version = "=0.2.105", optional = true }
+js-sys = { version = "=0.3.82", optional = true }
+
+# One module per test file of host/tests that replays reference cases (build.rs).
+[[example]]
+name = "blit_exec"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "compute_exec"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "mem_buffers"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "mem_exec"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "mem_textures"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "pipeline_exec"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "render_cases"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "tess_exec"
+crate-type = ["cdylib"]
+required-features = ["web"]
+
+[[example]]
+name = "view_exec"
+crate-type = ["cdylib"]
+required-features = ["web"]

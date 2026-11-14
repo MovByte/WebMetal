@@ -4,10 +4,8 @@
 //! records the reference lacks.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use super::json::Json;
-use crate::mem_common::GOLDEN_DEVICE;
 
 pub struct Golden {
     pub case: String,
@@ -20,12 +18,8 @@ fn hex(s: &str) -> Vec<u8> {
 
 impl Golden {
     pub fn load(case: &str) -> Golden {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../tests/reference/goldens")
-            .join(GOLDEN_DEVICE)
-            .join("release")
-            .join(format!("{case}.json"));
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let path = crate::mem_common::golden_path(case);
+        let text = crate::mem_common::files::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
         Golden { case: case.to_string(), file: Json::parse(&text) }
     }
 
