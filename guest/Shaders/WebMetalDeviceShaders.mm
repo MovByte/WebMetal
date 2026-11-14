@@ -1,5 +1,5 @@
 // The device's shader methods: AGXA10FamilyDevice's libraries, pipelines, binary archives, argument encoders, dynamic
-// libraries and indirect command buffers, as a category of WebMetalDevice.
+// libraries and indirect command buffers, as a category of AGXA10FamilyDevice.
 
 #import "WebMetalPipelineDescriptors.h"
 #import "WebMetalShaders.h"
@@ -30,7 +30,7 @@ constexpr uint64_t kCompilerFlags = 0x21c;
 // Metal.framework's _MTLCompilePerformanceStatisticsEnabled answers YES (createComputePipeline and
 // createRenderPipeline, AGXMetalA10 0x21c8decb4 and 0x21c8e0338). The statistics come from the back end's reply, which
 // the host does not produce, so that case is LOUD.
-MTLPipelineOption compileOptions(WebMetalDevice *self, SEL _cmd, MTLPipelineOption options)
+MTLPipelineOption compileOptions(AGXA10FamilyDevice *self, SEL _cmd, MTLPipelineOption options)
 {
     if (ShaderDebugInfoCaching(self))
         WMLoudMethod(self, _cmd, "shader debug information is requested (setShaderDebugInfoCaching:), which the A10X "
@@ -68,7 +68,7 @@ void checkReflectionOptions(id self, SEL _cmd, const Want &want)
 // 0x21c8e0338): a nil descriptor, or one Metal.framework's validateWithDevice:error: rejects, fails with an error in
 // the driver's domain, code 2, whose description is the validator's. Returns the error, or nil when the descriptor
 // passes.
-NSError *validate(WebMetalDevice *self, id descriptor)
+NSError *validate(AGXA10FamilyDevice *self, id descriptor)
 {
     if (!descriptor)
         return DriverError(2, @"pipeline descriptor is nil");
@@ -93,14 +93,14 @@ dispatch_queue_t completionQueue()
 
 // A compute pipeline the host created: the plugin's object with its handle, and its reflection when asked for.
 struct ComputeResult {
-    WebMetalComputePipelineState *state = nil;
+    AGXA10FamilyComputePipeline *state = nil;
     MTLComputePipelineReflection *reflection = nil;
     NSError *error = nil;
 };
 
 template <class Request, class ReplyFields>
-ComputeResult createCompute(WebMetalDevice *self, SEL _cmd, MTLComputePipelineDescriptor *descriptor, Request &request,
-                            const Want &want, ComputeDescriptor &wire_)
+ComputeResult createCompute(AGXA10FamilyDevice *self, SEL _cmd, MTLComputePipelineDescriptor *descriptor,
+                            Request &request, const Want &want, ComputeDescriptor &wire_)
 {
     ComputeResult out;
     Connection *connection = DeviceConnection(self);
@@ -112,7 +112,7 @@ ComputeResult createCompute(WebMetalDevice *self, SEL _cmd, MTLComputePipelineDe
         out.error = MetalError(reply.failure);
         return out;
     }
-    out.state = [[WebMetalComputePipelineState alloc] initWithDevice:self pipelineStateDescriptor:descriptor];
+    out.state = [[AGXA10FamilyComputePipeline alloc] initWithDevice:self pipelineStateDescriptor:descriptor];
     AdoptPipelineHandle(out.state, connection, request.pipeline);
     if (want.reflection) {
         if (!reply.value.reflection)
@@ -123,13 +123,13 @@ ComputeResult createCompute(WebMetalDevice *self, SEL _cmd, MTLComputePipelineDe
 }
 
 struct RenderResult {
-    WebMetalRenderPipelineState *state = nil;
+    AGXA10FamilyRenderPipeline *state = nil;
     MTLRenderPipelineReflection *reflection = nil;
     NSError *error = nil;
 };
 
 template <class Request, class ReplyFields>
-RenderResult createRender(WebMetalDevice *self, SEL _cmd, MTLRenderPipelineDescriptor *descriptor, Request &request,
+RenderResult createRender(AGXA10FamilyDevice *self, SEL _cmd, MTLRenderPipelineDescriptor *descriptor, Request &request,
                           const Want &want, RenderDescriptor &wire_, bool replyHasReflection)
 {
     RenderResult out;
@@ -142,7 +142,7 @@ RenderResult createRender(WebMetalDevice *self, SEL _cmd, MTLRenderPipelineDescr
         out.error = MetalError(reply.failure);
         return out;
     }
-    out.state = [[WebMetalRenderPipelineState alloc] initWithDevice:self pipelineStateDescriptor:descriptor];
+    out.state = [[AGXA10FamilyRenderPipeline alloc] initWithDevice:self pipelineStateDescriptor:descriptor];
     AdoptPipelineHandle(out.state, connection, request.pipeline);
     if (want.reflection) {
         if constexpr (std::is_same_v<ReplyFields, wire::CreateRenderPipelineReflectionReply> ||
@@ -162,9 +162,9 @@ RenderResult createRender(WebMetalDevice *self, SEL _cmd, MTLRenderPipelineDescr
 // The compute pipeline creation of every form (AGX::UserCommonShaderFactory::createComputePipeline, AGXMetalA10
 // 0x21c8decb4). Synchronous forms return the pipeline and fill `reflection` and `error`; asynchronous forms return nil
 // and run `handler` with the result.
-id<MTLComputePipelineState> newComputePipeline(WebMetalDevice *self, SEL _cmd, MTLComputePipelineDescriptor *descriptor,
-                                               MTLPipelineOption options, MTLAutoreleasedComputePipelineReflection *reflection,
-                                               NSError **error,
+id<MTLComputePipelineState> newComputePipeline(AGXA10FamilyDevice *self, SEL _cmd,
+                                               MTLComputePipelineDescriptor *descriptor, MTLPipelineOption options,
+                                               MTLAutoreleasedComputePipelineReflection *reflection, NSError **error,
                                                MTLNewComputePipelineStateWithReflectionCompletionHandler handler,
                                                bool handlerTakesReflection)
 {
@@ -221,8 +221,9 @@ id<MTLComputePipelineState> newComputePipeline(WebMetalDevice *self, SEL _cmd, M
     return nil;
 }
 
-id<MTLRenderPipelineState> newRenderPipeline(WebMetalDevice *self, SEL _cmd, MTLRenderPipelineDescriptor *descriptor,
-                                             MTLPipelineOption options, bool optionsForm,
+id<MTLRenderPipelineState> newRenderPipeline(AGXA10FamilyDevice *self, SEL _cmd,
+                                             MTLRenderPipelineDescriptor *descriptor, MTLPipelineOption options,
+                                             bool optionsForm,
                                              MTLAutoreleasedRenderPipelineReflection *reflection, NSError **error,
                                              MTLNewRenderPipelineStateWithReflectionCompletionHandler handler,
                                              bool handlerTakesReflection)
@@ -315,7 +316,7 @@ id<MTLRenderPipelineState> newRenderPipeline(WebMetalDevice *self, SEL _cmd, MTL
 
 }  // namespace
 
-@implementation WebMetalDevice (WebMetalShaders)
+@implementation AGXA10FamilyDevice (WebMetalShaders)
 
 #pragma mark - Libraries
 

@@ -28,14 +28,13 @@
 - (void)setStructType:(MTLStructType *)structType withDevice:(id<MTLDevice>)device;
 @end
 
-// The layout of an argument buffer (AGXA10FamilyIndirectArgumentBufferLayout on 21H461) and its encoder
-// (AGXA10FamilyIndirectArgumentEncoder).
-@interface WebMetalArgumentBufferLayout : _MTLIndirectArgumentBufferLayout
-- (instancetype)initWithStructType:(MTLStructType *)structType device:(id<MTLDevice>)device;
+// The layout of an argument buffer and its encoder, under the 21H461 driver's names.
+@interface AGXA10FamilyIndirectArgumentBufferLayout : _MTLIndirectArgumentBufferLayout
+- (instancetype)initWithStructType:(MTLStructType *)structType;
 @end
 
-@interface WebMetalArgumentEncoder : _MTLIndirectArgumentEncoder <MTLArgumentEncoder>
-- (instancetype)initWithLayout:(WebMetalArgumentBufferLayout *)layout device:(id<MTLDevice>)device;
+@interface AGXA10FamilyIndirectArgumentEncoder : _MTLIndirectArgumentEncoder <MTLArgumentEncoder>
+- (instancetype)initWithLayout:(AGXA10FamilyIndirectArgumentBufferLayout *)layout device:(id<MTLDevice>)device;
 @end
 
 // Metal.framework's data type size and alignment tables (exported by Metal on 21H461: MTLDataTypeGetSize at
@@ -129,7 +128,7 @@ Extent structExtent(MTLStructType *type, std::map<uint64_t, Entry> *entries, uin
 
 }  // namespace
 
-@implementation WebMetalArgumentBufferLayout {
+@implementation AGXA10FamilyIndirectArgumentBufferLayout {
 @public
     std::map<uint64_t, Entry> _entries;
     uint64_t _encodedLength;
@@ -138,7 +137,7 @@ Extent structExtent(MTLStructType *type, std::map<uint64_t, Entry> *entries, uin
 
 // -[AGXA10FamilyIndirectArgumentBufferLayout initWithStructType:] (AGXMetalA10 0x21c91b0ec) lays the struct out in the
 // A10X's format. WebMetal's format is the struct's own layout: the members' offsets, the size of the struct.
-- (instancetype)initWithStructType:(MTLStructType *)structType device:(id<MTLDevice>)device
+- (instancetype)initWithStructType:(MTLStructType *)structType
 {
     self = [super init];
     if (!self)
@@ -218,7 +217,7 @@ Extent structExtent(MTLStructType *type, std::map<uint64_t, Entry> *entries, uin
 
 namespace {
 
-const Entry *entryOf(WebMetalArgumentBufferLayout *layout, uint64_t index)
+const Entry *entryOf(AGXA10FamilyIndirectArgumentBufferLayout *layout, uint64_t index)
 {
     auto found = layout->_entries.find(index);
     return found == layout->_entries.end() ? nullptr : &found->second;
@@ -226,16 +225,16 @@ const Entry *entryOf(WebMetalArgumentBufferLayout *layout, uint64_t index)
 
 }  // namespace
 
-@implementation WebMetalArgumentEncoder {
+@implementation AGXA10FamilyIndirectArgumentEncoder {
 @public
-    WebMetalArgumentBufferLayout *_webmetalLayout;
+    AGXA10FamilyIndirectArgumentBufferLayout *_webmetalLayout;
     id<MTLBuffer> _argumentBuffer;
     uint8_t *_bytes;
 }
 
 // -[AGXA10FamilyIndirectArgumentEncoder initWithLayout:device:] (AGXMetalA10 0x21c91d8dc): _MTLIndirectArgumentEncoder's
 // initializer, then the layout and device kept for the setters (and a telemetry bit, which has no observable effect).
-- (instancetype)initWithLayout:(WebMetalArgumentBufferLayout *)layout device:(id<MTLDevice>)device
+- (instancetype)initWithLayout:(AGXA10FamilyIndirectArgumentBufferLayout *)layout device:(id<MTLDevice>)device
 {
     self = [super initWithLayout:layout device:device];
     if (self)
@@ -259,7 +258,7 @@ const Entry *entryOf(WebMetalArgumentBufferLayout *layout, uint64_t index)
 
 // Writes a handle word at the member an index names. The driver aborts for an index its layout does not have
 // (std::map::at in each setter).
-static void writeWord(WebMetalArgumentEncoder *encoder, uint64_t word, Slot slot, NSUInteger index)
+static void writeWord(AGXA10FamilyIndirectArgumentEncoder *encoder, uint64_t word, Slot slot, NSUInteger index)
 {
     const Entry *entry = entryOf(encoder->_webmetalLayout, index);
     if (!entry || entry->slot != slot)
@@ -378,7 +377,7 @@ static void writeWord(WebMetalArgumentEncoder *encoder, uint64_t word, Slot slot
 
 @end
 
-@implementation WebMetalDevice (WebMetalArgumentBuffers)
+@implementation AGXA10FamilyDevice (WebMetalArgumentBuffers)
 
 // -[AGXA10FamilyDevice newIndirectArgumentBufferLayoutWithStructType:] (AGXMetalA10 0x21c8db140). Metal.framework
 // passes the struct type of the argument buffer: from the argument descriptors (newArgumentEncoderWithArguments:), from
@@ -389,16 +388,16 @@ static void writeWord(WebMetalArgumentEncoder *encoder, uint64_t word, Slot slot
     if (!structType)
         WMLoudMethod(self, _cmd, "no struct type: a function's reflection, which Metal.framework asks the device's "
                                  "compiler for, has no WebMetal source");
-    return [[WebMetalArgumentBufferLayout alloc] initWithStructType:structType device:self];
+    return [[AGXA10FamilyIndirectArgumentBufferLayout alloc] initWithStructType:structType];
 }
 
 // -[AGXA10FamilyDevice newArgumentEncoderWithLayout:] (AGXMetalA10 0x21c8db16c).
 - (id<MTLArgumentEncoder>)newArgumentEncoderWithLayout:(id)layout
 {
-    if (![layout isKindOfClass:[WebMetalArgumentBufferLayout class]])
+    if (![layout isKindOfClass:[AGXA10FamilyIndirectArgumentBufferLayout class]])
         WMLoudMethod(self, _cmd, "the layout was not made by this device");
     webmetal::RequireShaderEntryPoints(self, _cmd);
-    return [[WebMetalArgumentEncoder alloc] initWithLayout:layout device:self];
+    return [[AGXA10FamilyIndirectArgumentEncoder alloc] initWithLayout:layout device:self];
 }
 
 // -[IOGPUMetalDevice newIndirectArgumentEncoderWithLayout:] (IOGPU 0x1fcb35974) aborts.

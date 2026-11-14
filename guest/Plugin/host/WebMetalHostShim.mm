@@ -1,4 +1,4 @@
-// macOS test shim: the plugin's classes in a library that registers a WebMetalDevice with this Mac's Metal.framework
+// macOS test shim: the plugin's classes in a library that registers an AGXA10XDevice with this Mac's Metal.framework
 // the way Metal.framework's discovery does on the target (_MTLRegisterDevices: -initWithAcceleratorPort:, then
 // MTLAddDevice), for the host checks and for the reference harness (tests/reference, `--device provider:`).
 //
@@ -18,6 +18,11 @@
 //    signals it observes.
 //  - The layouts. This library is built against the layouts of the Mac's Metal.framework, recorded when it was built
 //    (WebMetalLayoutHost.mm); the iOS bundle requires 21H461's.
+//  - Class names. The plugin's classes carry AGXMetalA10's names, and this Mac's own Metal driver, which
+//    Metal.framework loads into the process when it lists the system's devices, defines classes of some of the same
+//    names (AGXBuffer, AGXTexture, AGXTextureLayout, AGXPrincipalDevice). The runtime keeps both images' classes;
+//    objc_getClass answers the one registered first (and the runtime reports the duplicates when the Mac's driver
+//    loaded first), so the plugin finds its classes in its own image (PluginClass), never by name alone.
 
 #import "../WebMetalConnection.h"
 #import "../WebMetalDevice.h"
@@ -184,11 +189,11 @@ static webmetal::IOGPUConfig a10xConfig(uint64_t maxResourceSize)
     return config;
 }
 
-// Creates a WebMetalDevice, registers it with MTLAddDevice and returns it, or returns nil after a report. Once per
+// Creates an AGXA10XDevice, registers it with MTLAddDevice and returns it, or returns nil after a report. Once per
 // process; a later call returns the same device when it asks for the same sentinel.
 extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShimRegister(uint64_t maxBufferLength)
 {
-    @synchronized([WebMetalDevice class]) {
+    @synchronized([AGXA10XDevice class]) {
         if (gMaxBufferLength) {
             if (maxBufferLength != gMaxBufferLength) {
                 WMReport("WebMetalHostShimRegister", "refused: the device exists with another maxBufferLength sentinel");
@@ -210,7 +215,7 @@ extern "C" __attribute__((visibility("default"))) id<MTLDevice> WebMetalHostShim
         // Metal.framework's device array, which MTLAddDevice requires, exists once the system's devices are listed.
         (void)MTLCopyAllDevices();
         io_registry_entry_t root = IORegistryGetRootEntry(kIOMainPortDefault);
-        WebMetalDevice *device = [[WebMetalDevice alloc] initWithAcceleratorPort:root];
+        AGXA10XDevice *device = [[AGXA10XDevice alloc] initWithAcceleratorPort:root];
         IOObjectRelease(root);
         if (!device)
             return nil;

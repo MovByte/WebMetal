@@ -20,7 +20,7 @@ const char *const kBackEndValue =
 
 }  // namespace
 
-@implementation WebMetalComputePipelineState
+@implementation AGXA10FamilyComputePipeline
 
 // -[AGXA10FamilyComputePipeline initWithDevice:pipelineStateDescriptor:] (AGXMetalA10 0x21c8cc26c) initializes
 // _MTLComputePipelineState and keeps the compute function's driver program (its vendorPrivate), which has no
@@ -69,7 +69,7 @@ const char *const kBackEndValue =
 
 @end
 
-@implementation WebMetalRenderPipelineState
+@implementation AGXA10FamilyRenderPipeline
 
 // -[AGXA10FamilyRenderPipeline initWithDevice:pipelineStateDescriptor:] (AGXMetalA10 0x21c9774cc) initializes
 // _MTLRenderPipelineState and keeps the stage functions' driver programs (their vendorPrivate), which have no

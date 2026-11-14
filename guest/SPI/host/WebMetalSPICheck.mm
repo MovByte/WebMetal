@@ -128,10 +128,20 @@ template <typename T> T symbol(void *handle, const char *name)
     return (T)address;
 }
 
-// An instance of a plugin class without its initializer: the constant answers read no state.
+// The shim (dlopen handle), whose image defines the plugin's classes.
+void *gShim;
+
+// An instance of a plugin class without its initializer: the constant answers read no state. The class is the shim's
+// own: this Mac's Metal driver defines classes of some of the same names.
 id bare(const char *name)
 {
-    Class cls = objc_getClass(name);
+    __block Class cls = Nil;
+    objc_enumerateClasses(gShim, name, nil, Nil, ^(Class candidate, BOOL *stop) {
+        if (!strcmp(class_getName(candidate), name)) {
+            cls = candidate;
+            *stop = YES;
+        }
+    });
     if (!cls) {
         fprintf(stderr, "the shim has no class %s\n", name);
         exit(2);
@@ -539,7 +549,7 @@ void checkListings(id<MTLDevice> device)
 void checkConstants()
 {
     // -[AGXA10FamilyRenderPipeline ...] 0x21c977a54 to 0x21c977c20.
-    id<SPIConstants> render = bare("WebMetalRenderPipelineState");
+    id<SPIConstants> render = bare("AGXA10FamilyRenderPipeline");
     check([render imageblockSampleLength] == 0 && [render imageBlockSampleLength] == 0 &&
               [render imageblockMemoryLengthForDimensions:MTLSizeMake(8, 8, 1)] == 0 &&
               [render imageBlockMemoryLengthForDimensions:MTLSizeMake(8, 8, 1)] == 0 &&
@@ -547,23 +557,23 @@ void checkConstants()
               [render meshThreadExecutionWidth] == 32 && [render resourceIndex] == 0,
           "the render pipeline's constants are the A10 family's");
     // -[AGXA10FamilyComputePipeline ...] 0x21c8cc3c8, 0x21c8cc3d0, 0x21c8cc7c8.
-    id<SPIConstants> compute = bare("WebMetalComputePipelineState");
+    id<SPIConstants> compute = bare("AGXA10FamilyComputePipeline");
     check([compute imageblockMemoryLengthForDimensions:MTLSizeMake(4, 4, 1)] == 0 &&
               [compute imageBlockMemoryLengthForDimensions:MTLSizeMake(4, 4, 1)] == 0 && [compute resourceIndex] == 0,
           "the compute pipeline's constants are the A10 family's");
     // -[AGXA10FamilyBlitContext commandBatchIdOffset] 0x21c8baf38 and AGXA10FamilyComputeContext's 0x21c90c414 to
     // 0x21c90c4d4.
-    id<SPIConstants> blit = bare("WebMetalBlitCommandEncoder");
-    id<SPIConstants> computeEncoder = bare("WebMetalComputeCommandEncoder");
+    id<SPIConstants> blit = bare("AGXA10FamilyBlitContext");
+    id<SPIConstants> computeEncoder = bare("AGXA10FamilyComputeContext");
     check([blit commandBatchIdOffset] == 0 && [computeEncoder commandBatchIdOffset] == 0 &&
               [computeEncoder nextVirtualSubstream] == ~NSUInteger(0) && ![computeEncoder parallelExecution],
           "the encoders' constants are the A10 family's");
     // -[AGXA10FamilyThreadedRenderPass setMTLCounterSampleLocationWithBuffer:startIndex:endIndex:] 0x21c9c24a0.
-    id<SPIConstants> parallel = bare("WebMetalParallelRenderCommandEncoder");
+    id<SPIConstants> parallel = bare("AGXA10FamilyThreadedRenderPass");
     check(![parallel setMTLCounterSampleLocationWithBuffer:nil startIndex:0 endIndex:1],
           "the parallel encoder's counter sample location is NO");
     // -[AGXA10FamilyTexture ...] 0x21c9822e0 to 0x21c9823c4.
-    id<SPIConstants> texture = bare("WebMetalTexture");
+    id<SPIConstants> texture = bare("AGXA10FamilyTexture");
     check([texture compressionFeedback] == 4 && [texture firstMipmapInTail] == 0 && [texture tailSize] == 0 &&
               [texture tailSizeInBytes] == 0 && [texture sparseSurfaceDefaultValue] == 0,
           "the texture's constants are the A10 family's");
@@ -583,6 +593,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "dlopen %s: %s\n", argv[1], dlerror());
             return 2;
         }
+        gShim = handle;
         id<MTLDevice> device = symbol<id<MTLDevice> (*)(void)>(handle, "WMRefProvideDevice")();
         if (!device) {
             printf("FAIL the shim created no device\n");

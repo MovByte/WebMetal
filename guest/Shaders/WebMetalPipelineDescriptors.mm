@@ -44,7 +44,7 @@ wire::Span<uint64_t> handles(Storage &s, std::vector<uint64_t> list)
     return {s.handles.back().data(), s.handles.back().size()};
 }
 
-wire::Span<uint64_t> functions(Storage &s, WebMetalDevice *device, id self, SEL _cmd, NSArray *list)
+wire::Span<uint64_t> functions(Storage &s, AGXA10FamilyDevice *device, id self, SEL _cmd, NSArray *list)
 {
     std::vector<uint64_t> out;
     for (id<MTLFunction> f in list)
@@ -65,7 +65,8 @@ wire::Span<wire::PipelineBufferDescriptor> buffers(Storage &s, id self, SEL _cmd
     return {out.data(), out.size()};
 }
 
-wire::Opt<wire::LinkedFunctions> linked(Storage &s, WebMetalDevice *device, id self, SEL _cmd, MTLLinkedFunctions *in)
+wire::Opt<wire::LinkedFunctions> linked(Storage &s, AGXA10FamilyDevice *device, id self, SEL _cmd,
+                                        MTLLinkedFunctions *in)
 {
     wire::Opt<wire::LinkedFunctions> out;
     if (!in)
@@ -122,7 +123,7 @@ wire::Size size(MTLSize v)
 
 }  // namespace
 
-void BuildComputeDescriptor(WebMetalDevice *device, id self, SEL _cmd, MTLComputePipelineDescriptor *in,
+void BuildComputeDescriptor(AGXA10FamilyDevice *device, id self, SEL _cmd, MTLComputePipelineDescriptor *in,
                             ComputeDescriptor &out)
 {
     Storage &s = out.storage;
@@ -187,7 +188,7 @@ void BuildComputeDescriptor(WebMetalDevice *device, id self, SEL _cmd, MTLComput
         get<BOOL>(self, _cmd, in, "threadGroupSizeIsMultipleOfThreadExecutionWidth");
 }
 
-void BuildRenderDescriptor(WebMetalDevice *device, id self, SEL _cmd, MTLRenderPipelineDescriptor *in,
+void BuildRenderDescriptor(AGXA10FamilyDevice *device, id self, SEL _cmd, MTLRenderPipelineDescriptor *in,
                            RenderDescriptor &out)
 {
     Storage &s = out.storage;

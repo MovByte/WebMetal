@@ -1,7 +1,7 @@
 // The device-wide depth-stencil state cache of the A10X driver: AGX::Device keeps an os_unfair_lock at +0x800 and a
 // std::map at +0x808 from a state's packed descriptor and label to the state object, which
 // -[AGXA10FamilyDevice newDepthStencilStateWithDescriptor:] (AGXMetalA10 0x21c8d53e0) returns for an equal descriptor.
-// WebMetalDevice holds one (guest/Plugin/WebMetalDevice.mm); WebMetalDepthStencilState.mm uses it.
+// AGXA10FamilyDevice holds one (guest/Plugin/WebMetalDevice.mm); WebMetalDepthStencilState.mm uses it.
 
 #pragma once
 

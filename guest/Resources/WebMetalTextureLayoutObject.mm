@@ -1,5 +1,5 @@
-// Texture layout objects: WebMetalTextureLayout stands in for AGXTextureLayout (AGXTextureLayout ->
-// IOGPUMetalTextureLayout -> NSObject on 21H461), which -[AGXA10FamilyDevice newTextureLayoutWithDescriptor:
+// Texture layout objects: AGXTextureLayout (AGXTextureLayout -> IOGPUMetalTextureLayout -> NSObject on 21H461; the
+// plugin's subclasses NSObject), which -[AGXA10FamilyDevice newTextureLayoutWithDescriptor:
 // isHeapOrBufferBacked:] (AGXMetalA10 0x21c8d8fd4) makes. It answers the AGX layout of a texture whose memory the caller
 // provides: its size (the layout and a 16-byte watermark after it), alignment and copy granularity; and it copies texels
 // between linear bytes and such memory, in the layout, as the driver's writeRegion and readRegion do. The host executor
@@ -33,16 +33,16 @@ typedef struct {
 
 }  // namespace
 
-@interface WebMetalTextureLayout : NSObject <MTLTextureLayout>
+@interface AGXTextureLayout : NSObject <MTLTextureLayout>
 @end
 
-@interface WebMetalTextureLayout () {
+@interface AGXTextureLayout () {
 @public
     uint64_t _total;      // AGX::TextureGen2 +0x158: the layout's bytes, where the watermark goes
     uint64_t _alignment;  // the layout's alignment
     uint64_t _blockWidth, _blockHeight;  // AGX::TextureGen2 +0xd0, +0xd4
     // What the layout was made from, for the host's copies: the device, the descriptor and the memory's kind.
-    WebMetalDevice *_device;
+    AGXA10FamilyDevice *_device;
     webmetal::wire::TextureDescriptor _descriptor;
     bool _heapOrBufferBacked;
 }
@@ -53,13 +53,13 @@ namespace webmetal {
 // -[AGXTextureLayout initWithDevice:descriptor:isHeapOrBufferBacked:] (AGXMetalA10 0x21c9c019c): the layout of the
 // descriptor (no validation), twiddled planes allowed unless the memory is a heap's or a buffer's; nil when the layout
 // is not valid.
-id NewTextureLayout(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor, bool heapOrBufferBacked)
+id NewTextureLayout(AGXA10FamilyDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor, bool heapOrBufferBacked)
 {
     const wire::TextureDescriptor d = WireTextureDescriptor(device, _cmd, descriptor);
     const agx::LayoutResult r = agx::textureLayout(LayoutDescriptorFields(d), heapOrBufferBacked, LayoutSystemValues());
     if (!r.initialized)
         return nil;
-    WebMetalTextureLayout *layout = [WebMetalTextureLayout new];
+    AGXTextureLayout *layout = [AGXTextureLayout new];
     layout->_total = r.total;
     layout->_alignment = r.alignment;
     layout->_blockWidth = r.blockWidth;
@@ -88,7 +88,7 @@ webmetal::wire::Region wireRegion(MTLRegion region)
 
 }  // namespace
 
-@implementation WebMetalTextureLayout
+@implementation AGXTextureLayout
 
 // -[AGXTextureLayout size] (AGXMetalA10 0x21c9c0380): the layout and its watermark.
 - (uint64_t)size

@@ -6,7 +6,7 @@
 // The class adopts the driver's protocols; these categories implement the driver selectors they declare.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
-@implementation WebMetalCommandBuffer (WebMetalSPI)
+@implementation AGXA10FamilyCommandBuffer (WebMetalSPI)
 
 // -[AGXA10FamilyCommandBuffer commitEncoder] (AGXMetalA10 0x21c8c8fac) ends the encoding the driver deferred: the
 // blit, compute and render encoders whose endEncoding it postponed to coalesce them with the next encoder of their

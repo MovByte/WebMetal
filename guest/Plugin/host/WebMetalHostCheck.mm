@@ -79,13 +79,13 @@ std::string lastReport(const Shim &shim)
     return text;
 }
 
-const Role &deviceRole()
+// The generated table of a class the plugin defines, or null.
+const Role *findRole(const char *name)
 {
     for (const Role &role : target::kRoles)
-        if (!strcmp(role.targetClass, "AGXA10XDevice"))
-            return role;
-    fprintf(stderr, "the generated tables have no AGXA10XDevice role\n");
-    exit(2);
+        if (!strcmp(role.name, name))
+            return &role;
+    return nullptr;
 }
 
 const BaseLayout &base(const char *name)
@@ -97,12 +97,17 @@ const BaseLayout &base(const char *name)
     exit(2);
 }
 
-bool isDriverSelector(const char *name)
+// Whether a class of the device's chain carries an instance selector of that name.
+bool isDriverSelector(Class device, const char *name)
 {
-    const Role &role = deviceRole();
-    for (size_t i = 0; i < role.count; i++)
-        if (role.selectors[i].kind == SelectorKind::Instance && !strcmp(role.selectors[i].name, name))
-            return true;
+    for (Class c = device; c; c = class_getSuperclass(c)) {
+        const Role *role = findRole(class_getName(c));
+        if (!role)
+            break;
+        for (size_t i = 0; i < role->count; i++)
+            if (role->selectors[i].kind == SelectorKind::Instance && !strcmp(role->selectors[i].name, name))
+                return true;
+    }
     return false;
 }
 
@@ -253,7 +258,7 @@ void checkAnswers(id device, NSArray *entries, const char *what)
         // The plugin's own answers are compared always; Metal.framework's (inherited, or reached through the driver
         // getter as the target's does: "via") only where the profile's second method found this Mac's framework to
         // give the target's answer.
-        const bool own = isDriverSelector(selectorName.UTF8String) && !entry[@"via"];
+        const bool own = isDriverSelector(object_getClass(device), selectorName.UTF8String) && !entry[@"via"];
         if (!own && ![entry[@"b1"] boolValue]) {
             skipped++;
             continue;
@@ -276,42 +281,63 @@ void checkAnswers(id device, NSArray *entries, const char *what)
 
 void checkSurface(id device, const Shim &shim)
 {
+    // AGXA10XDevice -> AGXA10FamilyDevice -> _MTLDevice: each class of the plugin carries its own driver selectors.
     Class cls = object_getClass(device);
-    Class mtlDevice = class_getSuperclass(cls);
-    const Role &role = deviceRole();
-    unsigned own = 0, stubs = 0;
-    for (size_t i = 0; i < role.count; i++) {
-        const DriverSelector &row = role.selectors[i];
-        Class owner = row.kind == SelectorKind::Class ? object_getClass(cls) : cls;
-        unsigned count = 0;
-        Method *methods = class_copyMethodList(owner, &count);
-        Method found = nullptr;
-        for (unsigned k = 0; k < count; k++)
-            if (!strcmp(sel_getName(method_getName(methods[k])), row.name))
-                found = methods[k];
-        free(methods);
-        if (!found) {
-            failure(std::string("driver selector ") + row.name + " is answered by neither the plugin nor a stub");
-            continue;
-        }
-        if (strcmp(method_getTypeEncoding(found), row.types))
-            failure(std::string(row.name) + " has encoding " + method_getTypeEncoding(found) + ", 21H461 has " + row.types);
-        if (method_getImplementation(found) == (IMP)shim.loudStub)
-            stubs++;
-        else
-            own++;
+    const Role *leaf = findRole(class_getName(cls));
+    if (!leaf || strcmp(leaf->name, "AGXA10XDevice")) {
+        failure(std::string("the device is a ") + class_getName(cls) + ", not the generated tables' AGXA10XDevice");
+        return;
     }
-    printf("surface: %zu driver selectors answered: %u by the plugin, %u by LOUD stubs\n", role.count, own, stubs);
+    Class mtlDevice = cls;
+    unsigned own = 0, stubs = 0;
+    size_t total = 0;
+    std::string chain;
+    for (; mtlDevice; mtlDevice = class_getSuperclass(mtlDevice)) {
+        const Role *role = findRole(class_getName(mtlDevice));
+        if (!role)
+            break;
+        chain += std::string(role->name) + " -> ";
+        for (size_t i = 0; i < role->count; i++) {
+            const DriverSelector &row = role->selectors[i];
+            Class owner = row.kind == SelectorKind::Class ? object_getClass(mtlDevice) : mtlDevice;
+            unsigned count = 0;
+            Method *methods = class_copyMethodList(owner, &count);
+            Method found = nullptr;
+            for (unsigned k = 0; k < count; k++)
+                if (!strcmp(sel_getName(method_getName(methods[k])), row.name))
+                    found = methods[k];
+            free(methods);
+            if (!found) {
+                failure(std::string("driver selector ") + row.name + " is answered by neither " + role->name +
+                        " nor a stub on it");
+                continue;
+            }
+            if (strcmp(method_getTypeEncoding(found), row.types))
+                failure(std::string(row.name) + " has encoding " + method_getTypeEncoding(found) + ", 21H461 " +
+                        row.definer + " has " + row.types);
+            if (method_getImplementation(found) == (IMP)shim.loudStub)
+                stubs++;
+            else
+                own++;
+        }
+        total += role->count;
+    }
+    if (!mtlDevice || strcmp(class_getName(mtlDevice), leaf->base)) {
+        failure(chain + (mtlDevice ? class_getName(mtlDevice) : "nil") + ": the chain does not reach " + leaf->base);
+        return;
+    }
+    printf("surface: %zu driver selectors answered over %s%s: %u by the plugin, %u by LOUD stubs\n", total,
+           chain.c_str(), leaf->base, own, stubs);
     // Selectors the driver inherits from Metal.framework, or that no layer implements, must reach the base unchanged.
-    const BaseLayout &layout = base(role.base);
+    const BaseLayout &layout = base(leaf->base);
     unsigned inherited = 0;
     for (size_t i = 0; i < layout.selectorCount; i++) {
         const BaseSelector &s = layout.selectors[i];
-        if (s.kind != SelectorKind::Instance || isDriverSelector(s.name))
+        if (s.kind != SelectorKind::Instance || isDriverSelector(cls, s.name))
             continue;
         SEL selector = sel_registerName(s.name);
         if (class_getMethodImplementation(cls, selector) != class_getMethodImplementation(mtlDevice, selector))
-            failure(std::string("WebMetalDevice overrides ") + s.name + ", which AGXA10XDevice does not");
+            failure(std::string("AGXA10XDevice overrides ") + s.name + ", which 21H461's does not");
         inherited++;
     }
     printf("surface: %u inherited or absent selectors reach _MTLDevice unchanged\n", inherited);
@@ -325,12 +351,12 @@ void checkLoud(id device, const Shim &shim)
         failure("-newAccelerationStructureWithSize: returned instead of failing");
     } @catch (NSException *exception) {
         if (![exception.name isEqualToString:@"WebMetalNotImplemented"] ||
-            ![exception.reason containsString:@"-[WebMetalDevice newAccelerationStructureWithSize:]: not implemented"])
+            ![exception.reason containsString:@"-[AGXA10XDevice newAccelerationStructureWithSize:]: not implemented"])
             failure(std::string("-newAccelerationStructureWithSize: raised ") + exception.name.UTF8String + ": " +
                     exception.reason.UTF8String);
     }
     if (shim.reportCount() != before + 1 ||
-        lastReport(shim).find("-[WebMetalDevice newAccelerationStructureWithSize:]") == std::string::npos)
+        lastReport(shim).find("-[AGXA10XDevice newAccelerationStructureWithSize:]") == std::string::npos)
         failure("-newAccelerationStructureWithSize: made no report: " + lastReport(shim));
     @try {
         (void)[device supportsVertexAmplificationCount:17];

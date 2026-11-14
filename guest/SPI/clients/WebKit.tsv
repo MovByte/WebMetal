@@ -2,62 +2,62 @@
 # (UUID 590d839a82d230f1a17d0cc053420f73). Do not edit: run the script with --write.
 # The rows of surface.tsv whose selector WebKit references (/System/Library/Frameworks/WebKit.framework/WebKit, /System/Library/PrivateFrameworks/WebCore.framework/WebCore, /System/Library/PrivateFrameworks/WebCore.framework/Frameworks/libANGLE-shared.dylib, /System/Library/PrivateFrameworks/WebGPU.framework/WebGPU).
 # selector	driver-class	kind	protocols	layer	classification	plugin-class	plugin-status	note
-GPUEndTime	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-GPUStartTime	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-_purgeDevice	AGXA10Device	instance	-	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-_purgeDevice	AGXA10FamilyDevice	instance	-	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-_purgeDevice	AGXA10XDevice	instance	-	agx	driver	WebMetalDevice	implemented	-
-addCompletedHandler:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-addScheduledHandler:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
+GPUEndTime	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+GPUStartTime	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+_purgeDevice	AGXA10Device	instance	-	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+_purgeDevice	AGXA10FamilyDevice	instance	-	agx	driver	AGXA10FamilyDevice	implemented	-
+_purgeDevice	AGXA10XDevice	instance	-	agx	driver	AGXA10XDevice	implemented	-
+addCompletedHandler:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+addScheduledHandler:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
 areRasterOrderGroupsSupported	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-areRasterOrderGroupsSupported	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-areRasterOrderGroupsSupported	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
+areRasterOrderGroupsSupported	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+areRasterOrderGroupsSupported	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
 argumentBuffersSupport	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-argumentBuffersSupport	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-argumentBuffersSupport	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
-arrayLength	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-arrayLength	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-blitCommandEncoder	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-blitCommandEncoderWithDescriptor:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-commandBuffer	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	agx	driver	WebMetalCommandQueue	implemented	-
-commandBufferWithDescriptor:	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	agx	driver	WebMetalCommandQueue	implemented	-
-commit	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-computeCommandEncoder	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-computeCommandEncoderWithDescriptor:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-constantDataAtIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	WebMetalArgumentEncoder	implemented	-
-contents	AGXA10FamilyBuffer	instance	MTLBuffer	iogpu	driver	WebMetalBuffer	implemented	-
+argumentBuffersSupport	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+argumentBuffersSupport	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
+arrayLength	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+arrayLength	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+blitCommandEncoder	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+blitCommandEncoderWithDescriptor:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+commandBuffer	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	agx	driver	AGXA10FamilyCommandQueue	implemented	-
+commandBufferWithDescriptor:	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	agx	driver	AGXA10FamilyCommandQueue	implemented	-
+commit	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+computeCommandEncoder	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+computeCommandEncoderWithDescriptor:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+constantDataAtIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	AGXA10FamilyIndirectArgumentEncoder	implemented	-
+contents	AGXA10FamilyBuffer	instance	MTLBuffer	iogpu	driver	AGXA10FamilyBuffer	implemented	-
 contents	AGXA10FamilyVisibleFunctionTable	instance	-	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-contents	AGXBuffer	instance	-	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
-copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:options:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:options:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-counterSets	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-counterSets	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-counterSets	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-depth	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-depth	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-description	AGXA10FamilyBuffer	instance	-	iogpu	driver	WebMetalBuffer	implemented	-
-description	AGXA10FamilyTexture	instance	-	iogpu	driver	WebMetalTexture	loud	-[IOGPUMetalTexture description] is -formattedDescription:0 (0x1fcb3a264): the object's own description followed by about thirty labelled fields (type, format, sizes, modes, usage, swizzle, parent, IOSurface, compression...); that text is not transcribed field by field yet
+contents	AGXBuffer	instance	-	iogpu	driver	AGXBuffer	implemented	-
+copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:options:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:options:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+counterSets	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+counterSets	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+counterSets	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+depth	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+depth	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+description	AGXA10FamilyBuffer	instance	-	iogpu	driver	AGXA10FamilyBuffer	implemented	-
+description	AGXA10FamilyTexture	instance	-	iogpu	driver	AGXA10FamilyTexture	loud	-[IOGPUMetalTexture description] is -formattedDescription:0 (0x1fcb3a264): the object's own description followed by about thirty labelled fields (type, format, sizes, modes, usage, swizzle, parent, IOSurface, compression...); that text is not transcribed field by field yet
 description	AGXA10FamilyVisibleFunctionTable	instance	-	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-description	AGXBuffer	instance	-	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
-description	AGXTexture	instance	-	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
+description	AGXBuffer	instance	-	iogpu	driver	AGXBuffer	implemented	-
+description	AGXTexture	instance	-	iogpu	driver	AGXTexture	loud	-[IOGPUMetalTexture description] is -formattedDescription:0 (0x1fcb3a264): the object's own description followed by about thirty labelled fields (type, format, sizes, modes, usage, swizzle, parent, IOSurface, compression...); that text is not transcribed field by field yet
 descriptor	AGXA10FamilyIndirectCommandBuffer	instance	-	iogpu	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 descriptor	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLAccelerationStructureSPI	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 descriptor	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLAccelerationStructureSPI	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
-device	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchive	framework	framework	WebMetalBinaryArchive	inherited	-
-device	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	framework	framework	WebMetalBlitCommandEncoder	inherited	-
-device	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	WebMetalBuffer	implemented	-
-device	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	WebMetalCommandBuffer	implemented	-
-device	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	iogpu	driver	WebMetalCommandQueue	implemented	-
-device	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	framework	framework	WebMetalComputeCommandEncoder	inherited	-
-device	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	framework	framework	WebMetalComputePipelineState	inherited	-
+device	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchive	framework	framework	AGXA10FamilyBinaryArchive	inherited	-
+device	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyBlitContext	inherited	-
+device	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	AGXA10FamilyBuffer	implemented	-
+device	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	AGXA10FamilyCommandBuffer	implemented	-
+device	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	iogpu	driver	AGXA10FamilyCommandQueue	implemented	-
+device	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyComputeContext	inherited	-
+device	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	framework	framework	AGXA10FamilyComputePipeline	inherited	-
 device	AGXA10FamilyDebugContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
-device	AGXA10FamilyDepthStencilState	instance	MTLDepthStencilState	framework	framework	WebMetalDepthStencilState	inherited	-
+device	AGXA10FamilyDepthStencilState	instance	MTLDepthStencilState	framework	framework	AGXA10FamilyDepthStencilState	inherited	-
 device	AGXA10FamilyDynamicLibrary	instance	MTLDynamicLibrary	framework	framework	-	inherited	-
 device	AGXA10FamilyFunctionHandle	instance	MTLFunctionHandle	framework	framework	-	inherited	-
-device	AGXA10FamilyHeap	instance	MTLHeap	iogpu	driver	WebMetalHeap	implemented	-
-device	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	framework	framework	WebMetalArgumentEncoder	inherited	-
+device	AGXA10FamilyHeap	instance	MTLHeap	iogpu	driver	AGXA10FamilyHeap	implemented	-
+device	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	framework	framework	AGXA10FamilyIndirectArgumentEncoder	inherited	-
 device	AGXA10FamilyIndirectCommandBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 device	AGXA10FamilyLateEvalEvent	instance	MTLEvent	iogpu	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newLateEvalEvent], a LOUD stub of the plugin's device
 device	AGXA10FamilyRasterizationRateMap	instance	MTLRasterizationRateMap	agx	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newRasterizationRateMapWithDescriptor:], a LOUD stub of the plugin's device
@@ -65,106 +65,106 @@ device	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLResource	iogpu	dr
 device	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 device	AGXA10FamilyRayTracingCPUBuilder	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 device	AGXA10FamilyRayTracingGPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-device	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	framework	framework	WebMetalRenderCommandEncoder	inherited	-
-device	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineState	framework	framework	WebMetalRenderPipelineState	inherited	-
+device	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyRenderContext	inherited	-
+device	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineState	framework	framework	AGXA10FamilyRenderPipeline	inherited	-
 device	AGXA10FamilyResourceStateContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 device	AGXA10FamilySampledComputeContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 device	AGXA10FamilySampledRenderContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
-device	AGXA10FamilySampler	instance	MTLSamplerState	framework	framework	WebMetalSamplerState	inherited	-
-device	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are WebMetalHeap
-device	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	WebMetalTexture	implemented	-
-device	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	framework	framework	WebMetalParallelRenderCommandEncoder	inherited	-
+device	AGXA10FamilySampler	instance	MTLSamplerState	framework	framework	AGXA10FamilySampler	inherited	-
+device	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are AGXA10FamilyHeap
+device	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	AGXA10FamilyTexture	implemented	-
+device	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyThreadedRenderPass	inherited	-
 device	AGXA10FamilyVisibleFunctionTable	instance	MTLResource	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-device	AGXBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
+device	AGXBuffer	instance	MTLResource	iogpu	driver	AGXBuffer	implemented	-
 device	AGXMTLCounterSampleBuffer	instance	MTLCounterSampleBuffer	agx	driver	-	no-plugin-class	made by -newCounterSampleBufferWithDescriptor:error: and -newCounterSampleBufferWithLength:label:error:, LOUD stubs of the plugin's device
-device	AGXTexture	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-dispatchThreadgroups:threadsPerThreadgroup:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+device	AGXTexture	instance	MTLResource	iogpu	driver	AGXTexture	implemented	-
+dispatchThreadgroups:threadsPerThreadgroup:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 dispatchThreadgroups:threadsPerThreadgroup:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-dispatchThreads:threadsPerThreadgroup:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+dispatchThreads:threadsPerThreadgroup:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 dispatchThreads:threadsPerThreadgroup:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:	AGXA10FamilyIndirectRenderCommand	instance	MTLIndirectRenderCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectRenderCommandAtIndex:) or its render command encoder, which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
-drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-drawPrimitives:indirectBuffer:indirectBufferOffset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawPrimitives:indirectBuffer:indirectBufferOffset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawPrimitives:indirectBuffer:indirectBufferOffset:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-drawPrimitives:vertexStart:vertexCount:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawPrimitives:vertexStart:vertexCount:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawPrimitives:vertexStart:vertexCount:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-drawPrimitives:vertexStart:vertexCount:instanceCount:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawPrimitives:vertexStart:vertexCount:instanceCount:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawPrimitives:vertexStart:vertexCount:instanceCount:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:	AGXA10FamilyIndirectRenderCommand	instance	MTLIndirectRenderCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectRenderCommandAtIndex:) or its render command encoder, which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
-drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-encodeSignalEvent:value:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-encodeWaitForEvent:value:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-encodedLength	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	WebMetalArgumentEncoder	implemented	-
-endEncoding	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-endEncoding	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+encodeSignalEvent:value:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+encodeWaitForEvent:value:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+encodedLength	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	AGXA10FamilyIndirectArgumentEncoder	implemented	-
+endEncoding	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+endEncoding	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 endEncoding	AGXA10FamilyDebugContext	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference), and the command buffer does not answer -debugCommandEncoder on 21H461
 endEncoding	AGXA10FamilyRayTracingCPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference); the A10X has no ray tracing (supportsRaytracing is NO)
 endEncoding	AGXA10FamilyRayTracingGPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-endEncoding	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+endEncoding	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 endEncoding	AGXA10FamilyResourceStateContext	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by -resourceStateCommandEncoder and -resourceStateCommandEncoderWithDescriptor:, for sparse textures, which the A10X does not have (supportsSparseTextures is NO); those factories are LOUD in the plugin
 endEncoding	AGXA10FamilySampledComputeContext	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 endEncoding	AGXA10FamilySampledRenderContext	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-endEncoding	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	agx	driver	WebMetalParallelRenderCommandEncoder	implemented	-
-enqueue	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-error	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-executeCommandsInBuffer:withRange:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
-executeCommandsInBuffer:withRange:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+endEncoding	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	agx	driver	AGXA10FamilyThreadedRenderPass	implemented	-
+enqueue	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+error	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+executeCommandsInBuffer:withRange:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
+executeCommandsInBuffer:withRange:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 executeCommandsInBuffer:withRange:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 executeCommandsInBuffer:withRange:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-familyName	AGXA10Device	instance	MTLDeviceSPI	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-familyName	AGXA10FamilyDevice	instance	MTLDeviceSPI	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-familyName	AGXA10XDevice	instance	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented	-
-fillBuffer:range:value:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-finish	AGXA10FamilyCommandQueue	instance	MTLCommandQueueSPI	framework	framework	WebMetalCommandQueue	inherited	-
+familyName	AGXA10Device	instance	MTLDeviceSPI	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+familyName	AGXA10FamilyDevice	instance	MTLDeviceSPI	agx	driver	AGXA10FamilyDevice	implemented	-
+familyName	AGXA10XDevice	instance	MTLDeviceSPI	agx	driver	AGXA10XDevice	implemented	-
+fillBuffer:range:value:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+finish	AGXA10FamilyCommandQueue	instance	MTLCommandQueueSPI	framework	framework	AGXA10FamilyCommandQueue	inherited	-
 functionType	AGXA10FamilyFunctionHandle	instance	MTLFunctionHandle	framework	framework	-	inherited	-
-generateMipmapsForTexture:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	WebMetalTexture	implemented	-
-getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:	AGXTexture	instance	MTLTexture	agx	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-hasUnifiedMemory	AGXA10Device	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-hasUnifiedMemory	AGXA10FamilyDevice	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-hasUnifiedMemory	AGXA10XDevice	instance	MTLDevice	iogpu	driver	WebMetalDevice	profile	-
-height	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-height	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
+generateMipmapsForTexture:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	AGXA10FamilyTexture	implemented	-
+getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:	AGXTexture	instance	MTLTexture	agx	driver	AGXTexture	implemented	-
+hasUnifiedMemory	AGXA10Device	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+hasUnifiedMemory	AGXA10FamilyDevice	instance	MTLDevice	iogpu	driver	AGXA10FamilyDevice	profile	-
+hasUnifiedMemory	AGXA10XDevice	instance	MTLDevice	iogpu	driver	AGXA10XDevice	profile	-
+height	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+height	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
 indirectRenderCommandAtIndex:	AGXA10FamilyIndirectCommandBuffer	instance	MTLIndirectCommandBuffer	agx	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
-initWithParent:	AGXA10FamilyComputePipeline	instance	-	agx	driver	WebMetalComputePipelineState	loud	an initializer the driver sends only to a pipeline it allocated itself (copies for additional binary functions); the plugin creates its pipelines through its own initializers. MetalPerformanceShaders's and WebKit's references are to their own classes (MPSNNImageNode, WebCoreFPSContentKeySessionDelegate and others implement initWithParent:)
-initWithParent:	AGXA10FamilyRenderPipeline	instance	-	agx	driver	WebMetalRenderPipelineState	loud	an initializer the driver sends only to a pipeline it allocated itself (copies for additional binary functions); the plugin creates its pipelines through its own initializers. MetalPerformanceShaders's and WebKit's references are to their own classes (MPSNNImageNode, WebCoreFPSContentKeySessionDelegate and others implement initWithParent:)
-insertDebugSignpost:	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	framework	framework	WebMetalBlitCommandEncoder	inherited	-
-insertDebugSignpost:	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	framework	framework	WebMetalComputeCommandEncoder	inherited	-
+initWithParent:	AGXA10FamilyComputePipeline	instance	-	agx	driver	AGXA10FamilyComputePipeline	loud	an initializer the driver sends only to a pipeline it allocated itself (copies for additional binary functions); the plugin creates its pipelines through its own initializers. MetalPerformanceShaders's and WebKit's references are to their own classes (MPSNNImageNode, WebCoreFPSContentKeySessionDelegate and others implement initWithParent:)
+initWithParent:	AGXA10FamilyRenderPipeline	instance	-	agx	driver	AGXA10FamilyRenderPipeline	loud	an initializer the driver sends only to a pipeline it allocated itself (copies for additional binary functions); the plugin creates its pipelines through its own initializers. MetalPerformanceShaders's and WebKit's references are to their own classes (MPSNNImageNode, WebCoreFPSContentKeySessionDelegate and others implement initWithParent:)
+insertDebugSignpost:	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyBlitContext	inherited	-
+insertDebugSignpost:	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyComputeContext	inherited	-
 insertDebugSignpost:	AGXA10FamilyDebugContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 insertDebugSignpost:	AGXA10FamilyRayTracingCPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference); the A10X has no ray tracing (supportsRaytracing is NO)
 insertDebugSignpost:	AGXA10FamilyRayTracingGPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-insertDebugSignpost:	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	framework	framework	WebMetalRenderCommandEncoder	inherited	-
+insertDebugSignpost:	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyRenderContext	inherited	-
 insertDebugSignpost:	AGXA10FamilyResourceStateContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 insertDebugSignpost:	AGXA10FamilySampledComputeContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 insertDebugSignpost:	AGXA10FamilySampledRenderContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
-insertDebugSignpost:	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	framework	framework	WebMetalParallelRenderCommandEncoder	inherited	-
-iosurface	AGXA10FamilyBuffer	instance	-	iogpu	driver	WebMetalBuffer	implemented	-
-iosurface	AGXA10FamilyTexture	instance	MTLTexture,MTLTextureSPI	iogpu	driver	WebMetalTexture	implemented	-
+insertDebugSignpost:	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyThreadedRenderPass	inherited	-
+iosurface	AGXA10FamilyBuffer	instance	-	iogpu	driver	AGXA10FamilyBuffer	implemented	-
+iosurface	AGXA10FamilyTexture	instance	MTLTexture,MTLTextureSPI	iogpu	driver	AGXA10FamilyTexture	implemented	-
 iosurface	AGXA10FamilyVisibleFunctionTable	instance	-	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-iosurface	AGXBuffer	instance	-	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
-iosurface	AGXTexture	instance	MTLTexture,MTLTextureSPI	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-label	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchive	framework	framework	WebMetalBinaryArchive	inherited	-
-label	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	framework	framework	WebMetalBlitCommandEncoder	inherited	-
-label	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	WebMetalBuffer	implemented	-
-label	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-label	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	framework	framework	WebMetalCommandQueue	inherited	-
-label	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	framework	framework	WebMetalComputeCommandEncoder	inherited	-
-label	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	framework	framework	WebMetalComputePipelineState	inherited	-
+iosurface	AGXBuffer	instance	-	iogpu	driver	AGXBuffer	implemented	-
+iosurface	AGXTexture	instance	MTLTexture,MTLTextureSPI	iogpu	driver	AGXTexture	implemented	-
+label	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchive	framework	framework	AGXA10FamilyBinaryArchive	inherited	-
+label	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyBlitContext	inherited	-
+label	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	AGXA10FamilyBuffer	implemented	-
+label	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+label	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	framework	framework	AGXA10FamilyCommandQueue	inherited	-
+label	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyComputeContext	inherited	-
+label	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	framework	framework	AGXA10FamilyComputePipeline	inherited	-
 label	AGXA10FamilyDebugContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
-label	AGXA10FamilyDepthStencilState	instance	MTLDepthStencilState	framework	framework	WebMetalDepthStencilState	inherited	-
+label	AGXA10FamilyDepthStencilState	instance	MTLDepthStencilState	framework	framework	AGXA10FamilyDepthStencilState	inherited	-
 label	AGXA10FamilyDynamicLibrary	instance	MTLDynamicLibrary	framework	framework	-	inherited	-
-label	AGXA10FamilyHeap	instance	MTLHeap	framework	framework	WebMetalHeap	inherited	-
-label	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	framework	framework	WebMetalArgumentEncoder	inherited	-
+label	AGXA10FamilyHeap	instance	MTLHeap	framework	framework	AGXA10FamilyHeap	inherited	-
+label	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	framework	framework	AGXA10FamilyIndirectArgumentEncoder	inherited	-
 label	AGXA10FamilyIndirectCommandBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 label	AGXA10FamilyLateEvalEvent	instance	MTLEvent	iogpu	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newLateEvalEvent], a LOUD stub of the plugin's device
 label	AGXA10FamilyRasterizationRateMap	instance	MTLRasterizationRateMap	framework	framework	-	inherited	-
@@ -172,324 +172,324 @@ label	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLResource	iogpu	dri
 label	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 label	AGXA10FamilyRayTracingCPUBuilder	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 label	AGXA10FamilyRayTracingGPUBuilder	instance	MTLCommandEncoder	framework	framework	-	inherited	-
-label	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	framework	framework	WebMetalRenderCommandEncoder	inherited	-
-label	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineState	framework	framework	WebMetalRenderPipelineState	inherited	-
+label	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyRenderContext	inherited	-
+label	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineState	framework	framework	AGXA10FamilyRenderPipeline	inherited	-
 label	AGXA10FamilyResourceStateContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 label	AGXA10FamilySampledComputeContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 label	AGXA10FamilySampledRenderContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
-label	AGXA10FamilySampler	instance	MTLSamplerState	framework	framework	WebMetalSamplerState	inherited	-
+label	AGXA10FamilySampler	instance	MTLSamplerState	framework	framework	AGXA10FamilySampler	inherited	-
 label	AGXA10FamilySparseHeap	instance	MTLHeap	framework	framework	-	inherited	-
-label	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	WebMetalTexture	implemented	-
-label	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	framework	framework	WebMetalParallelRenderCommandEncoder	inherited	-
+label	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	AGXA10FamilyTexture	implemented	-
+label	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	framework	framework	AGXA10FamilyThreadedRenderPass	inherited	-
 label	AGXA10FamilyVisibleFunctionTable	instance	MTLResource	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-label	AGXBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
+label	AGXBuffer	instance	MTLResource	iogpu	driver	AGXBuffer	implemented	-
 label	AGXMTLCounterSampleBuffer	instance	MTLCounterSampleBuffer	agx	driver	-	no-plugin-class	made by -newCounterSampleBufferWithDescriptor:error: and -newCounterSampleBufferWithLength:label:error:, LOUD stubs of the plugin's device
-label	AGXTexture	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-length	AGXA10FamilyBuffer	instance	MTLBuffer	iogpu	driver	WebMetalBuffer	implemented	-
+label	AGXTexture	instance	MTLResource	iogpu	driver	AGXTexture	implemented	-
+length	AGXA10FamilyBuffer	instance	MTLBuffer	iogpu	driver	AGXA10FamilyBuffer	implemented	-
 length	AGXA10FamilyVisibleFunctionTable	instance	-	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-length	AGXBuffer	instance	-	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
-maxBufferLength	AGXA10Device	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-maxBufferLength	AGXA10FamilyDevice	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-maxBufferLength	AGXA10XDevice	instance	MTLDevice	iogpu	driver	WebMetalDevice	implemented	-
-maxTotalThreadsPerThreadgroup	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	agx	driver	WebMetalComputePipelineState	loud	the A10X driver answers it from its back-end compiler's reply (AGXCompilerCore's register and memory counts, read by AGX::ComputeProgramVariant's constructor at 0x21c92f9b4), which the host's compiler does not reproduce
-maxTotalThreadsPerThreadgroup	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineState	agx	driver	WebMetalRenderPipelineState	loud	the limit of the program at AGX::RenderPipeline +0x10 (0x21c9779e8: +0xad8 of that program, 0 without one); the slot sits between the vertex (+0x8) and object (+0x18) programs and is, by its role, the tile program, which no A10 pipeline has, but where the driver fills the slot is not read yet
-mipmapLevelCount	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-mipmapLevelCount	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
+length	AGXBuffer	instance	-	iogpu	driver	AGXBuffer	implemented	-
+maxBufferLength	AGXA10Device	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+maxBufferLength	AGXA10FamilyDevice	instance	MTLDevice	iogpu	driver	AGXA10FamilyDevice	implemented	-
+maxBufferLength	AGXA10XDevice	instance	MTLDevice	iogpu	driver	AGXA10XDevice	implemented	-
+maxTotalThreadsPerThreadgroup	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	agx	driver	AGXA10FamilyComputePipeline	loud	the A10X driver answers it from its back-end compiler's reply (AGXCompilerCore's register and memory counts, read by AGX::ComputeProgramVariant's constructor at 0x21c92f9b4), which the host's compiler does not reproduce
+maxTotalThreadsPerThreadgroup	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineState	agx	driver	AGXA10FamilyRenderPipeline	loud	the limit of the program at AGX::RenderPipeline +0x10 (0x21c9779e8: +0xad8 of that program, 0 without one); the slot sits between the vertex (+0x8) and object (+0x18) programs and is, by its role, the tile program, which no A10 pipeline has, but where the driver fills the slot is not read yet
+mipmapLevelCount	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+mipmapLevelCount	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
 name	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-name	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
+name	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
 name	AGXA10FamilyFunctionHandle	instance	MTLFunctionHandle	framework	framework	-	inherited	-
-name	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
+name	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
 newArgumentEncoderWithArguments:	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-newArgumentEncoderWithArguments:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-newArgumentEncoderWithArguments:	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
-newBufferWithBytes:length:options:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newBufferWithBytes:length:options:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newBufferWithBytes:length:options:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newBufferWithLength:options:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newBufferWithLength:options:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newBufferWithLength:options:	AGXA10FamilyHeap	instance	MTLHeap	agx	driver	WebMetalHeap	implemented	-
-newBufferWithLength:options:	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are WebMetalHeap
-newBufferWithLength:options:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newCommandQueue	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newCommandQueue	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newCommandQueue	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newComputePipelineStateWithDescriptor:options:reflection:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newComputePipelineStateWithDescriptor:options:reflection:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newComputePipelineStateWithDescriptor:options:reflection:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
+newArgumentEncoderWithArguments:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+newArgumentEncoderWithArguments:	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
+newBufferWithBytes:length:options:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newBufferWithBytes:length:options:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newBufferWithBytes:length:options:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newBufferWithLength:options:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newBufferWithLength:options:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newBufferWithLength:options:	AGXA10FamilyHeap	instance	MTLHeap	agx	driver	AGXA10FamilyHeap	implemented	-
+newBufferWithLength:options:	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are AGXA10FamilyHeap
+newBufferWithLength:options:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newCommandQueue	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newCommandQueue	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newCommandQueue	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newComputePipelineStateWithDescriptor:options:reflection:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newComputePipelineStateWithDescriptor:options:reflection:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newComputePipelineStateWithDescriptor:options:reflection:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
 newComputePipelineStateWithFunction:error:	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-newComputePipelineStateWithFunction:error:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-newComputePipelineStateWithFunction:error:	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
-newCounterSampleBufferWithDescriptor:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newCounterSampleBufferWithDescriptor:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newCounterSampleBufferWithDescriptor:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	loud	an AGXMTLCounterSampleBuffer (0x21c8db494, 0x21c9ce600): one timestamp counter whose 8-byte samples live in an AGXBuffer of 8 to 32768 bytes (0x21c9ce7d0), written by the sample buffer attachments of the passes at stage boundaries (the A10X samples no counters at draw, dispatch or blit boundaries: the encoders' sampleCountersInBuffer:atSampleIndex:withBarrier: report the call) and copied out by -resolveCounterRange: (0x21c9cea64); no plugin class stands in for AGXMTLCounterSampleBuffer and the host writes no GPU timestamps
-newDepthStencilStateWithDescriptor:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newDepthStencilStateWithDescriptor:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newDepthStencilStateWithDescriptor:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newEvent	AGXA10Device	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newEvent	AGXA10FamilyDevice	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newEvent	AGXA10XDevice	instance	MTLDevice	iogpu	driver	WebMetalDevice	implemented	-
-newIndirectCommandBufferWithDescriptor:maxCommandCount:options:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newIndirectCommandBufferWithDescriptor:maxCommandCount:options:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newIndirectCommandBufferWithDescriptor:maxCommandCount:options:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	loud	indirect command buffers need a command layout the wire schema does not define yet
-newLibraryWithData:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newLibraryWithData:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newLibraryWithData:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newLibraryWithSource:options:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newLibraryWithSource:options:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newLibraryWithSource:options:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newRenderPipelineStateWithDescriptor:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newRenderPipelineStateWithDescriptor:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newRenderPipelineStateWithDescriptor:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newSamplerStateWithDescriptor:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newSamplerStateWithDescriptor:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newSamplerStateWithDescriptor:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
+newComputePipelineStateWithFunction:error:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+newComputePipelineStateWithFunction:error:	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
+newCounterSampleBufferWithDescriptor:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newCounterSampleBufferWithDescriptor:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	loud	an AGXMTLCounterSampleBuffer (0x21c8db494, 0x21c9ce600): one timestamp counter whose 8-byte samples live in an AGXBuffer of 8 to 32768 bytes (0x21c9ce7d0), written by the sample buffer attachments of the passes at stage boundaries (the A10X samples no counters at draw, dispatch or blit boundaries: the encoders' sampleCountersInBuffer:atSampleIndex:withBarrier: report the call) and copied out by -resolveCounterRange: (0x21c9cea64); no plugin class stands in for AGXMTLCounterSampleBuffer and the host writes no GPU timestamps
+newCounterSampleBufferWithDescriptor:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	loud	an AGXMTLCounterSampleBuffer (0x21c8db494, 0x21c9ce600): one timestamp counter whose 8-byte samples live in an AGXBuffer of 8 to 32768 bytes (0x21c9ce7d0), written by the sample buffer attachments of the passes at stage boundaries (the A10X samples no counters at draw, dispatch or blit boundaries: the encoders' sampleCountersInBuffer:atSampleIndex:withBarrier: report the call) and copied out by -resolveCounterRange: (0x21c9cea64); no plugin class stands in for AGXMTLCounterSampleBuffer and the host writes no GPU timestamps
+newDepthStencilStateWithDescriptor:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newDepthStencilStateWithDescriptor:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newDepthStencilStateWithDescriptor:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newEvent	AGXA10Device	instance	MTLDevice	iogpu	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newEvent	AGXA10FamilyDevice	instance	MTLDevice	iogpu	driver	AGXA10FamilyDevice	implemented	-
+newEvent	AGXA10XDevice	instance	MTLDevice	iogpu	driver	AGXA10XDevice	implemented	-
+newIndirectCommandBufferWithDescriptor:maxCommandCount:options:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newIndirectCommandBufferWithDescriptor:maxCommandCount:options:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	loud	indirect command buffers need a command layout the wire schema does not define yet
+newIndirectCommandBufferWithDescriptor:maxCommandCount:options:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	loud	indirect command buffers need a command layout the wire schema does not define yet
+newLibraryWithData:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newLibraryWithData:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newLibraryWithData:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newLibraryWithSource:options:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newLibraryWithSource:options:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newLibraryWithSource:options:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newRenderPipelineStateWithDescriptor:error:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newRenderPipelineStateWithDescriptor:error:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newRenderPipelineStateWithDescriptor:error:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newSamplerStateWithDescriptor:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newSamplerStateWithDescriptor:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newSamplerStateWithDescriptor:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
 newSharedEvent	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-newSharedEvent	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-newSharedEvent	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
+newSharedEvent	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+newSharedEvent	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
 newSharedEventWithMachPort:	AGXA10Device	instance	MTLDeviceSPI	framework	framework	-	inherited	-
-newSharedEventWithMachPort:	AGXA10FamilyDevice	instance	MTLDeviceSPI	framework	framework	-	inherited	-
-newSharedEventWithMachPort:	AGXA10XDevice	instance	MTLDeviceSPI	framework	framework	WebMetalDevice	inherited	-
+newSharedEventWithMachPort:	AGXA10FamilyDevice	instance	MTLDeviceSPI	framework	framework	AGXA10FamilyDevice	inherited	-
+newSharedEventWithMachPort:	AGXA10XDevice	instance	MTLDeviceSPI	framework	framework	AGXA10XDevice	inherited	-
 newSharedTextureWithHandle:	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-newSharedTextureWithHandle:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-newSharedTextureWithHandle:	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
-newTextureViewWithPixelFormat:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	WebMetalTexture	implemented	-
-newTextureViewWithPixelFormat:	AGXTexture	instance	MTLTexture	agx	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-newTextureViewWithPixelFormat:textureType:levels:slices:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	WebMetalTexture	implemented	-
-newTextureViewWithPixelFormat:textureType:levels:slices:	AGXTexture	instance	MTLTexture	agx	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	WebMetalTexture	implemented	-
-newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:	AGXTexture	instance	MTLTexture	agx	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-newTextureWithDescriptor:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newTextureWithDescriptor:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newTextureWithDescriptor:	AGXA10FamilyHeap	instance	MTLHeap	agx	driver	WebMetalHeap	implemented	-
-newTextureWithDescriptor:	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are WebMetalHeap
-newTextureWithDescriptor:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	implemented	-
-newTextureWithDescriptor:iosurface:plane:	AGXA10Device	instance	MTLDevice,MTLDeviceSPI	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-newTextureWithDescriptor:iosurface:plane:	AGXA10FamilyDevice	instance	MTLDevice,MTLDeviceSPI	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-newTextureWithDescriptor:iosurface:plane:	AGXA10XDevice	instance	MTLDevice,MTLDeviceSPI	agx	driver	WebMetalDevice	implemented	-
+newSharedTextureWithHandle:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+newSharedTextureWithHandle:	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
+newTextureViewWithPixelFormat:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	AGXA10FamilyTexture	implemented	-
+newTextureViewWithPixelFormat:	AGXTexture	instance	MTLTexture	agx	driver	AGXTexture	implemented	-
+newTextureViewWithPixelFormat:textureType:levels:slices:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	AGXA10FamilyTexture	implemented	-
+newTextureViewWithPixelFormat:textureType:levels:slices:	AGXTexture	instance	MTLTexture	agx	driver	AGXTexture	implemented	-
+newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	AGXA10FamilyTexture	implemented	-
+newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:	AGXTexture	instance	MTLTexture	agx	driver	AGXTexture	implemented	-
+newTextureWithDescriptor:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newTextureWithDescriptor:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	implemented	-
+newTextureWithDescriptor:	AGXA10FamilyHeap	instance	MTLHeap	agx	driver	AGXA10FamilyHeap	implemented	-
+newTextureWithDescriptor:	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are AGXA10FamilyHeap
+newTextureWithDescriptor:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	implemented	-
+newTextureWithDescriptor:iosurface:plane:	AGXA10Device	instance	MTLDevice,MTLDeviceSPI	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+newTextureWithDescriptor:iosurface:plane:	AGXA10FamilyDevice	instance	MTLDevice,MTLDeviceSPI	agx	driver	AGXA10FamilyDevice	implemented	-
+newTextureWithDescriptor:iosurface:plane:	AGXA10XDevice	instance	MTLDevice,MTLDeviceSPI	agx	driver	AGXA10XDevice	implemented	-
 notifyListener:atValue:block:	AGXA10FamilyLateEvalEvent	instance	MTLSharedEvent	iogpu	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newLateEvalEvent], a LOUD stub of the plugin's device
 objectAtIndexedSubscript:	AGXA10FamilyIndirectComputeCommandEncoder	instance	MTLIndirectComputeCommandEncoder	agx	driver	-	no-plugin-class	nothing allocates it on the A10 family: -[AGXA10FamilyDevice newIndirectComputeCommandEncoderWithBuffer:] answers nil (0x21c8d63f0), as the plugin's does
 objectAtIndexedSubscript:	AGXA10FamilyIndirectRenderCommandEncoder	instance	MTLIndirectRenderCommandEncoder	agx	driver	-	no-plugin-class	made by -newIndirectRenderCommandEncoderWithBuffer:, a LOUD stub of the plugin's device, for indirect command buffers, which the plugin does not create
-options	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchiveSPI	framework	framework	WebMetalBinaryArchive	inherited	-
-parentRelativeLevel	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-parentRelativeLevel	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-parentRelativeSlice	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-parentRelativeSlice	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-parentTexture	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-parentTexture	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-pixelFormat	AGXA10FamilySampler	instance	MTLSamplerStateSPI	framework	framework	WebMetalSamplerState	inherited	-
-pixelFormat	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-pixelFormat	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-popDebugGroup	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalBlitCommandEncoder	implemented	-
-popDebugGroup	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	WebMetalCommandBuffer	implemented	-
-popDebugGroup	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalComputeCommandEncoder	implemented	-
+options	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchiveSPI	framework	framework	AGXA10FamilyBinaryArchive	inherited	-
+parentRelativeLevel	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+parentRelativeLevel	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+parentRelativeSlice	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+parentRelativeSlice	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+parentTexture	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+parentTexture	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+pixelFormat	AGXA10FamilySampler	instance	MTLSamplerStateSPI	framework	framework	AGXA10FamilySampler	inherited	-
+pixelFormat	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+pixelFormat	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+popDebugGroup	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyBlitContext	implemented	-
+popDebugGroup	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	AGXA10FamilyCommandBuffer	implemented	-
+popDebugGroup	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyComputeContext	implemented	-
 popDebugGroup	AGXA10FamilyDebugContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 popDebugGroup	AGXA10FamilyRayTracingCPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference); the A10X has no ray tracing (supportsRaytracing is NO)
 popDebugGroup	AGXA10FamilyRayTracingGPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-popDebugGroup	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalRenderCommandEncoder	implemented	-
+popDebugGroup	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyRenderContext	implemented	-
 popDebugGroup	AGXA10FamilyResourceStateContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by -resourceStateCommandEncoder and -resourceStateCommandEncoderWithDescriptor:, for sparse textures, which the A10X does not have (supportsSparseTextures is NO); those factories are LOUD in the plugin
 popDebugGroup	AGXA10FamilySampledComputeContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 popDebugGroup	AGXA10FamilySampledRenderContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-popDebugGroup	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	iogpu	driver	WebMetalParallelRenderCommandEncoder	implemented	-
-presentDrawable:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-pushDebugGroup:	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalBlitCommandEncoder	implemented	-
-pushDebugGroup:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	WebMetalCommandBuffer	implemented	-
-pushDebugGroup:	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalComputeCommandEncoder	implemented	-
+popDebugGroup	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyThreadedRenderPass	implemented	-
+presentDrawable:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+pushDebugGroup:	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyBlitContext	implemented	-
+pushDebugGroup:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	AGXA10FamilyCommandBuffer	implemented	-
+pushDebugGroup:	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyComputeContext	implemented	-
 pushDebugGroup:	AGXA10FamilyDebugContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 pushDebugGroup:	AGXA10FamilyRayTracingCPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference); the A10X has no ray tracing (supportsRaytracing is NO)
 pushDebugGroup:	AGXA10FamilyRayTracingGPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-pushDebugGroup:	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalRenderCommandEncoder	implemented	-
+pushDebugGroup:	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyRenderContext	implemented	-
 pushDebugGroup:	AGXA10FamilyResourceStateContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by -resourceStateCommandEncoder and -resourceStateCommandEncoderWithDescriptor:, for sparse textures, which the A10X does not have (supportsSparseTextures is NO); those factories are LOUD in the plugin
 pushDebugGroup:	AGXA10FamilySampledComputeContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 pushDebugGroup:	AGXA10FamilySampledRenderContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-pushDebugGroup:	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	iogpu	driver	WebMetalParallelRenderCommandEncoder	implemented	-
+pushDebugGroup:	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyThreadedRenderPass	implemented	-
 readWriteTextureSupport	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-readWriteTextureSupport	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-readWriteTextureSupport	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
-renderCommandEncoderWithDescriptor:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	WebMetalCommandBuffer	implemented	-
-replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	WebMetalTexture	implemented	-
-replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:	AGXTexture	instance	MTLTexture	agx	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-replaceRegion:mipmapLevel:withBytes:bytesPerRow:	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-replaceRegion:mipmapLevel:withBytes:bytesPerRow:	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
+readWriteTextureSupport	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+readWriteTextureSupport	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
+renderCommandEncoderWithDescriptor:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	agx	driver	AGXA10FamilyCommandBuffer	implemented	-
+replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:	AGXA10FamilyTexture	instance	MTLTexture	agx	driver	AGXA10FamilyTexture	implemented	-
+replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:	AGXTexture	instance	MTLTexture	agx	driver	AGXTexture	implemented	-
+replaceRegion:mipmapLevel:withBytes:bytesPerRow:	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+replaceRegion:mipmapLevel:withBytes:bytesPerRow:	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
 reset	AGXA10FamilyIndirectComputeCommand	instance	MTLIndirectComputeCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectComputeCommandAtIndex:), which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
 reset	AGXA10FamilyIndirectRenderCommand	instance	MTLIndirectRenderCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectRenderCommandAtIndex:) or its render command encoder, which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
-resolveCounters:inRange:destinationBuffer:destinationOffset:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-rotation	AGXA10FamilyTexture	instance	MTLTextureSPI	iogpu	driver	WebMetalTexture	implemented	-
-rotation	AGXTexture	instance	MTLTextureSPI	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-sampleCount	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
+resolveCounters:inRange:destinationBuffer:destinationOffset:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+rotation	AGXA10FamilyTexture	instance	MTLTextureSPI	iogpu	driver	AGXA10FamilyTexture	implemented	-
+rotation	AGXTexture	instance	MTLTextureSPI	iogpu	driver	AGXTexture	implemented	-
+sampleCount	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
 sampleCount	AGXMTLCounterSampleBuffer	instance	MTLCounterSampleBuffer	agx	driver	-	no-plugin-class	made by -newCounterSampleBufferWithDescriptor:error: and -newCounterSampleBufferWithLength:label:error:, LOUD stubs of the plugin's device
-sampleCount	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	WebMetalBlitCommandEncoder	implemented	-
-sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+sampleCount	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyBlitContext	instance	MTLBlitCommandEncoder	agx	driver	AGXA10FamilyBlitContext	implemented	-
+sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyRayTracingCPUBuilder	instance	MTLAccelerationStructureCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference); the A10X has no ray tracing (supportsRaytracing is NO)
 sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyRayTracingGPUBuilder	instance	MTLAccelerationStructureCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 sampleCountersInBuffer:atSampleIndex:withBarrier:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 screenSize	AGXA10FamilyRasterizationRateMap	instance	MTLRasterizationRateMap	agx	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newRasterizationRateMapWithDescriptor:], a LOUD stub of the plugin's device
-setArgumentBuffer:offset:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	WebMetalArgumentEncoder	implemented	-
-setBlendColorRed:green:blue:alpha:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setArgumentBuffer:offset:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	AGXA10FamilyIndirectArgumentEncoder	implemented	-
+setBlendColorRed:green:blue:alpha:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setBlendColorRed:green:blue:alpha:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setBuffer:offset:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
-setBuffer:offset:atIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	WebMetalArgumentEncoder	implemented	-
+setBuffer:offset:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
+setBuffer:offset:atIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	AGXA10FamilyIndirectArgumentEncoder	implemented	-
 setBuffer:offset:atIndex:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 setBuffer:offset:atIndex:	AGXA10FamilyVisibleFunctionTable	instance	MTLVisibleFunctionTableSPI	agx	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-setBytes:length:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+setBytes:length:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 setBytes:length:atIndex:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setComputePipelineState:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+setComputePipelineState:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 setComputePipelineState:	AGXA10FamilyIndirectComputeCommand	instance	MTLIndirectComputeCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectComputeCommandAtIndex:), which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
 setComputePipelineState:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setCullMode:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setCullMode:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setCullMode:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setDepthBias:slopeScale:clamp:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setDepthBias:slopeScale:clamp:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setDepthBias:slopeScale:clamp:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setDepthClipMode:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setDepthClipMode:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setDepthClipMode:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setDepthStencilState:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setDepthStencilState:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setDepthStencilState:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 setFragmentBuffer:offset:atIndex:	AGXA10FamilyIndirectRenderCommand	instance	MTLIndirectRenderCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectRenderCommandAtIndex:) or its render command encoder, which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
-setFragmentBuffer:offset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setFragmentBuffer:offset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setFragmentBuffer:offset:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setFragmentBufferOffset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setFragmentBufferOffset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setFragmentBufferOffset:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setFragmentBytes:length:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setFragmentBytes:length:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setFragmentBytes:length:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setFragmentTexture:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setFragmentTexture:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setFragmentTexture:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setFrontFacingWinding:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setFrontFacingWinding:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setFrontFacingWinding:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setLabel:	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchive	framework	framework	WebMetalBinaryArchive	inherited	-
-setLabel:	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalBlitCommandEncoder	implemented	-
-setLabel:	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	WebMetalBuffer	implemented	-
-setLabel:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	WebMetalCommandBuffer	implemented	-
-setLabel:	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	agx	driver	WebMetalCommandQueue	implemented	-
-setLabel:	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalComputeCommandEncoder	implemented	-
+setLabel:	AGXA10FamilyBinaryArchive	instance	MTLBinaryArchive	framework	framework	AGXA10FamilyBinaryArchive	inherited	-
+setLabel:	AGXA10FamilyBlitContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyBlitContext	implemented	-
+setLabel:	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	AGXA10FamilyBuffer	implemented	-
+setLabel:	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	iogpu	driver	AGXA10FamilyCommandBuffer	implemented	-
+setLabel:	AGXA10FamilyCommandQueue	instance	MTLCommandQueue	agx	driver	AGXA10FamilyCommandQueue	implemented	-
+setLabel:	AGXA10FamilyComputeContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyComputeContext	implemented	-
 setLabel:	AGXA10FamilyDebugContext	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 setLabel:	AGXA10FamilyDynamicLibrary	instance	MTLDynamicLibrary	framework	framework	-	inherited	-
-setLabel:	AGXA10FamilyHeap	instance	MTLHeap	iogpu	driver	WebMetalHeap	implemented	-
-setLabel:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	framework	framework	WebMetalArgumentEncoder	inherited	-
+setLabel:	AGXA10FamilyHeap	instance	MTLHeap	iogpu	driver	AGXA10FamilyHeap	implemented	-
+setLabel:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	framework	framework	AGXA10FamilyIndirectArgumentEncoder	inherited	-
 setLabel:	AGXA10FamilyIndirectCommandBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 setLabel:	AGXA10FamilyLateEvalEvent	instance	MTLEvent	iogpu	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newLateEvalEvent], a LOUD stub of the plugin's device
 setLabel:	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 setLabel:	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 setLabel:	AGXA10FamilyRayTracingCPUBuilder	instance	MTLCommandEncoder	framework	framework	-	inherited	-
 setLabel:	AGXA10FamilyRayTracingGPUBuilder	instance	MTLCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-setLabel:	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	iogpu	driver	WebMetalRenderCommandEncoder	implemented	-
+setLabel:	AGXA10FamilyRenderContext	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyRenderContext	implemented	-
 setLabel:	AGXA10FamilyResourceStateContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by -resourceStateCommandEncoder and -resourceStateCommandEncoderWithDescriptor:, for sparse textures, which the A10X does not have (supportsSparseTextures is NO); those factories are LOUD in the plugin
 setLabel:	AGXA10FamilySampledComputeContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 setLabel:	AGXA10FamilySampledRenderContext	instance	MTLCommandEncoder	iogpu	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 setLabel:	AGXA10FamilySparseHeap	instance	MTLHeap	framework	framework	-	inherited	-
-setLabel:	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	WebMetalTexture	implemented	-
-setLabel:	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	iogpu	driver	WebMetalParallelRenderCommandEncoder	implemented	-
+setLabel:	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	AGXA10FamilyTexture	implemented	-
+setLabel:	AGXA10FamilyThreadedRenderPass	instance	MTLCommandEncoder	iogpu	driver	AGXA10FamilyThreadedRenderPass	implemented	-
 setLabel:	AGXA10FamilyVisibleFunctionTable	instance	MTLResource	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-setLabel:	AGXBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
-setLabel:	AGXTexture	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-setOwnerWithIdentity:	AGXA10FamilyBuffer	instance	MTLResource,MTLResourceSPI	iogpu	driver	WebMetalBuffer	implemented	-
+setLabel:	AGXBuffer	instance	MTLResource	iogpu	driver	AGXBuffer	implemented	-
+setLabel:	AGXTexture	instance	MTLResource	iogpu	driver	AGXTexture	implemented	-
+setOwnerWithIdentity:	AGXA10FamilyBuffer	instance	MTLResource,MTLResourceSPI	iogpu	driver	AGXA10FamilyBuffer	implemented	-
 setOwnerWithIdentity:	AGXA10FamilyIndirectCommandBuffer	instance	MTLResource,MTLResourceSPI	iogpu	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 setOwnerWithIdentity:	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLResource,MTLResourceSPI	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 setOwnerWithIdentity:	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLResource,MTLResourceSPI	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
-setOwnerWithIdentity:	AGXA10FamilyTexture	instance	MTLResource,MTLResourceSPI	iogpu	driver	WebMetalTexture	implemented	-
+setOwnerWithIdentity:	AGXA10FamilyTexture	instance	MTLResource,MTLResourceSPI	iogpu	driver	AGXA10FamilyTexture	implemented	-
 setOwnerWithIdentity:	AGXA10FamilyVisibleFunctionTable	instance	MTLResource,MTLResourceSPI	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-setOwnerWithIdentity:	AGXBuffer	instance	MTLResource,MTLResourceSPI	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
-setOwnerWithIdentity:	AGXTexture	instance	MTLResource,MTLResourceSPI	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
+setOwnerWithIdentity:	AGXBuffer	instance	MTLResource,MTLResourceSPI	iogpu	driver	AGXBuffer	implemented	-
+setOwnerWithIdentity:	AGXTexture	instance	MTLResource,MTLResourceSPI	iogpu	driver	AGXTexture	implemented	-
 setRenderPipelineState:	AGXA10FamilyIndirectRenderCommand	instance	MTLIndirectRenderCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectRenderCommandAtIndex:) or its render command encoder, which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
-setRenderPipelineState:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setRenderPipelineState:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setRenderPipelineState:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setSamplerState:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
-setSamplerState:atIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	WebMetalArgumentEncoder	implemented	-
+setSamplerState:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
+setSamplerState:atIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	AGXA10FamilyIndirectArgumentEncoder	implemented	-
 setSamplerState:atIndex:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setScissorRect:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setScissorRect:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setScissorRect:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 setSignaledValue:	AGXA10FamilyLateEvalEvent	instance	MTLSharedEvent	iogpu	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newLateEvalEvent], a LOUD stub of the plugin's device
-setStencilFrontReferenceValue:backReferenceValue:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setStencilFrontReferenceValue:backReferenceValue:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setStencilFrontReferenceValue:backReferenceValue:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setStencilReferenceValue:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setStencilReferenceValue:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setStencilReferenceValue:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setTexture:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
-setTexture:atIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	WebMetalArgumentEncoder	implemented	-
+setTexture:atIndex:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
+setTexture:atIndex:	AGXA10FamilyIndirectArgumentEncoder	instance	MTLArgumentEncoder	agx	driver	AGXA10FamilyIndirectArgumentEncoder	implemented	-
 setTexture:atIndex:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setTriangleFillMode:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setTriangleFillMode:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setTriangleFillMode:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 setVertexBuffer:offset:atIndex:	AGXA10FamilyIndirectRenderCommand	instance	MTLIndirectRenderCommand	agx	driver	-	no-plugin-class	handed out only by an indirect command buffer (-indirectRenderCommandAtIndex:) or its render command encoder, which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)
-setVertexBuffer:offset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setVertexBuffer:offset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setVertexBuffer:offset:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setVertexBufferOffset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setVertexBufferOffset:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setVertexBufferOffset:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setVertexBytes:length:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setVertexBytes:length:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setVertexBytes:length:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setVertexSamplerState:lodMinClamp:lodMaxClamp:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setVertexSamplerState:lodMinClamp:lodMaxClamp:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setVertexSamplerState:lodMinClamp:lodMaxClamp:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setVertexTexture:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setVertexTexture:atIndex:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setVertexTexture:atIndex:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setViewport:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setViewport:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setViewport:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-setVisibilityResultMode:offset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+setVisibilityResultMode:offset:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 setVisibilityResultMode:offset:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 signaledValue	AGXA10FamilyLateEvalEvent	instance	MTLSharedEvent	iogpu	driver	-	no-plugin-class	made by -[AGXA10FamilyDevice newLateEvalEvent], a LOUD stub of the plugin's device
-size	AGXA10FamilyHeap	instance	MTLHeap	iogpu	driver	WebMetalHeap	implemented	-
+size	AGXA10FamilyHeap	instance	MTLHeap	iogpu	driver	AGXA10FamilyHeap	implemented	-
 size	AGXA10FamilyIndirectCommandBuffer	instance	MTLIndirectCommandBuffer	iogpu	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 size	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLAccelerationStructure	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 size	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLAccelerationStructure	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
-size	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are WebMetalHeap
-size	AGXTextureLayout	instance	MTLTextureLayout	agx	driver	WebMetalTextureLayout	implemented	-
-status	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
+size	AGXA10FamilySparseHeap	instance	MTLHeap	agx	driver	-	no-plugin-class	the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are AGXA10FamilyHeap
+size	AGXTextureLayout	instance	MTLTextureLayout	agx	driver	AGXTextureLayout	implemented	-
+status	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
 stopCapture	AGXA10FamilyDebugContext	instance	MTLDebugCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference), and the command buffer does not answer -debugCommandEncoder on 21H461
-storageMode	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	WebMetalBuffer	implemented	-
-storageMode	AGXA10FamilyHeap	instance	MTLHeap	framework	framework	WebMetalHeap	inherited	-
+storageMode	AGXA10FamilyBuffer	instance	MTLResource	iogpu	driver	AGXA10FamilyBuffer	implemented	-
+storageMode	AGXA10FamilyHeap	instance	MTLHeap	framework	framework	AGXA10FamilyHeap	inherited	-
 storageMode	AGXA10FamilyIndirectCommandBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 storageMode	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 storageMode	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLResource	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 storageMode	AGXA10FamilySparseHeap	instance	MTLHeap	framework	framework	-	inherited	-
-storageMode	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	WebMetalTexture	implemented	-
+storageMode	AGXA10FamilyTexture	instance	MTLResource	iogpu	driver	AGXA10FamilyTexture	implemented	-
 storageMode	AGXA10FamilyVisibleFunctionTable	instance	MTLResource	iogpu	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-storageMode	AGXBuffer	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors
-storageMode	AGXTexture	instance	MTLResource	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
+storageMode	AGXBuffer	instance	MTLResource	iogpu	driver	AGXBuffer	implemented	-
+storageMode	AGXTexture	instance	MTLResource	iogpu	driver	AGXTexture	implemented	-
 supports32BitFloatFiltering	AGXA10Device	instance	MTLDevice,MTLDeviceSPI	framework	framework	-	inherited	-
-supports32BitFloatFiltering	AGXA10FamilyDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	-	inherited	-
-supports32BitFloatFiltering	AGXA10XDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	WebMetalDevice	inherited	-
-supportsCounterSampling:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-supportsCounterSampling:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-supportsCounterSampling:	AGXA10XDevice	instance	MTLDevice	agx	driver	WebMetalDevice	profile	-
+supports32BitFloatFiltering	AGXA10FamilyDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	AGXA10FamilyDevice	inherited	-
+supports32BitFloatFiltering	AGXA10XDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	AGXA10XDevice	inherited	-
+supportsCounterSampling:	AGXA10Device	instance	MTLDevice	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+supportsCounterSampling:	AGXA10FamilyDevice	instance	MTLDevice	agx	driver	AGXA10FamilyDevice	profile	-
+supportsCounterSampling:	AGXA10XDevice	instance	MTLDevice	agx	driver	AGXA10XDevice	profile	-
 supportsFamily:	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-supportsFamily:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-supportsFamily:	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
+supportsFamily:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+supportsFamily:	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
 supportsPullModelInterpolation	AGXA10Device	instance	MTLDevice,MTLDeviceSPI	framework	framework	-	inherited	-
-supportsPullModelInterpolation	AGXA10FamilyDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	-	inherited	-
-supportsPullModelInterpolation	AGXA10XDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	WebMetalDevice	inherited	-
+supportsPullModelInterpolation	AGXA10FamilyDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	AGXA10FamilyDevice	inherited	-
+supportsPullModelInterpolation	AGXA10XDevice	instance	MTLDevice,MTLDeviceSPI	framework	framework	AGXA10XDevice	inherited	-
 supportsTextureSampleCount:	AGXA10Device	instance	MTLDevice	framework	framework	-	inherited	-
-supportsTextureSampleCount:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	-	inherited	-
-supportsTextureSampleCount:	AGXA10XDevice	instance	MTLDevice	framework	framework	WebMetalDevice	inherited	-
-textureType	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-textureType	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-threadExecutionWidth	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	agx	driver	WebMetalComputePipelineState	implemented	-
-type	AGXA10FamilyHeap	instance	MTLHeap	framework	framework	WebMetalHeap	inherited	-
+supportsTextureSampleCount:	AGXA10FamilyDevice	instance	MTLDevice	framework	framework	AGXA10FamilyDevice	inherited	-
+supportsTextureSampleCount:	AGXA10XDevice	instance	MTLDevice	framework	framework	AGXA10XDevice	inherited	-
+textureType	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+textureType	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+threadExecutionWidth	AGXA10FamilyComputePipeline	instance	MTLComputePipelineState	agx	driver	AGXA10FamilyComputePipeline	implemented	-
+type	AGXA10FamilyHeap	instance	MTLHeap	framework	framework	AGXA10FamilyHeap	inherited	-
 type	AGXA10FamilySparseHeap	instance	MTLHeap	framework	framework	-	inherited	-
-uniqueIdentifier	AGXA10FamilyComputePipeline	instance	MTLComputePipelineStateSPI	agx	driver	WebMetalComputePipelineState	loud	the address of the pipeline's embedded AGX::ComputePipeline, or the identifier stored at +0x20 when the flag at +0x10 is set (0x21c8cc7ac); when the driver sets that flag is not read yet
+uniqueIdentifier	AGXA10FamilyComputePipeline	instance	MTLComputePipelineStateSPI	agx	driver	AGXA10FamilyComputePipeline	loud	the address of the pipeline's embedded AGX::ComputePipeline, or the identifier stored at +0x20 when the flag at +0x10 is set (0x21c8cc7ac); when the driver sets that flag is not read yet
 uniqueIdentifier	AGXA10FamilyIndirectCommandBuffer	instance	-	agx	driver	-	no-plugin-class	made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none
 uniqueIdentifier	AGXA10FamilyRayTracingAccelerationStructure	instance	MTLAccelerationStructureSPI	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
 uniqueIdentifier	AGXA10FamilyRayTracingAccelerationStructureSW	instance	MTLAccelerationStructureSPI	iogpu	driver	-	no-plugin-class	made by the device's and heaps' acceleration-structure factories; the A10X has no ray tracing (supportsRaytracing is NO) and those factories are LOUD in the plugin, so it hands out none
-uniqueIdentifier	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineStateSPI	agx	driver	WebMetalRenderPipelineState	loud	the address of the pipeline's embedded AGX::RenderPipeline, or the identifier stored at +0x390 when the flag at +0x2ed is set (0x21c977a7c); when the driver sets that flag is not read yet
-uniqueIdentifier	AGXA10FamilySampler	instance	MTLSamplerStateSPI	agx	driver	WebMetalSamplerState	implemented	-
-uniqueIdentifier	AGXA10FamilyTexture	instance	MTLTextureSPI	agx	driver	WebMetalTexture	loud	the address of the driver's AGX::Texture (-[AGXA10FamilyTexture uniqueIdentifier] 0x21c9823b4: _impl), which the A10X's argument buffers also hold for the texture (-[AGXA10FamilyIndirectArgumentEncoder uniqueIdentifierForTextureAtIndex:inIndirectArgumentBuffer:atOffset:]); the plugin's argument buffers hold wire handles, and no value consistent with both is defined yet
+uniqueIdentifier	AGXA10FamilyRenderPipeline	instance	MTLRenderPipelineStateSPI	agx	driver	AGXA10FamilyRenderPipeline	loud	the address of the pipeline's embedded AGX::RenderPipeline, or the identifier stored at +0x390 when the flag at +0x2ed is set (0x21c977a7c); when the driver sets that flag is not read yet
+uniqueIdentifier	AGXA10FamilySampler	instance	MTLSamplerStateSPI	agx	driver	AGXA10FamilySampler	implemented	-
+uniqueIdentifier	AGXA10FamilyTexture	instance	MTLTextureSPI	agx	driver	AGXA10FamilyTexture	loud	the address of the driver's AGX::Texture (-[AGXA10FamilyTexture uniqueIdentifier] 0x21c9823b4: _impl), which the A10X's argument buffers also hold for the texture (-[AGXA10FamilyIndirectArgumentEncoder uniqueIdentifierForTextureAtIndex:inIndirectArgumentBuffer:atOffset:]); the plugin's argument buffers hold wire handles, and no value consistent with both is defined yet
 uniqueIdentifier	AGXA10FamilyVisibleFunctionTable	instance	MTLVisibleFunctionTableSPI	agx	driver	-	no-plugin-class	made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none
-uniqueIdentifier	AGXTexture	instance	MTLTextureSPI	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-usage	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-usage	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
-useResource:usage:stages:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+uniqueIdentifier	AGXTexture	instance	MTLTextureSPI	iogpu	driver	AGXTexture	implemented	-
+usage	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+usage	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-
+useResource:usage:stages:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 useResource:usage:stages:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-useResources:count:usage:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	WebMetalComputeCommandEncoder	implemented	-
+useResources:count:usage:	AGXA10FamilyComputeContext	instance	MTLComputeCommandEncoder	agx	driver	AGXA10FamilyComputeContext	implemented	-
 useResources:count:usage:	AGXA10FamilyRayTracingCPUBuilder	instance	MTLAccelerationStructureCommandEncoder	agx	driver	-	no-plugin-class	nothing in AGXMetalA10 allocates it (no class reference); the A10X has no ray tracing (supportsRaytracing is NO)
 useResources:count:usage:	AGXA10FamilyRayTracingGPUBuilder	instance	MTLAccelerationStructureCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's acceleration-structure encoder factories, which are LOUD in the plugin; the A10X has no ray tracing (supportsRaytracing is NO)
-useResources:count:usage:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+useResources:count:usage:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 useResources:count:usage:	AGXA10FamilySampledComputeContext	instance	MTLComputeCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's sampledComputeCommandEncoder... factories, compute encoders whose dispatches the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
 useResources:count:usage:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-useResources:count:usage:stages:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	WebMetalRenderCommandEncoder	implemented	-
+useResources:count:usage:stages:	AGXA10FamilyRenderContext	instance	MTLRenderCommandEncoder	agx	driver	AGXA10FamilyRenderContext	implemented	-
 useResources:count:usage:stages:	AGXA10FamilySampledRenderContext	instance	MTLRenderCommandEncoder	agx	driver	-	no-plugin-class	made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)
-vendorName	AGXA10Device	instance	MTLDeviceSPI	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device
-vendorName	AGXA10FamilyDevice	instance	MTLDeviceSPI	agx	driver	-	no-plugin-class	the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them
-vendorName	AGXA10XDevice	instance	MTLDeviceSPI	agx	driver	WebMetalDevice	implemented	-
-waitUntilCompleted	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-waitUntilScheduled	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	WebMetalCommandBuffer	inherited	-
-width	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	WebMetalTexture	implemented	-
-width	AGXTexture	instance	MTLTexture	iogpu	driver	-	no-plugin-class	the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors
+vendorName	AGXA10Device	instance	MTLDeviceSPI	agx	driver	-	no-plugin-class	the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device
+vendorName	AGXA10FamilyDevice	instance	MTLDeviceSPI	agx	driver	AGXA10FamilyDevice	implemented	-
+vendorName	AGXA10XDevice	instance	MTLDeviceSPI	agx	driver	AGXA10XDevice	implemented	-
+waitUntilCompleted	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+waitUntilScheduled	AGXA10FamilyCommandBuffer	instance	MTLCommandBuffer	framework	framework	AGXA10FamilyCommandBuffer	inherited	-
+width	AGXA10FamilyTexture	instance	MTLTexture	iogpu	driver	AGXA10FamilyTexture	implemented	-
+width	AGXTexture	instance	MTLTexture	iogpu	driver	AGXTexture	implemented	-

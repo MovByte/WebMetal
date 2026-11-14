@@ -1,5 +1,5 @@
-// Depth-stencil states: WebMetalDepthStencilState stands in for AGXA10FamilyDepthStencilState
-// (AGXA10FamilyDepthStencilState -> _MTLDepthStencilState on 21H461).
+// Depth-stencil states: AGXA10FamilyDepthStencilState (AGXA10FamilyDepthStencilState -> _MTLDepthStencilState on
+// 21H461).
 //
 // The driver packs the descriptor into one 64-bit word, derives from it which of the depth and stencil values a draw
 // reads and writes (the four answers below), and encodes the A10X's depth-stencil words, which its GPU reads. The
@@ -20,10 +20,10 @@
 - (instancetype)initWithDevice:(id<MTLDevice>)device depthStencilDescriptor:(MTLDepthStencilDescriptor *)descriptor;
 @end
 
-@interface WebMetalDepthStencilState : _MTLDepthStencilState <MTLDepthStencilStateSPI>
+@interface AGXA10FamilyDepthStencilState : _MTLDepthStencilState <MTLDepthStencilStateSPI>
 @end
 
-@interface WebMetalDepthStencilState () {
+@interface AGXA10FamilyDepthStencilState () {
 @public
     uint64_t _handle;
     // AGXA10FamilyDepthStencilState._impl: the packed descriptor (+0x0) and the load/store needs (+0x20).
@@ -122,7 +122,7 @@ wire::StencilDescriptor wireFace(MTLStencilDescriptor *s)
 // in it, and adds it to the cache, which keeps its reference. The returned state carries a reference for the caller
 // either way. Nothing is refused. A state holds its device (_MTLDepthStencilState) and the device's cache holds the
 // state, so a state lives as long as its device and its handle stays registered.
-id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, MTLDepthStencilDescriptor *d)
+id<MTLDepthStencilState> NewDepthStencilState(AGXA10FamilyDevice *device, SEL _cmd, MTLDepthStencilDescriptor *d)
 {
     DepthStencilCache &cache = DeviceDepthStencilStates(device);
     os_unfair_lock_lock(&cache.lock);
@@ -136,8 +136,8 @@ id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, 
         os_unfair_lock_unlock(&cache.lock);
         return state;
     }
-    WebMetalDepthStencilState *state = [[WebMetalDepthStencilState alloc] initWithDevice:device
-                                                                   depthStencilDescriptor:d];
+    AGXA10FamilyDepthStencilState *state = [[AGXA10FamilyDepthStencilState alloc] initWithDevice:device
+                                                                           depthStencilDescriptor:d];
     state->_packed = packed.key;
     state->_loadStoreNeeds = packed.loadStoreNeeds;
     Connection *connection = DeviceConnection(device);
@@ -169,7 +169,7 @@ id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, 
 
 }  // namespace webmetal
 
-@implementation WebMetalDepthStencilState
+@implementation AGXA10FamilyDepthStencilState
 
 // -[AGXA10FamilyDepthStencilState readsDepth] (AGXMetalA10 0x21c8d1a3c) and the three below: bits 0-3 of the needs.
 - (BOOL)readsDepth

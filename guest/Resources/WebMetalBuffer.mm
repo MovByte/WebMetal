@@ -1,5 +1,7 @@
-// Buffers: WebMetalBuffer stands in for AGXA10FamilyBuffer (AGXA10FamilyBuffer -> AGXBuffer -> IOGPUMetalBuffer ->
-// IOGPUMetalResource -> _MTLResource on 21H461).
+// Buffers: AGXA10FamilyBuffer over AGXBuffer, as on 21H461 (AGXA10FamilyBuffer -> AGXBuffer -> IOGPUMetalBuffer ->
+// IOGPUMetalResource -> _MTLResource). AGXBuffer holds the state and carries what AGXMetalA10's AGXBuffer and
+// IOGPU.framework's IOGPUMetalBuffer and IOGPUMetalResource define; AGXA10FamilyBuffer, the class of every buffer the
+// plugin creates, what AGXMetalA10's AGXA10FamilyBuffer defines.
 //
 // Storage. A shared buffer's bytes are guest memory the plugin allocates and the host executor keeps coherent with its
 // GPU copy (the shadow/diff protocol); a private buffer has no CPU bytes; a no-copy buffer's bytes are the caller's.
@@ -15,8 +17,9 @@
 
 #include <cstring>
 
-// The class adopts MTLBuffer and MTLResourceSPI as AGXA10FamilyBuffer does and implements only what the 21H461 driver
-// layers implement; the protocols' other methods are LOUD stubs added at run time (guest/Plugin/WebMetalStubs.mm).
+// AGXBuffer adopts MTLResourceSPI (IOGPUMetalResource's) and AGXA10FamilyBuffer MTLBuffer, as on 21H461, and each
+// implements only what the driver layers it stands for implement; the protocols' other methods are LOUD stubs added at
+// run time (guest/Plugin/WebMetalStubs.mm).
 #pragma clang diagnostic ignored "-Wprotocol"
 #pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
 
@@ -83,7 +86,7 @@ void reportInitFailures(MTLResourceOptions options, bool callerMemory)
 
 }  // namespace
 
-@interface WebMetalBuffer () {
+@interface AGXBuffer () {
 @public
     webmetal::ResourceState _state;
     NSUInteger _length;
@@ -97,30 +100,30 @@ void reportInitFailures(MTLResourceOptions options, bool callerMemory)
 
 namespace webmetal {
 
-ResourceState *TextureState(WebMetalTexture *texture);
+ResourceState *TextureState(AGXTexture *texture);
 
 ResourceState *StateOf(id resource)
 {
-    if ([resource isKindOfClass:[WebMetalBuffer class]])
-        return &static_cast<WebMetalBuffer *>(resource)->_state;
-    if ([resource isKindOfClass:[WebMetalTexture class]])
-        return TextureState(static_cast<WebMetalTexture *>(resource));
+    if ([resource isKindOfClass:[AGXBuffer class]])
+        return &static_cast<AGXBuffer *>(resource)->_state;
+    if ([resource isKindOfClass:[AGXTexture class]])
+        return TextureState(static_cast<AGXTexture *>(resource));
     return nullptr;
 }
 
-uint64_t BufferHandle(WebMetalBuffer *buffer)
+uint64_t BufferHandle(AGXBuffer *buffer)
 {
     return buffer->_state.handle;
 }
 
-void *BufferContents(WebMetalBuffer *buffer)
+void *BufferContents(AGXBuffer *buffer)
 {
     return buffer->_contents;
 }
 
 // The steps the driver's dedicated and sub-allocated paths share once the kernel resource exists: the buffer joins the
 // device's allocation total.
-static WebMetalBuffer *finishCreation(WebMetalBuffer *buffer)
+static AGXA10FamilyBuffer *finishCreation(AGXA10FamilyBuffer *buffer)
 {
     buffer->_state.created = buffer->_state.storageMode != MTLStorageModeMemoryless;
     buffer->_accounted = static_cast<int64_t>(buffer.allocatedSize);
@@ -135,8 +138,8 @@ static WebMetalBuffer *finishCreation(WebMetalBuffer *buffer)
 // sub-allocated unless the preference disables it or the sub-allocator refuses it; otherwise the buffer is a dedicated
 // kernel resource. The kernel resource cannot be made for a zero length or one above the device's maxBufferLength (the
 // IOGPUMetalSuballocatorAllocate path refuses zero, the kernel refuses both): nil, as Metal answers.
-WebMetalBuffer *NewDeviceBuffer(WebMetalDevice *device, SEL _cmd, NSUInteger length, MTLResourceOptions options,
-                                const void *bytes)
+AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length, MTLResourceOptions options,
+                                    const void *bytes)
 {
     const uint64_t page = PageSize();
     const uint64_t sysMemSize = (static_cast<uint64_t>(length) + page - 1) & ~(page - 1);
@@ -150,7 +153,7 @@ WebMetalBuffer *NewDeviceBuffer(WebMetalDevice *device, SEL _cmd, NSUInteger len
     const bool memoryless = storage == MTLStorageModeMemoryless;
     if (!memoryless && (length == 0 || length > [device maxBufferLength]))
         return nil;
-    WebMetalBuffer *buffer = [WebMetalBuffer new];
+    AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
     InitResourceState(buffer->_state, device, options);
     buffer->_length = length;
     buffer->_suballocated = suballocated;
@@ -198,15 +201,15 @@ WebMetalBuffer *NewDeviceBuffer(WebMetalDevice *device, SEL _cmd, NSUInteger len
 // 1, which asks IOGPU for a kernel resource over the caller's memory with the length as its system memory size, and
 // keeps the deallocator, run when the buffer is deallocated. The kernel resource's resident size is the caller's pages
 // under the length (ClientMemoryResidentSize).
-WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer, NSUInteger length,
-                                MTLResourceOptions options, void (^deallocator)(void *pointer, NSUInteger length))
+AGXA10FamilyBuffer *NewNoCopyBuffer(AGXA10FamilyDevice *device, SEL _cmd, void *pointer, NSUInteger length,
+                                    MTLResourceOptions options, void (^deallocator)(void *pointer, NSUInteger length))
 {
     reportInitFailures(options, true);
     const uint64_t storage = (options & kStorageModeMask) >> kStorageModeShift;
     const bool memoryless = storage == MTLStorageModeMemoryless;
     if (!memoryless && (length == 0 || length > [device maxBufferLength]))
         return nil;
-    WebMetalBuffer *buffer = [WebMetalBuffer new];
+    AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
     InitResourceState(buffer->_state, device, options);
     buffer->_length = length;
     buffer->_contents = pointer;
@@ -234,12 +237,12 @@ WebMetalBuffer *NewNoCopyBuffer(WebMetalDevice *device, SEL _cmd, void *pointer,
 // offset:length:] (IOGPU 0x1fcb2d810): the buffer takes the heap backing resource's options and modes and may not be
 // purgeable (-[IOGPUMetalResource initWithResource:]), keeps the heap, the range and its length, and is pinned unless
 // the heap is a placement heap. Its contents lie at the range's offset in the heap's.
-WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, MTLResourceOptions options,
-                              uint64_t heapOptions, uint64_t offset, uint64_t rangeLength, void *contents,
-                              bool placement)
+AGXA10FamilyBuffer *NewHeapBuffer(AGXA10FamilyHeap *heap, SEL _cmd, NSUInteger length, MTLResourceOptions options,
+                                  uint64_t heapOptions, uint64_t offset, uint64_t rangeLength, void *contents,
+                                  bool placement)
 {
-    WebMetalDevice *device = static_cast<WebMetalDevice *>(heap.device);
-    WebMetalBuffer *buffer = [WebMetalBuffer new];
+    AGXA10FamilyDevice *device = static_cast<AGXA10FamilyDevice *>(heap.device);
+    AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
     InitResourceState(buffer->_state, device, heapOptions);
     buffer->_state.purgeableAllowed = false;
     buffer->_state.heap = heap;
@@ -266,7 +269,7 @@ WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, M
 
 }  // namespace webmetal
 
-@implementation WebMetalBuffer
+@implementation AGXBuffer
 
 // -[IOGPUMetalBuffer dealloc] (IOGPU 0x1fcb2640c): a heap buffer becomes aliasable and returns its range to the heap;
 // the deallocator of caller memory runs with the pointer and length; then the kernel resource goes (here: Release, sent
@@ -277,9 +280,9 @@ WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, M
     DeviceAddAllocation(_state.device, -_accounted);
     if (_state.heap) {
         MakeAliasable(self, _cmd, _state, true);
-        [(WebMetalHeap *)_state.heap deallocHeapSubResource];
+        [(AGXA10FamilyHeap *)_state.heap deallocHeapSubResource];
     }
-    ReleaseObject(_state, "-[WebMetalBuffer dealloc]");
+    ReleaseObject(_state, "-[AGXA10FamilyBuffer dealloc]");
     if (_deallocator) {
         _deallocator(_contents, _length);
         _deallocator = nil;
@@ -486,49 +489,15 @@ WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, M
     MTLReportFailure(0, "-[IOGPUMetalBuffer didModifyRange:]", 0x1e2, @"didModifyRange: is not supported on this platform.");
 }
 
-// -[AGXA10FamilyBuffer addDebugMarker:range:] and -removeAllDebugMarkers (AGXMetalA10 0x21c8c643c, 0x21c8c6440) do
-// nothing on the device; the markers are carried to the host as the wire protocol defines.
-- (void)addDebugMarker:(NSString *)marker range:(NSRange)range
-{
-    using namespace webmetal;
-    wire::BufferAddDebugMarker request;
-    request.buffer = _state.handle;
-    if (!wire::strFromNSString(marker, request.marker))
-        WMLoudMethod(self, _cmd, "the marker has no UTF-8 form, which the wire format carries");
-    request.range.location = range.location;
-    request.range.length = range.length;
-    wire::Reply<wire::BufferAddDebugMarkerReply> reply;
-    DeviceConnection(_state.device)->Call(self, _cmd, request, &reply);
-    if (!reply.ok)
-        WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
-}
-
-- (void)removeAllDebugMarkers
-{
-    using namespace webmetal;
-    wire::BufferRemoveAllDebugMarkers request;
-    request.buffer = _state.handle;
-    wire::Reply<wire::BufferRemoveAllDebugMarkersReply> reply;
-    DeviceConnection(_state.device)->Call(self, _cmd, request, &reply);
-    if (!reply.ok)
-        WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
-}
-
-// -[AGXA10FamilyBuffer newTextureWithDescriptor:offset:bytesPerRow:] (AGXMetalA10 0x21c8c6374).
-- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
-                                    offset:(NSUInteger)offset
-                               bytesPerRow:(NSUInteger)bytesPerRow
-{
-    return webmetal::NewBufferTexture(self, _cmd, descriptor, offset, bytesPerRow, false, 0);
-}
-
 // -[IOGPUMetalBuffer newLinearTextureWithDescriptor:offset:bytesPerRow:bytesPerImage:] (IOGPU 0x1fcb2dfd8).
 - (id<MTLTexture>)newLinearTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
                                           offset:(NSUInteger)offset
                                      bytesPerRow:(NSUInteger)bytesPerRow
                                    bytesPerImage:(NSUInteger)bytesPerImage
 {
-    return webmetal::NewBufferTexture(self, _cmd, descriptor, offset, bytesPerRow, true, bytesPerImage);
+    // Every buffer the plugin creates is an AGXA10FamilyBuffer.
+    return webmetal::NewBufferTexture((AGXA10FamilyBuffer *)self, _cmd, descriptor, offset, bytesPerRow, true,
+                                      bytesPerImage);
 }
 
 // -[IOGPUMetalBuffer iosurface] (0x1fcb2df38).
@@ -581,6 +550,46 @@ WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, M
 - (NSString *)description
 {
     return [self formattedDescription:0];
+}
+
+@end
+
+@implementation AGXA10FamilyBuffer
+
+// -[AGXA10FamilyBuffer addDebugMarker:range:] and -removeAllDebugMarkers (AGXMetalA10 0x21c8c643c, 0x21c8c6440) do
+// nothing on the device; the markers are carried to the host as the wire protocol defines.
+- (void)addDebugMarker:(NSString *)marker range:(NSRange)range
+{
+    using namespace webmetal;
+    wire::BufferAddDebugMarker request;
+    request.buffer = _state.handle;
+    if (!wire::strFromNSString(marker, request.marker))
+        WMLoudMethod(self, _cmd, "the marker has no UTF-8 form, which the wire format carries");
+    request.range.location = range.location;
+    request.range.length = range.length;
+    wire::Reply<wire::BufferAddDebugMarkerReply> reply;
+    DeviceConnection(_state.device)->Call(self, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+}
+
+- (void)removeAllDebugMarkers
+{
+    using namespace webmetal;
+    wire::BufferRemoveAllDebugMarkers request;
+    request.buffer = _state.handle;
+    wire::Reply<wire::BufferRemoveAllDebugMarkersReply> reply;
+    DeviceConnection(_state.device)->Call(self, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+}
+
+// -[AGXA10FamilyBuffer newTextureWithDescriptor:offset:bytesPerRow:] (AGXMetalA10 0x21c8c6374).
+- (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)descriptor
+                                    offset:(NSUInteger)offset
+                               bytesPerRow:(NSUInteger)bytesPerRow
+{
+    return webmetal::NewBufferTexture(self, _cmd, descriptor, offset, bytesPerRow, false, 0);
 }
 
 @end

@@ -1,4 +1,4 @@
-// The Metal device of the WebMetal accelerator service (WebMetalDevice.h).
+// The Metal device of the WebMetal accelerator service: AGXA10FamilyDevice and AGXA10XDevice (WebMetalDevice.h).
 
 #import "WebMetalDevice.h"
 #import "WebMetalConnection.h"
@@ -17,8 +17,8 @@
 #include <memory>
 #include <string>
 
-// The class adopts MTLDevice and MTLDeviceSPI as AGXA10XDevice does and implements only what the 21H461 driver layers
-// implement. The protocols' other methods are inherited from _MTLDevice or are LOUD stubs added at run time
+// AGXA10FamilyDevice adopts MTLDeviceSPI as 21H461's does, and each class implements only what the driver layers it
+// stands for implement. The protocols' other methods are inherited from _MTLDevice or are LOUD stubs added at run time
 // (WebMetalStubs.mm); the compiler sees neither.
 #pragma clang diagnostic ignored "-Wprotocol"
 #pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
@@ -43,11 +43,11 @@ bool prepareClasses()
         if (!webmetal::CheckLayouts(webmetal::kExpectedLayouts, &problem)) {
             const std::string text = std::string("refused: the running Metal.framework is not the one the plugin was "
                                                  "built for (") + webmetal::kExpectedLayouts.source + "): " + problem;
-            WMReport("WebMetalDevice", text.c_str());
+            WMReport("AGXA10XDevice", text.c_str());
             return;
         }
         if (!webmetal::InstallLoudStubs(&problem)) {
-            WMReport("WebMetalDevice", ("refused: " + problem).c_str());
+            WMReport("AGXA10XDevice", ("refused: " + problem).c_str());
             return;
         }
         ready = true;
@@ -85,7 +85,7 @@ DeviceOptions gatherDeviceOptions()
 
 }  // namespace
 
-@interface WebMetalDevice () {
+@interface AGXA10FamilyDevice () {
 @public
     io_service_t _acceleratorPort;
     uint64_t _registryID;
@@ -134,54 +134,57 @@ bool kdebugTracing()
 
 namespace webmetal {
 
-Connection *DeviceConnection(WebMetalDevice *device)
+Connection *DeviceConnection(AGXA10FamilyDevice *device)
 {
     return device->_connection.get();
 }
 
-void DeviceAddAllocation(WebMetalDevice *device, int64_t bytes)
+void DeviceAddAllocation(AGXA10FamilyDevice *device, int64_t bytes)
 {
     device->_allocated.fetch_add(bytes, std::memory_order_relaxed);
 }
 
-int64_t DeviceAllocatedSize(WebMetalDevice *device)
+int64_t DeviceAllocatedSize(AGXA10FamilyDevice *device)
 {
     return device->_allocated.load(std::memory_order_relaxed);
 }
 
-void DeviceAddUnsized(WebMetalDevice *device, int64_t count)
+void DeviceAddUnsized(AGXA10FamilyDevice *device, int64_t count)
 {
     device->_unsized.fetch_add(count, std::memory_order_relaxed);
 }
 
-int64_t DeviceUnsizedCount(WebMetalDevice *device)
+int64_t DeviceUnsizedCount(AGXA10FamilyDevice *device)
 {
     return device->_unsized.load(std::memory_order_relaxed);
 }
 
-uint64_t DeviceCreationFlags(WebMetalDevice *device)
+uint64_t DeviceCreationFlags(AGXA10FamilyDevice *device)
 {
     return device->_creationFlags;
 }
 
-uint32_t DeviceConfigBits(WebMetalDevice *device)
+uint32_t DeviceConfigBits(AGXA10FamilyDevice *device)
 {
     return device->_configBits;
 }
 
-DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
+DepthStencilCache &DeviceDepthStencilStates(AGXA10FamilyDevice *device)
 {
     return device->_depthStencilStates;
 }
 
 }  // namespace webmetal
 
-@implementation WebMetalDevice
+@implementation AGXA10XDevice
 
-// The AGX initializer gathers the device options, then -[IOGPUMetalDevice initWithAcceleratorPort:options:] on 21H461
+// -[AGXA10XDevice initWithAcceleratorPort:] (AGXMetalA10 0x21c9c4530) is -[AGXA10FamilyDevice
+// initWithAcceleratorPort:simultaneousInstances:] with 0x400 instances, then -setupCompiler: with 0x10007. The family's
+// initializer gathers the device options, then -[IOGPUMetalDevice initWithAcceleratorPort:options:] on 21H461
 // initializes _MTLDevice, creates the IOGPU device (a device whose IOGPU device cannot be created is released and nil
 // returned, 0x1fcb2f420), keeps the service's registry entry ID and a reference to the service, and copies what it reads
-// of the IOGPU device's configuration.
+// of the IOGPU device's configuration. The plugin does what it implements of those steps here; the two initializers
+// and -setupCompiler: themselves are LOUD stubs (guest/Generated/surface.tsv).
 - (instancetype)initWithAcceleratorPort:(io_service_t)service
 {
     // The stubs are in place before _MTLDevice's initializer runs, as the driver's own methods are on the target.
@@ -198,7 +201,7 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
     } else {
         _iogpuDevice = webmetal::IOGPUDevice::Create(service, options.iogpuOptions, &problem);
         if (!_iogpuDevice) {
-            WMReport("-[WebMetalDevice initWithAcceleratorPort:]", ("refused: " + problem).c_str());
+            WMReport("-[AGXA10XDevice initWithAcceleratorPort:]", ("refused: " + problem).c_str());
             return nil;
         }
         _iogpuConfig = _iogpuDevice->Config();
@@ -214,7 +217,7 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
     // answered, or 0 where it did not (the shim's kernel stand-in serves no selector 4).
     Ivar traceObject = class_getInstanceVariable([_MTLDevice class], "_globalTraceObjectID");
     if (!traceObject || strcmp(ivar_getTypeEncoding(traceObject), "Q") != 0) {
-        WMReport("-[WebMetalDevice initWithAcceleratorPort:]", "refused: _MTLDevice has no _globalTraceObjectID");
+        WMReport("-[AGXA10XDevice initWithAcceleratorPort:]", "refused: _MTLDevice has no _globalTraceObjectID");
         return nil;
     }
     *reinterpret_cast<uint64_t *>(reinterpret_cast<uint8_t *>((__bridge void *)self) + ivar_getOffset(traceObject)) =
@@ -222,7 +225,7 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
     // With kdebug tracing on, IOGPU records the device's creation as a trace event (IOGPUDeviceTraceEvent with class 8,
     // code 0xb, 0x1fcb2f31c-0x1fcb2f358), which the plugin does not implement.
     if (_iogpuDevice && kdebugTracing()) {
-        WMReport("-[WebMetalDevice initWithAcceleratorPort:]",
+        WMReport("-[AGXA10XDevice initWithAcceleratorPort:]",
                  "not implemented: IOGPU's kdebug trace events (IOGPUDeviceTraceEvent) while kdebug tracing is on");
         return nil;
     }
@@ -231,12 +234,12 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
     if (status != KERN_SUCCESS) {
         char text[96];
         snprintf(text, sizeof text, "refused: service 0x%x has no registry entry ID (status 0x%x)", service, status);
-        WMReport("-[WebMetalDevice initWithAcceleratorPort:]", text);
+        WMReport("-[AGXA10XDevice initWithAcceleratorPort:]", text);
         return nil;
     }
     std::unique_ptr<webmetal::Connection> connection = webmetal::Connection::Open(service, &problem);
     if (!connection) {
-        WMReport("-[WebMetalDevice initWithAcceleratorPort:]", ("refused: " + problem).c_str());
+        WMReport("-[AGXA10XDevice initWithAcceleratorPort:]", ("refused: " + problem).c_str());
         return nil;
     }
     IOObjectRetain(service);
@@ -246,6 +249,10 @@ DepthStencilCache &DeviceDepthStencilStates(WebMetalDevice *device)
     _creationFlags = options.creationFlags;
     return self;
 }
+
+@end
+
+@implementation AGXA10FamilyDevice
 
 - (void)dealloc
 {

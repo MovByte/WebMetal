@@ -8,7 +8,7 @@
 
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
-@implementation WebMetalRenderCommandEncoder (WebMetalRecords)
+@implementation AGXA10FamilyRenderContext (WebMetalRecords)
 
 // RenderDispatchThreadsPerTile (0x1201).
 - (void)dispatchThreadsPerTile:(MTLSize)threadsPerTile
@@ -1636,7 +1636,7 @@
 
 @end
 
-@implementation WebMetalComputeCommandEncoder (WebMetalRecords)
+@implementation AGXA10FamilyComputeContext (WebMetalRecords)
 
 // ComputeBeginVirtualSubstream (0x1427).
 - (void)beginVirtualSubstream
@@ -2136,7 +2136,7 @@
 
 @end
 
-@implementation WebMetalBlitCommandEncoder (WebMetalRecords)
+@implementation AGXA10FamilyBlitContext (WebMetalRecords)
 
 // BlitCopyBufferToTexture (0x1501).
 - (void)copyFromBuffer:(id<MTLBuffer>)sourceBuffer sourceOffset:(NSUInteger)sourceOffset sourceBytesPerRow:(NSUInteger)sourceBytesPerRow sourceBytesPerImage:(NSUInteger)sourceBytesPerImage sourceSize:(MTLSize)sourceSize toTexture:(id<MTLTexture>)destinationTexture destinationSlice:(NSUInteger)destinationSlice destinationLevel:(NSUInteger)destinationLevel destinationOrigin:(MTLOrigin)destinationOrigin
@@ -2494,7 +2494,7 @@
 
 @end
 
-@implementation WebMetalParallelRenderCommandEncoder (WebMetalRecords)
+@implementation AGXA10FamilyThreadedRenderPass (WebMetalRecords)
 
 // ParallelSetColorStoreAction (0x1601).
 - (void)setColorStoreAction:(MTLStoreAction)storeAction atIndex:(NSUInteger)colorAttachmentIndex

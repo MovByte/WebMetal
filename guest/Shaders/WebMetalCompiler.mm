@@ -146,12 +146,12 @@ const char kDebugInfoKey = 0;
 
 }  // namespace
 
-bool ShaderDebugInfoCaching(WebMetalDevice *device)
+bool ShaderDebugInfoCaching(AGXA10FamilyDevice *device)
 {
     return [objc_getAssociatedObject(device, &kDebugInfoKey) boolValue];
 }
 
-void SetShaderDebugInfoCaching(WebMetalDevice *device, bool caching)
+void SetShaderDebugInfoCaching(AGXA10FamilyDevice *device, bool caching)
 {
     objc_setAssociatedObject(device, &kDebugInfoKey, @(caching), OBJC_ASSOCIATION_RETAIN);
 }
@@ -168,7 +168,7 @@ void SetShaderDebugInfoCaching(WebMetalDevice *device, bool caching)
 
 @end
 
-@implementation WebMetalDevice (WebMetalCompiler)
+@implementation AGXA10FamilyDevice (WebMetalCompiler)
 
 // -[AGXA10FamilyDevice targetDeviceArchitecture] (AGXMetalA10 0x21c8d5088): a new MTLTargetDeviceArchitecture with CPU
 // type 0x1000013 and the subtype, driver version and version setupCompiler: recorded for the device's architecture.

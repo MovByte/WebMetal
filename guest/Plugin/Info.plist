@@ -5,27 +5,33 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>WebMetal</string>
+	<string>AGXMetalA10</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.unixnu.WebMetal</string>
+	<string>com.apple.AGXMetalA10</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>WebMetal</string>
+	<string>AGXMetalA10</string>
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>282.14</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
 	<key>CFBundleSupportedPlatforms</key>
 	<array>
 		<string>iPhoneOS</string>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>282.14</string>
 	<key>MinimumOSVersion</key>
-	<string>17.0</string>
+	<string>17.7</string>
 	<key>NSPrincipalClass</key>
-	<string>WebMetalDevice</string>
+	<string>AGXPrincipalDevice</string>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+	</array>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>

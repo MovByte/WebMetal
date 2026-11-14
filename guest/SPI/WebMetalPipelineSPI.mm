@@ -7,7 +7,7 @@
 // The class adopts the driver's protocols; these categories implement the driver selectors they declare.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
-@implementation WebMetalComputePipelineState (WebMetalSPI)
+@implementation AGXA10FamilyComputePipeline (WebMetalSPI)
 
 // -[AGXA10FamilyComputePipeline imageblockMemoryLengthForDimensions:] (AGXMetalA10 0x21c8cc3c8): the constant 0.
 - (NSUInteger)imageblockMemoryLengthForDimensions:(MTLSize)dimensions
@@ -29,7 +29,7 @@
 
 @end
 
-@implementation WebMetalRenderPipelineState (WebMetalSPI)
+@implementation AGXA10FamilyRenderPipeline (WebMetalSPI)
 
 // -[AGXA10FamilyRenderPipeline imageblockSampleLength] (AGXMetalA10 0x21c977a74): the constant 0.
 - (NSUInteger)imageblockSampleLength

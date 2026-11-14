@@ -42,8 +42,9 @@ std::string methodName(id self, SEL selector)
     return std::string(meta ? "+[" : "-[") + class_getName(cls) + " " + sel_getName(selector) + "]";
 }
 
-// The generated table row for a stubbed selector of the receiver's plugin class, if there is one.
-const webmetal::DriverSelector *driverRow(id self, SEL selector, const webmetal::Role **owner)
+// The generated table row for a stubbed selector, from the class of the receiver's chain that carries it, if there is
+// one.
+const webmetal::DriverSelector *driverRow(id self, SEL selector)
 {
     Class cls = object_getClass(self);
     const bool meta = class_isMetaClass(cls);
@@ -52,14 +53,12 @@ const webmetal::DriverSelector *driverRow(id self, SEL selector, const webmetal:
     const webmetal::Role *roles = webmetal::Roles(&count);
     for (Class c = meta ? (Class)self : cls; c; c = class_getSuperclass(c)) {
         for (size_t i = 0; i < count; i++) {
-            if (strcmp(class_getName(c), roles[i].pluginClass) != 0)
+            if (strcmp(class_getName(c), roles[i].name) != 0)
                 continue;
             for (size_t k = 0; k < roles[i].count; k++) {
                 const webmetal::DriverSelector &row = roles[i].selectors[k];
-                if (row.kind == kind && strcmp(row.name, sel_getName(selector)) == 0) {
-                    *owner = &roles[i];
+                if (row.kind == kind && strcmp(row.name, sel_getName(selector)) == 0)
                     return &row;
-                }
             }
         }
     }
@@ -105,11 +104,10 @@ void WMLoudArgument(id self, SEL _cmd, uint64_t argument, const char *detail)
 
 void WMLoudStub(id self, SEL _cmd)
 {
-    const webmetal::Role *role = nullptr;
-    const webmetal::DriverSelector *row = driverRow(self, _cmd, &role);
+    const webmetal::DriverSelector *row = driverRow(self, _cmd);
     std::string detail;
     if (row) {
-        detail = std::string("21H461 ") + role->targetClass + " implements it in its " + row->layer + " layer";
+        detail = std::string("21H461 ") + row->definer + " implements it";
         if (*row->detail)
             detail += std::string("; ") + row->detail;
     }

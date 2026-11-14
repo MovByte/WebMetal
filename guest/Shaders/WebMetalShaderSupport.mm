@@ -152,7 +152,7 @@ std::mutex gFunctionLock;
 
 }  // namespace
 
-uint64_t FunctionHandle(WebMetalDevice *device, id self, SEL _cmd, id<MTLFunction> function)
+uint64_t FunctionHandle(AGXA10FamilyDevice *device, id self, SEL _cmd, id<MTLFunction> function)
 {
     if (!function)
         return 0;
@@ -219,14 +219,14 @@ std::vector<uint64_t> ObjectHandles(id self, SEL _cmd, NSArray *objects, const c
     return out;
 }
 
-void AdoptPipelineHandle(WebMetalComputePipelineState *pipeline, Connection *connection, uint64_t handle)
+void AdoptPipelineHandle(AGXA10FamilyComputePipeline *pipeline, Connection *connection, uint64_t handle)
 {
     pipeline->_connection = connection;
     pipeline->_handle = handle;
     RegisterHandle(pipeline, handle);
 }
 
-void AdoptPipelineHandle(WebMetalRenderPipelineState *pipeline, Connection *connection, uint64_t handle)
+void AdoptPipelineHandle(AGXA10FamilyRenderPipeline *pipeline, Connection *connection, uint64_t handle)
 {
     pipeline->_connection = connection;
     pipeline->_handle = handle;

@@ -7,7 +7,7 @@
 // The class adopts the driver's protocols; these categories implement the driver selectors they declare.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
-@implementation WebMetalTexture (WebMetalSPI)
+@implementation AGXA10FamilyTexture (WebMetalSPI)
 
 // -[AGXA10FamilyTexture compressionFeedback] (AGXMetalA10 0x21c9823c4): the constant 4.
 - (NSInteger)compressionFeedback

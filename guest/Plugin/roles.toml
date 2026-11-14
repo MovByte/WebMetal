@@ -1,73 +1,70 @@
-# The plugin's classes and the AGXMetalA10 driver class of iPadOS 17.7.11 (21H461) each one stands in for.
+# The Metal driver classes of the A10X's AGXMetalA10 on iPadOS 17.7.11 (21H461) the plugin defines, under the driver's
+# own names.
 #
-# UniXNU's scripts/audit-target-web-metal-surface.py generates guest/Generated from this list: the driver selectors of
-# each target class (implemented by the plugin class or a LOUD stub), the layout of its Metal.framework base, and the
-# audit of the built plugin. A plugin class must subclass the target class's Metal.framework base directly.
+# UniXNU's scripts/audit-target-web-metal-surface.py generates guest/Generated from this list: the driver selectors
+# each class carries (implemented by the plugin or a LOUD stub), the layout of its Metal.framework base, and the audit
+# of the built plugin. Each class keeps the driver's superclass chain inside the bundle, so a class whose 21H461
+# superclass is an AGXMetalA10 class (AGXA10XDevice -> AGXA10FamilyDevice) subclasses the plugin's class of that name,
+# which this list names too. Where the driver's chain leaves the bundle through IOGPU.framework (AGXA10FamilyDevice ->
+# IOGPUMetalDevice -> _MTLDevice), the plugin's class subclasses the Metal.framework base directly and carries the
+# selectors IOGPU.framework's classes implement.
 
 [[class]]
-name = "WebMetalDevice"
-target = "AGXA10XDevice"
+name = "AGXA10XDevice"
 
 [[class]]
-name = "WebMetalBuffer"
-target = "AGXA10FamilyBuffer"
+name = "AGXA10FamilyDevice"
 
 [[class]]
-name = "WebMetalTexture"
-target = "AGXA10FamilyTexture"
+name = "AGXA10FamilyBuffer"
 
 [[class]]
-name = "WebMetalCommandQueue"
-target = "AGXA10FamilyCommandQueue"
+name = "AGXBuffer"
 
 [[class]]
-name = "WebMetalCommandBuffer"
-target = "AGXA10FamilyCommandBuffer"
+name = "AGXA10FamilyTexture"
 
 [[class]]
-name = "WebMetalRenderCommandEncoder"
-target = "AGXA10FamilyRenderContext"
+name = "AGXTexture"
 
 [[class]]
-name = "WebMetalComputeCommandEncoder"
-target = "AGXA10FamilyComputeContext"
+name = "AGXA10FamilyCommandQueue"
 
 [[class]]
-name = "WebMetalBlitCommandEncoder"
-target = "AGXA10FamilyBlitContext"
+name = "AGXA10FamilyCommandBuffer"
 
 [[class]]
-name = "WebMetalParallelRenderCommandEncoder"
-target = "AGXA10FamilyThreadedRenderPass"
+name = "AGXA10FamilyRenderContext"
 
 [[class]]
-name = "WebMetalHeap"
-target = "AGXA10FamilyHeap"
+name = "AGXA10FamilyComputeContext"
 
 [[class]]
-name = "WebMetalSamplerState"
-target = "AGXA10FamilySampler"
+name = "AGXA10FamilyBlitContext"
 
 [[class]]
-name = "WebMetalDepthStencilState"
-target = "AGXA10FamilyDepthStencilState"
+name = "AGXA10FamilyThreadedRenderPass"
 
 [[class]]
-name = "WebMetalComputePipelineState"
-target = "AGXA10FamilyComputePipeline"
+name = "AGXA10FamilyHeap"
 
 [[class]]
-name = "WebMetalRenderPipelineState"
-target = "AGXA10FamilyRenderPipeline"
+name = "AGXA10FamilySampler"
 
 [[class]]
-name = "WebMetalArgumentEncoder"
-target = "AGXA10FamilyIndirectArgumentEncoder"
+name = "AGXA10FamilyDepthStencilState"
 
 [[class]]
-name = "WebMetalBinaryArchive"
-target = "AGXA10FamilyBinaryArchive"
+name = "AGXA10FamilyComputePipeline"
 
 [[class]]
-name = "WebMetalTextureLayout"
-target = "AGXTextureLayout"
+name = "AGXA10FamilyRenderPipeline"
+
+[[class]]
+name = "AGXA10FamilyIndirectArgumentEncoder"
+
+[[class]]
+name = "AGXA10FamilyBinaryArchive"
+
+[[class]]
+name = "AGXTextureLayout"

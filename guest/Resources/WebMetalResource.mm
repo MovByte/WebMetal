@@ -32,7 +32,7 @@ ResourceState::~ResourceState()
 // mode (bits 4..7) and CPU cache mode (bits 0..3) beside it, getpid() as the responsible process, purgeable state 2
 // (non-volatile) with purgeability allowed, no heap, pinned. A memoryless resource has no kernel resource and is not
 // purgeable.
-void InitResourceState(ResourceState &state, WebMetalDevice *device, uint64_t options)
+void InitResourceState(ResourceState &state, AGXA10FamilyDevice *device, uint64_t options)
 {
     state.device = device;
     state.options = options;
@@ -188,7 +188,7 @@ void MakeAliasable(id self, SEL _cmd, ResourceState &state, bool reportOnly)
 {
     if (!state.heap || !state.pinned)
         return;
-    [(WebMetalHeap *)state.heap unpinMemoryAtOffset:state.heapOffset withLength:state.heapLength];
+    [(AGXA10FamilyHeap *)state.heap unpinMemoryAtOffset:state.heapOffset withLength:state.heapLength];
     state.pinned = false;
     if (!state.created)
         return;

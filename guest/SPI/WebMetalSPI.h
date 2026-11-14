@@ -2,7 +2,8 @@
 // AppleMetalGLRenderer, WebKit): guest/SPI/clients/<client>.tsv lists each client's driver selectors, and
 // guest/SPI/notes.toml says why each one the plugin does not answer is LOUD.
 //
-// The methods are categories on the plugin classes that stand in for the 21H461 driver classes (guest/Plugin/roles.toml).
+// The methods are categories on the plugin's classes, which carry the 21H461 driver classes' names
+// (guest/Plugin/roles.toml).
 // Each comments the 21H461 method it reproduces, by symbol and address in the 21H461 dyld shared cache, or the 21H461
 // kernel function where the driver asks the kernel.
 

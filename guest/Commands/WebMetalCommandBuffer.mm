@@ -149,11 +149,11 @@ Listing listingOf(id self, SEL cmd)
         @selector(optimizeContentsForCPUAccess:slice:level:),
     };
     auto in = [cmd](const std::vector<SEL> &list) { return std::find(list.begin(), list.end(), cmd) != list.end(); };
-    if ([self isKindOfClass:[WebMetalRenderCommandEncoder class]] && in(render))
+    if ([self isKindOfClass:[AGXA10FamilyRenderContext class]] && in(render))
         return Listing::Stamped;
-    if ([self isKindOfClass:[WebMetalComputeCommandEncoder class]] && in(compute))
+    if ([self isKindOfClass:[AGXA10FamilyComputeContext class]] && in(compute))
         return Listing::Stamped;
-    if ([self isKindOfClass:[WebMetalBlitCommandEncoder class]] && in(blitUnlisted))
+    if ([self isKindOfClass:[AGXA10FamilyBlitContext class]] && in(blitUnlisted))
         return Listing::Unlisted;
     return Listing::Untraced;
 }
@@ -381,7 +381,7 @@ PendingStamps WaitStamps(uint64_t key)
     }
 }
 
-template <class Record> void EmitCommandBufferRecord(WebMetalCommandBuffer *buffer, SEL cmd, const Record &record)
+template <class Record> void EmitCommandBufferRecord(AGXA10FamilyCommandBuffer *buffer, SEL cmd, const Record &record)
 {
     if (!wire::encode(buffer->_state->stream.writer(), record))
         WMLoudMethod(buffer, cmd, "the arguments break a rule of the wire format");
@@ -401,18 +401,19 @@ void setFrameworkTraceID(id object, const char *cls)
 
 // -[IOGPUMetalCommandBuffer validate], which -[AGXA10FamilyCommandBuffer commit] calls through super before anything
 // else. The checks report through Metal.framework's failure channel, as the driver's do.
-void validateForCommit(WebMetalCommandBuffer *buffer)
+void validateForCommit(AGXA10FamilyCommandBuffer *buffer)
 {
     if (buffer.status >= MTLCommandBufferStatusCommitted)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer commit]", __LINE__, @"commit an already committed command buffer");
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer commit]", __LINE__,
+                         @"commit an already committed command buffer");
     if (buffer->_currentEncoder)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer commit]", __LINE__,
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer commit]", __LINE__,
                          @"commit command buffer with uncommitted encoder");
 }
 
 // The event a command-buffer command names. A nil event is LOUD: IOGPU sends the encode message to the event, so a nil
 // event leaves the kernel command's arguments unset, which the host has no form for.
-uint64_t eventReference(WebMetalCommandBuffer *buffer, SEL cmd, id<MTLEvent> event)
+uint64_t eventReference(AGXA10FamilyCommandBuffer *buffer, SEL cmd, id<MTLEvent> event)
 {
     if (!event)
         WMLoudMethod(buffer, cmd, "a nil event: 21H461's driver encodes a kernel event command without event arguments");
@@ -429,7 +430,7 @@ uint64_t eventReference(WebMetalCommandBuffer *buffer, SEL cmd, id<MTLEvent> eve
 
 }  // namespace
 
-std::shared_ptr<EncoderState> NewEncoderState(WebMetalCommandBuffer *buffer, Stream *subStream)
+std::shared_ptr<EncoderState> NewEncoderState(AGXA10FamilyCommandBuffer *buffer, Stream *subStream)
 {
     auto state = std::make_shared<EncoderState>();
     state->commandBuffer = buffer->_state;
@@ -445,7 +446,7 @@ std::shared_ptr<EncoderState> NewEncoderState(WebMetalCommandBuffer *buffer, Str
 
 using namespace webmetal;
 
-@implementation WebMetalCommandBuffer
+@implementation AGXA10FamilyCommandBuffer
 
 - (instancetype)initWithQueue:(id<MTLCommandQueue>)queue retainedReferences:(BOOL)retainedReferences
 {
@@ -458,13 +459,14 @@ using namespace webmetal;
            retainedReferences:(BOOL)retainedReferences
           synchronousDebugMode:(BOOL)synchronousDebugMode
 {
-    if (![(id)queue isKindOfClass:[WebMetalCommandQueue class]])
-        MTLReleaseAssertionFailure("-[WebMetalCommandBuffer initWithQueue:retainedReferences:synchronousDebugMode:]",
-                                   __LINE__, "[queue isKindOfClass:[WebMetalCommandQueue class]]", nullptr);
+    if (![(id)queue isKindOfClass:[AGXA10FamilyCommandQueue class]])
+        MTLReleaseAssertionFailure(
+            "-[AGXA10FamilyCommandBuffer initWithQueue:retainedReferences:synchronousDebugMode:]", __LINE__,
+            "[queue isKindOfClass:[AGXA10FamilyCommandQueue class]]", nullptr);
     self = [super initWithQueue:queue retainedReferences:retainedReferences synchronousDebugMode:synchronousDebugMode];
     if (!self)
         return nil;
-    WebMetalCommandQueue *owner = (WebMetalCommandQueue *)queue;
+    AGXA10FamilyCommandQueue *owner = (AGXA10FamilyCommandQueue *)queue;
     _state = std::make_shared<CommandBufferState>(owner->_connection, owner->_connection->NewHandle(),
                                                   retainedReferences);
     setFrameworkTraceID(self, "_MTLCommandBuffer");
@@ -479,7 +481,7 @@ using namespace webmetal;
 
 - (id<MTLDevice>)device
 {
-    return [(WebMetalCommandQueue *)self.commandQueue device];
+    return [(AGXA10FamilyCommandQueue *)self.commandQueue device];
 }
 
 - (void)validate
@@ -497,7 +499,7 @@ using namespace webmetal;
 - (void)setCurrentCommandEncoder:(id<MTLCommandEncoder>)encoder
 {
     if (self.status >= MTLCommandBufferStatusCommitted)
-        MTLReleaseAssertionFailure("-[WebMetalCommandBuffer setCurrentCommandEncoder:]", __LINE__,
+        MTLReleaseAssertionFailure("-[AGXA10FamilyCommandBuffer setCurrentCommandEncoder:]", __LINE__,
                                    "_status < MTLCommandBufferStatusCommitted", nullptr);
     [super setCurrentCommandEncoder:encoder];
     _currentEncoder = encoder;
@@ -534,7 +536,7 @@ using namespace webmetal;
 - (void)setProtectionOptions:(NSUInteger)options
 {
     if (_currentEncoder)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer setProtectionOptions:]", __LINE__,
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer setProtectionOptions:]", __LINE__,
                          @"setProtectionOptions: with uncommitted encoder");
     if (options == _protectionOptions)
         return;
@@ -564,7 +566,7 @@ using namespace webmetal;
 - (void)encodeSignalEvent:(id<MTLEvent>)event value:(uint64_t)value
 {
     if (_currentEncoder)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer encodeSignalEvent:value:]", __LINE__,
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer encodeSignalEvent:value:]", __LINE__,
                          @"encodeSignalEvent:value: with uncommitted encoder");
     wire::EncodeSignalEvent record;
     record.event = eventReference(self, _cmd, event);
@@ -575,7 +577,7 @@ using namespace webmetal;
 - (void)encodeWaitForEvent:(id<MTLEvent>)event value:(uint64_t)value
 {
     if (_currentEncoder)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer encodeWaitForEvent:value:]", __LINE__,
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer encodeWaitForEvent:value:]", __LINE__,
                          @"encodeWaitForEvent:value: with uncommitted encoder");
     wire::EncodeWaitForEvent record;
     record.event = eventReference(self, _cmd, event);
@@ -587,7 +589,7 @@ using namespace webmetal;
 - (void)encodeSignalEvent:(id<MTLEvent>)event value:(uint64_t)value agentMask:(uint64_t)agentMask
 {
     if (_currentEncoder)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer encodeSignalEvent:value:agentMask:]", __LINE__,
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer encodeSignalEvent:value:agentMask:]", __LINE__,
                          @"encodeSignalEvent:value: with uncommitted encoder");
     wire::EncodeSignalEventAgentMask record;
     record.event = eventReference(self, _cmd, event);
@@ -599,7 +601,7 @@ using namespace webmetal;
 - (void)encodeWaitForEvent:(id<MTLEvent>)event value:(uint64_t)value timeout:(uint32_t)timeout
 {
     if (_currentEncoder)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer encodeWaitForEvent:value:timeout:]", __LINE__,
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer encodeWaitForEvent:value:timeout:]", __LINE__,
                          @"encodeWaitForEvent:value: with uncommitted encoder");
     wire::EncodeWaitForEventTimeout record;
     record.event = eventReference(self, _cmd, event);
@@ -616,7 +618,7 @@ using namespace webmetal;
 - (void)encodeSignalEventScheduled:(id<MTLEvent>)event value:(uint64_t)value
 {
     if (_currentEncoder)
-        MTLReportFailure(0, "-[WebMetalCommandBuffer encodeSignalEventScheduled:value:]", __LINE__,
+        MTLReportFailure(0, "-[AGXA10FamilyCommandBuffer encodeSignalEventScheduled:value:]", __LINE__,
                          @"encodeSignalEventScheduled:value: with uncommitted encoder");
     wire::EncodeSignalEventScheduled record;
     record.event = eventReference(self, _cmd, event);

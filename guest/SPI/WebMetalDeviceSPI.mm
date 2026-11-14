@@ -31,7 +31,7 @@ NSString *metalString(id self, SEL _cmd, const char *symbol)
 
 }  // namespace
 
-@implementation WebMetalDevice (WebMetalSPI)
+@implementation AGXA10FamilyDevice (WebMetalSPI)
 
 // -[AGXA10FamilyDevice vendorName] (AGXMetalA10 0x21c8d4d24): the constant string "Apple".
 - (NSString *)vendorName
@@ -39,11 +39,11 @@ NSString *metalString(id self, SEL _cmd, const char *symbol)
     return @"Apple";
 }
 
-// -[AGXA10XDevice familyName] (AGXMetalA10 0x21c9c4598): the constant string "A10X" (AGXA10FamilyDevice's, which
-// AGXA10XDevice overrides, is "A10").
+// -[AGXA10FamilyDevice familyName] (AGXMetalA10 0x21c8d4d30): the constant string "A10", which AGXA10XDevice
+// overrides.
 - (NSString *)familyName
 {
-    return @"A10X";
+    return @"A10";
 }
 
 // -[AGXA10FamilyDevice productName] (AGXMetalA10 0x21c8d4d3c): the constant empty string.
@@ -138,6 +138,16 @@ NSString *metalString(id self, SEL _cmd, const char *symbol)
 {
     objc_setAssociatedObject(self, &kComputeCoalescingKey, @(static_cast<unsigned char>(disable)),
                              OBJC_ASSOCIATION_RETAIN);
+}
+
+@end
+
+@implementation AGXA10XDevice (WebMetalSPI)
+
+// -[AGXA10XDevice familyName] (AGXMetalA10 0x21c9c4598): the constant string "A10X".
+- (NSString *)familyName
+{
+    return @"A10X";
 }
 
 @end

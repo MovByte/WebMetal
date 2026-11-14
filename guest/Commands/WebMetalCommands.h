@@ -1,6 +1,6 @@
 // The command path: command queues, command buffers, encoders, events and fences.
 //
-// Each class stands in for the 21H461 driver class guest/Plugin/roles.toml names and subclasses the same
+// Each class carries the name of the 21H461 driver class (guest/Plugin/roles.toml) and subclasses the same
 // Metal.framework base, so the framework's command-buffer status machine, handler lists, waits, timing fields and
 // misuse assertions run as they do over the A10X driver. What the driver layers (AGXMetalA10 and IOGPU.framework) do
 // is done here: encoders write wire records into their command buffer's stream (wire/README.md, "Stream"), the queue
@@ -87,23 +87,23 @@
 // Metal.framework's unconditional assertion failure (never returns).
 extern "C" void MTLReleaseAssertionFailure(const char *function, uint32_t line, const char *condition, const char *message);
 
-@interface WebMetalCommandQueue : _MTLCommandQueue <MTLCommandQueueSPI>
+@interface AGXA10FamilyCommandQueue : _MTLCommandQueue <MTLCommandQueueSPI>
 - (instancetype)initWithDevice:(id<MTLDevice>)device descriptor:(id)descriptor;
 @end
 
-@interface WebMetalCommandBuffer : _MTLCommandBuffer <MTLCommandBufferSPI>
+@interface AGXA10FamilyCommandBuffer : _MTLCommandBuffer <MTLCommandBufferSPI>
 - (instancetype)initWithQueue:(id<MTLCommandQueue>)queue retainedReferences:(BOOL)retainedReferences;
 - (NSUInteger)getSupportedAndEnabledErrorOptions;
 @end
 
 // The encoder-creating methods (WebMetalEncoders.mm).
-@interface WebMetalCommandBuffer (WebMetalEncoders)
+@interface AGXA10FamilyCommandBuffer (WebMetalEncoders)
 - (id<MTLRenderCommandEncoder>)subRenderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)descriptor
                                                      subEncoderIndex:(NSUInteger)index
                                                          framebuffer:(void *)framebuffer;
 @end
 
-@interface WebMetalRenderCommandEncoder : _MTLCommandEncoder <MTLRenderCommandEncoderSPI>
+@interface AGXA10FamilyRenderContext : _MTLCommandEncoder <MTLRenderCommandEncoderSPI>
 - (instancetype)initWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer descriptor:(MTLRenderPassDescriptor *)descriptor;
 - (instancetype)initWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
                            descriptor:(MTLRenderPassDescriptor *)descriptor
@@ -111,14 +111,14 @@ extern "C" void MTLReleaseAssertionFailure(const char *function, uint32_t line, 
                           framebuffer:(void *)framebuffer;
 @end
 
-@interface WebMetalComputeCommandEncoder : _MTLCommandEncoder <MTLComputeCommandEncoderSPI>
+@interface AGXA10FamilyComputeContext : _MTLCommandEncoder <MTLComputeCommandEncoderSPI>
 @end
 
-@interface WebMetalBlitCommandEncoder : _MTLCommandEncoder <MTLBlitCommandEncoderSPI>
+@interface AGXA10FamilyBlitContext : _MTLCommandEncoder <MTLBlitCommandEncoderSPI>
 - (instancetype)initWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer descriptor:(MTLBlitPassDescriptor *)descriptor;
 @end
 
-@interface WebMetalParallelRenderCommandEncoder : _MTLParallelRenderCommandEncoder <MTLParallelRenderCommandEncoderSPI>
+@interface AGXA10FamilyThreadedRenderPass : _MTLParallelRenderCommandEncoder <MTLParallelRenderCommandEncoderSPI>
 @end
 
 // The device's answer to -getSupportedCommandBufferErrorOptions (WebMetalSync.mm).

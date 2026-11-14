@@ -1,13 +1,16 @@
-// The Metal device of the WebMetal accelerator service.
+// The Metal device of the WebMetal accelerator service, under the A10X driver's names.
 //
 // Metal.framework matches services in category IOAcceleratorES, loads the bundle the service names in MetalPluginName
 // from /System/Library/Extensions and creates the class named by MetalPluginClassName with -initWithAcceleratorPort:,
-// then registers the device with MTLAddDevice. For the WebMetal accelerator those are WebMetal.bundle and
-// WebMetalDevice (wire/README.md, "Transport").
+// then registers the device with MTLAddDevice. For the WebMetal accelerator those are AGXMetalA10.bundle and
+// AGXA10XDevice (wire/README.md, "Transport"), as for the A10X's accelerator on 21H461.
 //
-// WebMetalDevice stands in for the A10X's AGXA10XDevice: it subclasses the same Metal.framework base (_MTLDevice),
-// answers the A10X's capability getters from the device profile, and every other selector the A10X driver implements
-// is a LOUD stub until a package implements it (guest/Generated/surface.tsv lists them).
+// The device classes keep 21H461's chain inside the bundle, AGXA10XDevice -> AGXA10FamilyDevice, each with the methods
+// AGXMetalA10 defines on it. The driver's chain continues through IOGPU.framework (AGXA10FamilyDevice ->
+// IOGPUMetalDevice -> _MTLDevice); the plugin's AGXA10FamilyDevice subclasses the same Metal.framework base,
+// _MTLDevice, directly and carries IOGPUMetalDevice's methods. The device answers the A10X's capability getters from
+// the device profile, and every other selector the A10X driver implements is a LOUD stub until a package implements it
+// (guest/Generated/surface.tsv lists them).
 
 #pragma once
 
@@ -15,7 +18,13 @@
 
 #include <IOKit/IOKitLib.h>
 
-@interface WebMetalDevice : _MTLDevice <MTLDeviceSPI>
+// The device's state, and the methods of AGXMetalA10's AGXA10FamilyDevice and IOGPU.framework's IOGPUMetalDevice.
+@interface AGXA10FamilyDevice : _MTLDevice <MTLDeviceSPI>
+@end
+
+// The class Metal.framework creates, with what 21H461's AGXA10XDevice defines itself: -initWithAcceleratorPort: and
+// -familyName.
+@interface AGXA10XDevice : AGXA10FamilyDevice
 
 // The accelerator service the device belongs to. The device retains it. Returns nil, after a report, when the running
 // Metal.framework is not the one the plugin was built for, the service's IOGPU device cannot be created

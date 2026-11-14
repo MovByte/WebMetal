@@ -1,19 +1,20 @@
 // The device's resource methods: AGXA10FamilyDevice's (and IOGPUMetalDevice's) factories and accounting, as a category
-// of WebMetalDevice.
+// of AGXA10FamilyDevice.
 
 #import "WebMetalBuffer.h"
 #import "WebMetalTexture.h"
 #import "WebMetalHeapPrivate.h"
 
 namespace webmetal {
-id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSamplerDescriptor *descriptor);
-id<MTLDepthStencilState> NewDepthStencilState(WebMetalDevice *device, SEL _cmd, MTLDepthStencilDescriptor *descriptor);
+id<MTLSamplerState> NewSamplerState(AGXA10FamilyDevice *device, SEL _cmd, MTLSamplerDescriptor *descriptor);
+id<MTLDepthStencilState> NewDepthStencilState(AGXA10FamilyDevice *device, SEL _cmd,
+                                               MTLDepthStencilDescriptor *descriptor);
 }
 
 // The class adopts the protocols that declare these methods; this category, not the class, implements them.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
-@implementation WebMetalDevice (WebMetalResources)
+@implementation AGXA10FamilyDevice (WebMetalResources)
 
 // -[AGXA10FamilyDevice newBufferWithLength:options:] (AGXMetalA10 0x21c8d5e48). The driver also counts the call in its
 // telemetry, which has no observable effect.

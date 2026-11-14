@@ -13,22 +13,25 @@ namespace webmetal {
 
 enum class SelectorKind { Instance, Class };
 
-// A selector the 21H461 driver class implements in its own layers (AGXMetalA10 or IOGPU.framework). The plugin class
-// standing in for it implements it or answers it with a LOUD stub.
+// A selector a class of the plugin carries for the 21H461 driver: one the AGXMetalA10 class of the same name defines,
+// or, on the topmost AGXMetalA10 class of a chain, one IOGPU.framework defines above it. The plugin's class implements
+// it or answers it with a LOUD stub.
 struct DriverSelector {
     SelectorKind kind;
     const char *name;
-    const char *types;   // the 21H461 method's type encoding
-    const char *layer;   // "agx" or "iogpu"
-    const char *detail;  // why it is not implemented, when that is known; "" otherwise
+    const char *types;    // the 21H461 method's type encoding
+    const char *definer;  // the 21H461 class that defines it: the AGXMetalA10 class, or an IOGPU.framework class
+    const char *detail;   // why it is not implemented, when that is known; "" otherwise
 };
 
-// A driver class of AGXMetalA10 and the plugin class that stands in for it.
+// An AGXMetalA10 class the plugin defines under the driver's name (guest/Plugin/roles.toml).
 struct Role {
-    const char *pluginClass;
-    const char *targetClass;
-    const char *base;  // the Metal.framework class both subclass
-    const DriverSelector *selectors;
+    const char *name;
+    // The next AGXMetalA10 class of the 21H461 chain, which the plugin defines too, or `base` where the driver's chain
+    // leaves the bundle (through IOGPU.framework's classes, which the plugin does not define).
+    const char *superclass;
+    const char *base;                 // the Metal.framework class (or NSObject) the chain reaches
+    const DriverSelector *selectors;  // the driver selectors the class carries itself
     size_t count;
 };
 
@@ -85,11 +88,18 @@ Method FrameworkMethod(Class cls, SelectorKind kind, const char *name);
 // Compares the running Metal.framework with a layout set. Returns false and describes the first difference.
 bool CheckLayouts(const LayoutSet &layouts, std::string *difference);
 
-// The driver classes the plugin stands in for (guest/Plugin/roles.toml), from the generated tables.
+// The driver classes the plugin defines (guest/Plugin/roles.toml), from the generated tables.
 const Role *Roles(size_t *count);
 
-// Gives every plugin class a LOUD stub for each driver selector it does not implement itself. Returns false and
-// describes the problem when a plugin class is missing or a stub cannot be added.
+// The class named `name` that the plugin's own image defines, or Nil. AGXMetalA10 shares class names with other
+// AGX drivers (AGXBuffer, AGXTexture, AGXTextureLayout, AGXPrincipalDevice), and objc_getClass answers whichever class
+// of a name the runtime registered first, which may be another image's: this Mac's own driver beside the macOS test
+// shim.
+Class PluginClass(const char *name);
+
+// Gives every class of the plugin a LOUD stub for each driver selector it carries and does not implement itself.
+// Returns false and describes the problem when a class is missing or not over its superclass, or a stub cannot be
+// added.
 bool InstallLoudStubs(std::string *problem);
 
 }  // namespace webmetal

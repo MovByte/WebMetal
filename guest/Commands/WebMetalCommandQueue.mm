@@ -48,7 +48,7 @@ namespace {
 // IOGPUMetalCommandQueue's command buffers between Commit and completion, by handle, for the event handler.
 struct QueueEvents {
     std::mutex lock;
-    std::unordered_map<uint64_t, WebMetalCommandBuffer *> inFlight;  // retained through `retained`
+    std::unordered_map<uint64_t, AGXA10FamilyCommandBuffer *> inFlight;  // retained through `retained`
     NSMutableArray *retained = [NSMutableArray array];
 };
 
@@ -76,13 +76,14 @@ dispatch_queue_t completionDispatch(id queue)
     return (dispatch_queue_t)object_getIvar(queue, completionDispatchIvar());
 }
 
-// Runs the events the host has for one queue (WebMetalCommandQueue's doorbell, and -dispatchAvailableCompletionNotifications).
-void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connection, uint64_t handle)
+// Runs the events the host has for one queue (AGXA10FamilyCommandQueue's doorbell, and
+// -dispatchAvailableCompletionNotifications).
+void dispatchEvents(AGXA10FamilyCommandQueue *queue, webmetal::Connection *connection, uint64_t handle)
 {
     std::vector<webmetal::wire::Event> events;
     std::string problem;
     if (!webmetal::FetchEvents(connection, handle, events, &problem)) {
-        WMReport("-[WebMetalCommandQueue dispatchAvailableCompletionNotifications]", problem.c_str());
+        WMReport("-[AGXA10FamilyCommandQueue dispatchAvailableCompletionNotifications]", problem.c_str());
         return;
     }
     std::shared_ptr<QueueEvents> state = eventsOf(handle);
@@ -90,7 +91,7 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
         return;
     for (const webmetal::wire::Event &event : events) {
         if (auto *scheduled = std::get_if<webmetal::wire::CommandBufferScheduled>(&event)) {
-            WebMetalCommandBuffer *buffer = nil;
+            AGXA10FamilyCommandBuffer *buffer = nil;
             {
                 std::lock_guard<std::mutex> guard(state->lock);
                 auto found = state->inFlight.find(scheduled->commandBuffer);
@@ -111,7 +112,7 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
                                      endTime:webmetal::MachTicksFromNanoseconds(scheduled->kernelEndTime)
                                        error:error];
         } else if (auto *completed = std::get_if<webmetal::wire::CommandBufferCompleted>(&event)) {
-            WebMetalCommandBuffer *buffer = nil;
+            AGXA10FamilyCommandBuffer *buffer = nil;
             {
                 std::lock_guard<std::mutex> guard(state->lock);
                 auto found = state->inFlight.find(completed->commandBuffer);
@@ -136,7 +137,7 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
             std::lock_guard<std::mutex> guard(state->lock);
             [state->retained removeObjectIdenticalTo:buffer];
         } else if (auto *encoder = std::get_if<webmetal::wire::EncoderCompleted>(&event)) {
-            WebMetalCommandBuffer *buffer = nil;
+            AGXA10FamilyCommandBuffer *buffer = nil;
             {
                 std::lock_guard<std::mutex> guard(state->lock);
                 auto found = state->inFlight.find(encoder->commandBuffer);
@@ -149,7 +150,7 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
             }
             webmetal::EncoderStampsCompleted(buffer->_state->stamps, encoder->encoder);
         } else if (auto *passed = std::get_if<webmetal::wire::EventWaitPassed>(&event)) {
-            WebMetalCommandBuffer *buffer = nil;
+            AGXA10FamilyCommandBuffer *buffer = nil;
             {
                 std::lock_guard<std::mutex> guard(state->lock);
                 auto found = state->inFlight.find(passed->commandBuffer);
@@ -161,7 +162,7 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
             }
             webmetal::CommandBufferStampsWaitPassed(buffer->_state->stamps, passed->waits);
         } else {
-            WMReport("-[WebMetalCommandQueue dispatchAvailableCompletionNotifications]",
+            WMReport("-[AGXA10FamilyCommandQueue dispatchAvailableCompletionNotifications]",
                      "not implemented: an event record other than CommandBufferScheduled, EncoderCompleted, "
                      "EventWaitPassed or CommandBufferCompleted arrived on a command queue");
         }
@@ -169,20 +170,20 @@ void dispatchEvents(WebMetalCommandQueue *queue, webmetal::Connection *connectio
 }
 
 // Rings on `queue` whenever the host has events for the command queue.
-bool watchQueue(WebMetalCommandQueue *queue, dispatch_queue_t on)
+bool watchQueue(AGXA10FamilyCommandQueue *queue, dispatch_queue_t on)
 {
-    __weak WebMetalCommandQueue *weakQueue = queue;
+    __weak AGXA10FamilyCommandQueue *weakQueue = queue;
     webmetal::Connection *connection = queue->_connection;
     const uint64_t handle = queue->_handle;
     std::string problem;
     if (!connection->Watch(handle, on,
                            ^{
-                               WebMetalCommandQueue *strong = weakQueue;
+                               AGXA10FamilyCommandQueue *strong = weakQueue;
                                if (strong)
                                    dispatchEvents(strong, connection, handle);
                            },
                            &problem)) {
-        WMReport("-[WebMetalCommandQueue initWithDevice:descriptor:]", problem.c_str());
+        WMReport("-[AGXA10FamilyCommandQueue initWithDevice:descriptor:]", problem.c_str());
         return false;
     }
     return true;
@@ -268,7 +269,7 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
 
 }  // namespace webmetal
 
-@implementation WebMetalCommandQueue
+@implementation AGXA10FamilyCommandQueue
 
 // -[AGXA10FamilyCommandQueue initWithDevice:descriptor:] initializes the framework queue, applies the descriptor's
 // configuration to the driver queue and makes a fence; IOGPUMetalCommandQueue creates the kernel's command queue with
@@ -280,9 +281,10 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
     if (!self)
         return nil;
     _device = device;
-    _connection = webmetal::DeviceConnection((WebMetalDevice *)device);
+    _connection = webmetal::DeviceConnection((AGXA10FamilyDevice *)device);
     if (!_connection) {
-        WMReport("-[WebMetalCommandQueue initWithDevice:descriptor:]", "refused: the device has no WebMetal connection");
+        WMReport("-[AGXA10FamilyCommandQueue initWithDevice:descriptor:]",
+                 "refused: the device has no WebMetal connection");
         return nil;
     }
     _handle = _connection->NewHandle();
@@ -303,7 +305,7 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
     if (d.disableAsyncCompletionDispatch) {
         // IOGPU then leaves its notification queue without a dispatch queue: completions run only from
         // -dispatchAvailableCompletionNotifications.
-        WMReport("-[WebMetalCommandQueue initWithDevice:descriptor:]",
+        WMReport("-[AGXA10FamilyCommandQueue initWithDevice:descriptor:]",
                  "not implemented: disableAsyncCompletionDispatch (completions delivered only on request)");
         return nil;
     }
@@ -330,7 +332,7 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
     if (!created) {
         // IOGPUCommandQueueCreateWithQoS failing makes the driver's initializer return nil.
         if (failure.status != 1)
-            WMReport("-[WebMetalCommandQueue initWithDevice:descriptor:]",
+            WMReport("-[AGXA10FamilyCommandQueue initWithDevice:descriptor:]",
                      (problem.empty() ? failure.message : problem).c_str());
         _handle = 0;
         return nil;
@@ -372,12 +374,12 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
 
 - (id<MTLCommandBuffer>)commandBuffer
 {
-    return [[WebMetalCommandBuffer alloc] initWithQueue:self retainedReferences:YES];
+    return [[AGXA10FamilyCommandBuffer alloc] initWithQueue:self retainedReferences:YES];
 }
 
 - (id<MTLCommandBuffer>)commandBufferWithUnretainedReferences
 {
-    return [[WebMetalCommandBuffer alloc] initWithQueue:self retainedReferences:NO];
+    return [[AGXA10FamilyCommandBuffer alloc] initWithQueue:self retainedReferences:NO];
 }
 
 // -[AGXA10FamilyCommandQueue commandBufferWithDescriptor:] creates the buffer with the descriptor's retainedReferences,
@@ -392,8 +394,8 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
                      "deadlineProfile, captureProgramAddressTable, cloneIntersectionFunctionTablesPerDispatch and "
                      "disableFineGrainedComputePreemption configure AGX command-stream features the host has no "
                      "form for");
-    WebMetalCommandBuffer *buffer = [[WebMetalCommandBuffer alloc] initWithQueue:self
-                                                              retainedReferences:descriptor.retainedReferences];
+    AGXA10FamilyCommandBuffer *buffer = [[AGXA10FamilyCommandBuffer alloc] initWithQueue:self
+                                                                      retainedReferences:descriptor.retainedReferences];
     [buffer setErrorOptions:descriptor.errorOptions];
     return buffer;
 }
@@ -417,7 +419,8 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
 - (void)setCompletionQueue:(dispatch_queue_t)queue
 {
     if (!queue)
-        MTLReleaseAssertionFailure("-[WebMetalCommandQueue setCompletionQueue:]", __LINE__, "queue != nil", nullptr);
+        MTLReleaseAssertionFailure("-[AGXA10FamilyCommandQueue setCompletionQueue:]", __LINE__, "queue != nil",
+                                   nullptr);
     Ivar ivar = completionDispatchIvar();
     void *previous = (__bridge void *)object_getIvar(self, ivar);
     object_setIvar(self, ivar, (__bridge id)CFBridgingRetain(queue));
@@ -443,7 +446,7 @@ NSError *CommandBufferError(const wire::Failure &failure, const char *what, bool
 {
     std::shared_ptr<QueueEvents> state = eventsOf(_handle);
     for (NSUInteger i = 0; i < count; i++) {
-        WebMetalCommandBuffer *buffer = (WebMetalCommandBuffer *)commandBuffers[i];
+        AGXA10FamilyCommandBuffer *buffer = (AGXA10FamilyCommandBuffer *)commandBuffers[i];
         webmetal::CommandBufferState &cb = *buffer->_state;
         webmetal::wire::Commit request;
         request.commandBuffer = cb.handle;

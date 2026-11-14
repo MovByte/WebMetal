@@ -1,5 +1,7 @@
-// Textures: WebMetalTexture stands in for AGXA10FamilyTexture (AGXA10FamilyTexture -> AGXTexture -> IOGPUMetalTexture ->
-// IOGPUMetalResource -> _MTLResource on 21H461).
+// Textures: AGXA10FamilyTexture over AGXTexture, as on 21H461 (AGXA10FamilyTexture -> AGXTexture -> IOGPUMetalTexture
+// -> IOGPUMetalResource -> _MTLResource). AGXTexture holds the state and carries what AGXMetalA10's AGXTexture and
+// IOGPU.framework's IOGPUMetalTexture and IOGPUMetalResource define; AGXA10FamilyTexture, the class of every texture
+// the plugin creates, what AGXMetalA10's AGXA10FamilyTexture defines.
 //
 // The driver checks a descriptor with Metal.framework's own -[MTLTextureDescriptorInternal validateWithDevice:], lays
 // the texture out in its private memory format (AGX::Texture, the AGX layout), and creates the kernel resource. The
@@ -59,14 +61,14 @@ constexpr char kLayout[] = "the A10X texture layout (AGX::TextureGen2 in AGXMeta
                            "a buffer is not ported";
 }  // namespace
 
-@interface WebMetalTexture () {
+@interface AGXTexture () {
 @public
     webmetal::ResourceState _state;
     // IOGPUMetalTexture's instance variables (the comments name them).
-    WebMetalTexture *_parentTexture;     // _parentTexture
+    AGXTexture *_parentTexture;          // _parentTexture
     NSUInteger _parentRelativeLevel;     // _parentRelativeLevel
     NSUInteger _parentRelativeSlice;     // _parentRelativeSlice
-    WebMetalBuffer *_buffer;             // _buffer
+    AGXA10FamilyBuffer *_buffer;         // _buffer
     uint32_t _swizzle;                   // _swizzle: MTLTextureSwizzleChannels as its key
     bool _writeSwizzleEnabled;           // _writeSwizzleEnabled
     bool _isCompressed;                  // _isCompressed
@@ -105,7 +107,7 @@ constexpr char kLayout[] = "the A10X texture layout (AGX::TextureGen2 in AGXMeta
 }
 @end
 
-// IOGPUMetalResource's -resourceSize, which WebMetalBuffer answers.
+// IOGPUMetalResource's -resourceSize, which AGXBuffer answers.
 @protocol WebMetalResourceSize
 - (NSUInteger)resourceSize;
 @end
@@ -152,7 +154,7 @@ wire::TextureDescriptor WireTextureDescriptor(id self, SEL _cmd, MTLTextureDescr
     return w;
 }
 
-ResourceState *TextureState(WebMetalTexture *texture)
+ResourceState *TextureState(AGXTexture *texture)
 {
     return &texture->_state;
 }
@@ -194,7 +196,7 @@ agx::DescriptorFields LayoutDescriptorFields(const wire::TextureDescriptor &d)
     return f;
 }
 
-SizeAndAlign HeapTextureSizeAndAlign(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor)
+SizeAndAlign HeapTextureSizeAndAlign(AGXA10FamilyDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor)
 {
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return SizeAndAlign{0, 0};
@@ -208,13 +210,13 @@ SizeAndAlign HeapTextureSizeAndAlign(WebMetalDevice *device, SEL _cmd, MTLTextur
 // pixel format, usage, swizzle, write swizzle, drawable and GPU-optimized contents; six faces for cube and cube-array
 // textures; not compressed, not shareable. The driver traps on a rotation or a framebuffer-only descriptor (its
 // .cold.1 and .cold.2), which only drawables use.
-static WebMetalTexture *newTextureObject(WebMetalDevice *device, SEL _cmd, const wire::TextureDescriptor &d)
+static AGXTexture *newTextureObject(AGXA10FamilyDevice *device, SEL _cmd, const wire::TextureDescriptor &d)
 {
     if (d.rotation)
         WMLoudMethod(device, _cmd, "21H461 IOGPU traps on a descriptor with a rotation (the drawable path, not served yet)");
     if (d.framebufferOnly)
         WMLoudMethod(device, _cmd, "21H461 IOGPU traps on a framebuffer-only descriptor (the drawable path, not served yet)");
-    WebMetalTexture *texture = [WebMetalTexture new];
+    AGXTexture *texture = [AGXA10FamilyTexture new];
     InitResourceState(texture->_state, device, d.resourceOptions);
     texture->_textureType = static_cast<MTLTextureType>(d.textureType);
     texture->_width = d.width;
@@ -238,7 +240,7 @@ static WebMetalTexture *newTextureObject(WebMetalDevice *device, SEL _cmd, const
 }
 
 template <class Request, class ReplyFields>
-static void create(WebMetalDevice *device, SEL _cmd, WebMetalTexture *texture, const Request &request)
+static void create(AGXA10FamilyDevice *device, SEL _cmd, AGXTexture *texture, const Request &request)
 {
     wire::Reply<ReplyFields> reply;
     DeviceConnection(device)->Call(device, _cmd, request, &reply);
@@ -254,7 +256,7 @@ static void create(WebMetalDevice *device, SEL _cmd, WebMetalTexture *texture, c
     }
 }
 
-static void setLayout(WebMetalTexture *texture, const agx::TextureAllocation &layout)
+static void setLayout(AGXTexture *texture, const agx::TextureAllocation &layout)
 {
     texture->_hasLayout = true;
     texture->_alignment = layout.alignment;
@@ -270,7 +272,7 @@ static void setLayout(WebMetalTexture *texture, const agx::TextureAllocation &la
 // DisableDriverSuballocation is set (AGX::Device +0x945) or the sub-allocator refuses it
 // (-[IOGPUMetalDevice allocBufferSubDataWithLength:options:alignment:...]: a private texture's options gain 0x20000,
 // which picks no other pool; alignments above 0x20000 are refused). Then the kernel resource (CreateTexture).
-WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor)
+AGXTexture *NewDeviceTexture(AGXA10FamilyDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor)
 {
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
@@ -278,7 +280,7 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
     const agx::TextureAllocation layout = agx::initImplDevice(LayoutDescriptorFields(d), LayoutSystemValues());
     if (!layout.initialized)
         return nil;
-    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    AGXTexture *texture = newTextureObject(device, _cmd, d);
     setLayout(texture, layout);
     uint64_t options = d.resourceOptions;
     if ((options & kStorageModeMask) == (uint64_t(MTLStorageModePrivate) << kStorageModeShift))
@@ -316,8 +318,8 @@ WebMetalTexture *NewDeviceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDe
 // (ClientMemoryResidentSize). The memory holds the texels in the A10X layout; the host keeps it and the texture equal
 // (CreateTextureNoCopy). A memoryless texture has no kernel resource (-[IOGPUMetalResource initWithDevice:options:args:
 // argsSize:], IOGPU 0x1fcb2bbe8): the memory is never mapped and its resident size is 0.
-WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes, NSUInteger length,
-                                  MTLTextureDescriptor *descriptor, void (^deallocator)(void *pointer, NSUInteger length))
+AGXTexture *NewNoCopyTexture(AGXA10FamilyDevice *device, SEL _cmd, void *bytes, NSUInteger length,
+                             MTLTextureDescriptor *descriptor, void (^deallocator)(void *pointer, NSUInteger length))
 {
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
@@ -325,7 +327,7 @@ WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes,
     const agx::TextureAllocation layout = agx::initImplDevice(LayoutDescriptorFields(d), LayoutSystemValues());
     if (!layout.initialized)
         return nil;
-    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    AGXTexture *texture = newTextureObject(device, _cmd, d);
     setLayout(texture, layout);
     texture->_pointer = bytes;
     texture->_length = length;
@@ -351,8 +353,8 @@ WebMetalTexture *NewNoCopyTexture(WebMetalDevice *device, SEL _cmd, void *bytes,
 // texture path; any other goes to -[AGXTexture initWithDevice:desc:iosurface:plane:slice:] (0x21c9d529c), which refuses a
 // plane compressed with type 1 or above 4, validates the descriptor, refuses a tiled surface, and creates the kernel
 // resource over the plane.
-WebMetalTexture *NewSurfaceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor,
-                                   IOSurfaceRef iosurface, NSUInteger plane, NSUInteger slice)
+AGXTexture *NewSurfaceTexture(AGXA10FamilyDevice *device, SEL _cmd, MTLTextureDescriptor *descriptor,
+                              IOSurfaceRef iosurface, NSUInteger plane, NSUInteger slice)
 {
     CFTypeRef properties = IOSurfaceCopyValue(iosurface, CFSTR("CreationProperties"));
     if (properties) {
@@ -372,7 +374,7 @@ WebMetalTexture *NewSurfaceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureD
     if (slice)
         WMLoudMethod(device, _cmd, "a texture over one slice of a multi-slice surface: the wire carries no slice");
     const wire::TextureDescriptor d = WireTextureDescriptor(device, _cmd, descriptor);
-    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    AGXTexture *texture = newTextureObject(device, _cmd, d);
     texture->_state.iosurface = (IOSurfaceRef)CFRetain(iosurface);
     texture->_iosurfacePlane = plane;
     wire::CreateTextureWithIOSurface request;
@@ -388,14 +390,14 @@ WebMetalTexture *NewSurfaceTexture(WebMetalDevice *device, SEL _cmd, MTLTextureD
 // buffer's device, laid out over the buffer's bytes, and the texture keeps the buffer, the offset and the row pitch.
 // -newLinearTextureWithDescriptor:offset:bytesPerRow:bytesPerImage: marks the same call as linear for the AGX layout
 // (a thread-local flag around it) and does not pass the image pitch on; the host takes it as CreateLinearTexture.
-WebMetalTexture *NewBufferTexture(WebMetalBuffer *buffer, SEL _cmd, MTLTextureDescriptor *descriptor, NSUInteger offset,
-                                  NSUInteger bytesPerRow, bool linear, NSUInteger bytesPerImage)
+AGXTexture *NewBufferTexture(AGXA10FamilyBuffer *buffer, SEL _cmd, MTLTextureDescriptor *descriptor, NSUInteger offset,
+                             NSUInteger bytesPerRow, bool linear, NSUInteger bytesPerImage)
 {
-    WebMetalDevice *device = static_cast<WebMetalDevice *>(buffer.device);
+    AGXA10FamilyDevice *device = static_cast<AGXA10FamilyDevice *>(buffer.device);
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
     const wire::TextureDescriptor d = WireTextureDescriptor(buffer, _cmd, descriptor);
-    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    AGXTexture *texture = newTextureObject(device, _cmd, d);
     texture->_buffer = buffer;
     texture->_bufferOffset = offset;
     texture->_bufferBytesPerRow = bytesPerRow;
@@ -426,12 +428,12 @@ WebMetalTexture *NewBufferTexture(WebMetalBuffer *buffer, SEL _cmd, MTLTextureDe
 // of the layout's CPU size at its alignment (-[IOGPUMetalHeap newSubResourceWithLength:alignment:options:offset:] or
 // newSubResourceAtOffset:withLength:alignment:options:); then -[IOGPUMetalTexture initWithHeap:resource:offset:length:
 // device:descriptor:] (IOGPU 0x1fcb2d5d8) takes the heap resource's state, pinned unless the heap is a placement heap.
-WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescriptor *descriptor, bool placement,
-                                NSUInteger offset)
+AGXTexture *NewHeapTexture(AGXA10FamilyHeap *heap, SEL _cmd, MTLTextureDescriptor *descriptor, bool placement,
+                           NSUInteger offset)
 {
     if (heap.type != (placement ? MTLHeapTypePlacement : MTLHeapTypeAutomatic))
         return nil;
-    WebMetalDevice *device = static_cast<WebMetalDevice *>(heap.device);
+    AGXA10FamilyDevice *device = static_cast<AGXA10FamilyDevice *>(heap.device);
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
     const wire::TextureDescriptor d = WireTextureDescriptor(heap, _cmd, descriptor);
@@ -443,7 +445,7 @@ WebMetalTexture *NewHeapTexture(WebMetalHeap *heap, SEL _cmd, MTLTextureDescript
     uint64_t at = offset;
     if (!HeapSubResource(heap, _cmd, layout.cpuSizeBytes, layout.alignment, d.resourceOptions, placement, &at))
         return nil;
-    WebMetalTexture *texture = newTextureObject(device, _cmd, d);
+    AGXTexture *texture = newTextureObject(device, _cmd, d);
     InitResourceState(texture->_state, device, HeapOptions(heap));
     texture->_state.protectionOptions = d.protectionOptions;
     texture->_state.purgeableAllowed = false;
@@ -477,7 +479,7 @@ struct ViewArguments {
     MTLTextureSwizzleChannels swizzle;
 };
 
-static ViewArguments wholeView(WebMetalTexture *parent, MTLPixelFormat pixelFormat)
+static ViewArguments wholeView(AGXTexture *parent, MTLPixelFormat pixelFormat)
 {
     return ViewArguments{pixelFormat,
                          parent->_textureType,
@@ -494,7 +496,7 @@ static ViewArguments wholeView(WebMetalTexture *parent, MTLPixelFormat pixelForm
 // textureType:levels:slices:swizzle: (0x1fcb3aa04) or, without a swizzle, initWithTexture:pixelFormat:textureType:
 // levels:slices: (0x1fcb27594), which passes the parent's -swizzle. (updateBindDataWithTexture:... and
 // finalizeTextureCreation then fill the GPU descriptors, which nothing the plugin answers reads.)
-static WebMetalTexture *newView(WebMetalTexture *parent, SEL _cmd, const ViewArguments &a)
+static AGXTexture *newView(AGXTexture *parent, SEL _cmd, const ViewArguments &a)
 {
     // -[AGXA10FamilyTexture initImplWithTexture:...] (0x21c98172c, 0x21c981074) builds the view's layout from the
     // parent's layout object, with the swizzle the method was given (its channels, as the u32 they pack into) or the
@@ -512,12 +514,12 @@ static WebMetalTexture *newView(WebMetalTexture *parent, SEL _cmd, const ViewArg
         return nil;
 
     // -[IOGPUMetalTexture initWithTextureInternal:...]: Metal's checks of the swizzle and of the view's arguments.
-    WebMetalDevice *device = parent->_state.device;
+    AGXA10FamilyDevice *device = parent->_state.device;
     const uint32_t key = MTLTextureSwizzleChannelsToKey(a.hasSwizzle ? a.swizzle : parent.swizzle);
     _mtlValidateMTLTextureSwizzleKey(key);
     _mtlValidateArgumentsForTextureViewOnDevice(device, parent, a.pixelFormat, a.textureType, a.levels.location,
                                                 a.levels.length, a.slices.location, a.slices.length, NO);
-    WebMetalTexture *view = [WebMetalTexture new];
+    AGXTexture *view = [AGXA10FamilyTexture new];
     setLayout(view, layout);
 
     // -[IOGPUMetalResource initWithResource:] (IOGPU 0x1fcb2acc8) takes the parent's device and shares its kernel
@@ -592,9 +594,9 @@ static WebMetalTexture *newView(WebMetalTexture *parent, SEL _cmd, const ViewArg
 // [[[self class] alloc] initWithTexture:self ...]. The host creates the view (CreateTextureView and the other view
 // requests).
 template <class ReplyFields, class Request>
-static WebMetalTexture *NewTextureView(WebMetalTexture *parent, SEL _cmd, const ViewArguments &a, Request request)
+static AGXTexture *NewTextureView(AGXTexture *parent, SEL _cmd, const ViewArguments &a, Request request)
 {
-    WebMetalTexture *view = newView(parent, _cmd, a);
+    AGXTexture *view = newView(parent, _cmd, a);
     if (!view)
         return nil;
     request.texture = parent->_state.handle;
@@ -631,10 +633,10 @@ namespace webmetal {
 
 uint64_t KernelResourceKey(id resource)
 {
-    if ([resource isKindOfClass:[WebMetalHeap class]])
-        return HeapHandle(static_cast<WebMetalHeap *>(resource));
-    if ([resource isKindOfClass:[WebMetalTexture class]]) {
-        WebMetalTexture *root = static_cast<WebMetalTexture *>(resource);
+    if ([resource isKindOfClass:[AGXA10FamilyHeap class]])
+        return HeapHandle(static_cast<AGXA10FamilyHeap *>(resource));
+    if ([resource isKindOfClass:[AGXTexture class]]) {
+        AGXTexture *root = static_cast<AGXTexture *>(resource);
         while (root->_parentTexture)
             root = root->_parentTexture;
         if (root->_buffer)
@@ -644,12 +646,12 @@ uint64_t KernelResourceKey(id resource)
     const ResourceState *state = StateOf(resource);
     if (!state)
         return 0;
-    return state->heap ? HeapHandle(static_cast<WebMetalHeap *>(state->heap)) : state->handle;
+    return state->heap ? HeapHandle(static_cast<AGXA10FamilyHeap *>(state->heap)) : state->handle;
 }
 
 }  // namespace webmetal
 
-@implementation WebMetalTexture
+@implementation AGXTexture
 
 // -[IOGPUMetalTexture dealloc] (IOGPU 0x1fcb2b634) releases the parent and the buffer, runs a no-copy deallocator with
 // the pointer and the length, releases the surface, and leaves the kernel resource to -[IOGPUMetalResource dealloc];
@@ -670,9 +672,9 @@ uint64_t KernelResourceKey(id resource)
         (_state.created || !_parentTexture)) {
         MakeAliasable(self, _cmd, _state, true);
         if (!_buffer && !_parentTexture)
-            [(WebMetalHeap *)_state.heap deallocHeapSubResource];
+            [(AGXA10FamilyHeap *)_state.heap deallocHeapSubResource];
     }
-    ReleaseObject(_state, "-[WebMetalTexture dealloc]");
+    ReleaseObject(_state, "-[AGXA10FamilyTexture dealloc]");
     if (_deallocator) {
         _deallocator(_pointer, _length);
         _deallocator = nil;
@@ -746,9 +748,9 @@ uint64_t KernelResourceKey(id resource)
 // texture's state carries the heap's options; a sub-allocated texture's own kernel resource takes the hazard-tracking
 // mode of its primary buffer (-[IOGPUMetalTexture initWithBuffer:...isStrideTexture:] 0x1fcb2e508), untracked exactly
 // when the texture's options are.
-static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
+static BOOL checkTextureEvent(AGXTexture *self, SEL _cmd, bool wait)
 {
-    WebMetalTexture *root = self;
+    AGXTexture *root = self;
     while (root->_parentTexture)
         root = root->_parentTexture;
     const webmetal::ResourceState *kernel = root->_buffer ? webmetal::StateOf(root->_buffer) : &root->_state;
@@ -976,12 +978,6 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
     return _isCompressed;
 }
 
-// -[AGXA10FamilyTexture isMemoryless] (0x21c98231c): the storage mode is memoryless.
-- (BOOL)isMemoryless
-{
-    return _state.storageMode == MTLStorageModeMemoryless;
-}
-
 - (BOOL)allowGPUOptimizedContents
 {
     return _allowGPUOptimizedContents;
@@ -1161,7 +1157,7 @@ static BOOL checkTextureEvent(WebMetalTexture *self, SEL _cmd, bool wait)
 // layout object: a copy it refuses is logged (agx::logRegionRefusal) and copies nothing. The host copies the regions it
 // accepts as the driver does (Memory::cpu_region). A texture over an IOSurface or a buffer has no ported layout; the
 // host answers its copies by its own rules.
-static bool refusedRegion(WebMetalTexture *texture, MTLRegion region, NSUInteger level, NSUInteger slice,
+static bool refusedRegion(AGXTexture *texture, MTLRegion region, NSUInteger level, NSUInteger slice,
                           NSUInteger bytesPerRow)
 {
     if (!texture->_hasLayout)
@@ -1181,6 +1177,63 @@ static bool refusedRegion(WebMetalTexture *texture, MTLRegion region, NSUInteger
         return false;
     webmetal::agx::logRegionRefusal(refusal);
     return true;
+}
+
+// -[IOGPUMetalTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:] (IOGPU 0x1fcb31158): the slice form with slice 0 and
+// an image pitch of the region's height times the row pitch.
+- (void)getBytes:(void *)bytes bytesPerRow:(NSUInteger)bytesPerRow fromRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level
+{
+    [self getBytes:bytes bytesPerRow:bytesPerRow bytesPerImage:region.size.height * bytesPerRow fromRegion:region
+        mipmapLevel:level slice:0];
+}
+
+// -[AGXTexture replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:] and its getBytes: counterpart
+// (AGXMetalA10 0x21c9d5c90, 0x21c9d5c8c) return at once; AGXA10FamilyTexture, the class of every texture the plugin
+// creates, overrides both.
+- (void)replaceRegion:(MTLRegion)region
+          mipmapLevel:(NSUInteger)level
+                slice:(NSUInteger)slice
+            withBytes:(const void *)bytes
+          bytesPerRow:(NSUInteger)bytesPerRow
+        bytesPerImage:(NSUInteger)bytesPerImage
+{
+}
+
+- (void)getBytes:(void *)bytes
+      bytesPerRow:(NSUInteger)bytesPerRow
+    bytesPerImage:(NSUInteger)bytesPerImage
+       fromRegion:(MTLRegion)region
+      mipmapLevel:(NSUInteger)level
+            slice:(NSUInteger)slice
+{
+}
+
+// -[AGXTexture canGenerateMipmapLevels] (AGXMetalA10 0x21c9d5ce0): NO; -[AGXTexture generateMipmapLevel:slice:]
+// (0x21c9d5ce8) returns at once. AGXA10FamilyTexture overrides both.
+- (BOOL)canGenerateMipmapLevels
+{
+    return NO;
+}
+
+- (void)generateMipmapLevel:(NSUInteger)level slice:(NSUInteger)slice
+{
+}
+
+// -[IOGPUMetalTexture uniqueIdentifier] (IOGPU 0x1fcb3aa68) is a bare return, so it answers the register that held the
+// receiver: the texture's address. AGXA10FamilyTexture overrides it.
+- (uint64_t)uniqueIdentifier
+{
+    return reinterpret_cast<uint64_t>((__bridge void *)self);
+}
+
+@end
+
+@implementation AGXA10FamilyTexture
+
+// -[AGXA10FamilyTexture isMemoryless] (0x21c98231c): the storage mode is memoryless.
+- (BOOL)isMemoryless
+{
+    return _state.storageMode == MTLStorageModeMemoryless;
 }
 
 // -[AGXA10FamilyTexture replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:] (AGXMetalA10 0x21c9819fc)
@@ -1213,14 +1266,6 @@ static bool refusedRegion(WebMetalTexture *texture, MTLRegion region, NSUInteger
     DeviceConnection(_state.device)->Call(self, _cmd, request, &reply);
     if (!reply.ok)
         WMLoudMethod(self, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
-}
-
-// -[IOGPUMetalTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:] (IOGPU 0x1fcb31158): the slice form with slice 0 and
-// an image pitch of the region's height times the row pitch.
-- (void)getBytes:(void *)bytes bytesPerRow:(NSUInteger)bytesPerRow fromRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level
-{
-    [self getBytes:bytes bytesPerRow:bytesPerRow bytesPerImage:region.size.height * bytesPerRow fromRegion:region
-        mipmapLevel:level slice:0];
 }
 
 // -[AGXA10FamilyTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:] (AGXMetalA10 0x21c98199c)

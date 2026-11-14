@@ -29,7 +29,7 @@ void validateGPUPriority(NSUInteger priority, bool background)
 
 }  // namespace
 
-@implementation WebMetalCommandQueue (WebMetalSPI)
+@implementation AGXA10FamilyCommandQueue (WebMetalSPI)
 
 // -[AGXA10FamilyCommandQueue resolveAndUpdateQueuePriority:] (AGXMetalA10 0x21c8ca240): on a customer build the
 // priority as given, which the driver also keeps as its current priority (read by nothing the plugin reproduces). On

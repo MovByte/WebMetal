@@ -43,9 +43,9 @@ struct RenderDescriptor {
 
 // Fill `out` from a descriptor. Functions are registered with the host on the way (FunctionHandle). Fail the call LOUD
 // when the running framework's descriptor lacks a field the wire carries or an object has no wire form.
-void BuildComputeDescriptor(WebMetalDevice *device, id self, SEL _cmd, MTLComputePipelineDescriptor *in,
+void BuildComputeDescriptor(AGXA10FamilyDevice *device, id self, SEL _cmd, MTLComputePipelineDescriptor *in,
                             ComputeDescriptor &out);
-void BuildRenderDescriptor(WebMetalDevice *device, id self, SEL _cmd, MTLRenderPipelineDescriptor *in,
+void BuildRenderDescriptor(AGXA10FamilyDevice *device, id self, SEL _cmd, MTLRenderPipelineDescriptor *in,
                            RenderDescriptor &out);
 
 }  // namespace webmetal

@@ -1,27 +1,31 @@
-# Why a driver selector of iPadOS 17.7.11 (21H461) is a LOUD stub in the plugin, and why no plugin class stands in for
-# a driver class.
+# Why a driver selector of iPadOS 17.7.11 (21H461) is a LOUD stub in the plugin, and why the plugin does not define a
+# driver class.
 #
-# UniXNU's scripts/audit-target-web-metal-surface.py puts each [loud.<driver class>] note into the stub's report
+# UniXNU's scripts/audit-target-web-metal-surface.py puts each [loud.<class>] note into the stub's report
 # (guest/Generated/WebMetalTargetSurface.h) and into the client lists (guest/SPI/clients/<client>.tsv), and fails when a
-# LOUD row or a row of a driver class without a plugin class on a client list has no note here, or when a note names a
-# selector the plugin implements. A selector the plugin answers with a hand-written LOUD method reports the method's own
-# detail and has no note here. Addresses are in the 21H461 dyld shared cache, or in its kernelcache where named.
+# LOUD row or a row of a driver class the plugin does not define on a client list has no note here, or when a note
+# names a selector the plugin implements. A note belongs to the class that carries the stub: the AGXMetalA10 class that
+# defines the selector on 21H461, or the topmost one of its chain for a selector IOGPU.framework defines. A selector the
+# plugin answers with a hand-written LOUD method reports the method's own detail and has no note here. Addresses are in
+# the 21H461 dyld shared cache, or in its kernelcache where named.
 
-[loud.AGXA10XDevice]
+[loud.AGXA10FamilyDevice]
 "gpuCoreCount" = "the A10X driver answers AGX::Device +0x344 (or the population count of the core masks at +0x380 when +0x3aa is set; -[AGXA10FamilyDevice gpuCoreCount] 0x21c8d4d48), which it fills with the 128 bytes the AGX kext's user-client selector 256 returns (IOConnectCallStructMethod at 0x21c8d38b4; kernel handler 0xfffffff005c010ac copies the accelerator's block at +0x390). The kext sets the count in that block at 0xfffffff005c28a90: with the DeviceTree's /defaults phantom-bin at 1 or 2 it takes 4 or 8 cores from its static table (0xfffffff00531ced0); J120's phantom-bin is 0, so it takes bits 8-15 of the word at +0x18 of the GPU identification block it keeps at +0x308, a hardware value with no static source. It needs a measurement on a real A10X (decision D-4)"
 "mapShaderSampleBufferWithBuffer:capacity:size:" = "starts the GPU's shader-sampling counters through GPURawCounter (the source list's Firmware/RDE source, ring buffer, KickBoundary and TimerFixed triggers, GRC_TIMESTAMP, GRC_GPU_CYCLES, GRC_SAMPLE_TYPE and GRC_ENCODER_ID; 0x21c8d69d0) for the shader profiler; the host has no shader sampling"
 "unmapShaderSampleBuffer" = "stops the GPU's shader-sampling counters and copies their ring buffer out (0x21c8d6e14), the counterpart of -mapShaderSampleBufferWithBuffer:capacity:size:; the host has no shader sampling"
 "newBufferWithIOSurface:" = "a buffer over an IOSurface's memory (-[AGXA10FamilyBuffer initWithDevice:iosurface:], 0x21c8d6324); the wire protocol has no request for an IOSurface-backed buffer yet (CreateTextureWithIOSurface covers textures only), so the host cannot keep such a buffer coherent with the surface"
 "newCounterSampleBufferWithDescriptor:error:" = "an AGXMTLCounterSampleBuffer (0x21c8db494, 0x21c9ce600): one timestamp counter whose 8-byte samples live in an AGXBuffer of 8 to 32768 bytes (0x21c9ce7d0), written by the sample buffer attachments of the passes at stage boundaries (the A10X samples no counters at draw, dispatch or blit boundaries: the encoders' sampleCountersInBuffer:atSampleIndex:withBarrier: report the call) and copied out by -resolveCounterRange: (0x21c9cea64); no plugin class stands in for AGXMTLCounterSampleBuffer and the host writes no GPU timestamps"
 
-[loud.AGXA10FamilyBuffer]
+[loud.AGXBuffer]
 "gpuAddress" = "the GPU virtual address of the buffer's kernel resource (-[IOGPUMetalResource gpuAddress], IOGPU._res); the wire protocol defines no GPU address space for buffers, so no address can be answered that the host's shaders and argument buffers would resolve"
 "initWithResource:" = "-[IOGPUMetalResource initWithResource:], an initializer IOGPU sends only to a resource object it allocated itself; the plugin creates its buffers through its own initializers. MetalPerformanceShaders's reference is to its own classes (MPSState and its subclasses implement initWithResource:)"
 
-[loud.AGXA10FamilyTexture]
+[loud.AGXTexture]
 "gpuAddress" = "the GPU virtual address of the texture's kernel resource (-[IOGPUMetalResource gpuAddress], IOGPU._res); the wire protocol defines no GPU address space for textures"
 "initWithResource:" = "-[IOGPUMetalResource initWithResource:], an initializer IOGPU sends only to a resource object it allocated itself; the plugin creates its textures through its own initializers. MetalPerformanceShaders's reference is to its own classes (MPSState and its subclasses implement initWithResource:)"
 "description" = "-[IOGPUMetalTexture description] is -formattedDescription:0 (0x1fcb3a264): the object's own description followed by about thirty labelled fields (type, format, sizes, modes, usage, swizzle, parent, IOSurface, compression...); that text is not transcribed field by field yet"
+
+[loud.AGXA10FamilyTexture]
 "uniqueIdentifier" = "the address of the driver's AGX::Texture (-[AGXA10FamilyTexture uniqueIdentifier] 0x21c9823b4: _impl), which the A10X's argument buffers also hold for the texture (-[AGXA10FamilyIndirectArgumentEncoder uniqueIdentifierForTextureAtIndex:inIndirectArgumentBuffer:atOffset:]); the plugin's argument buffers hold wire handles, and no value consistent with both is defined yet"
 "canGenerateMipmapLevels" = "whether -generateMipmapLevel:slice: can fill a level of this texture on the CPU (0x21c981ef8: the format's flags, tiling and compression fields of AGX::Texture and the format table entry); it pairs with -generateMipmapLevel:slice:, which the plugin cannot do"
 "generateMipmapLevel:slice:" = "fills a mipmap level on the CPU from the level above, in the texture's memory in the A10X layout (0x21c981f70, through AGX::Texture's address helpers); a plugin texture's contents live at the host, not in guest memory in that layout"
@@ -58,10 +62,7 @@
 "initWithDevice:descriptor:" = "-[IOGPUMetalTextureLayout initWithDevice:descriptor:], an initializer the driver sends only to a layout object it allocated itself; the plugin creates its layouts through -newTextureLayoutWithDescriptor:isHeapOrBufferBacked:. MetalPerformanceShaders's reference is to its own classes (MPSMatrix, MPSNDArray and others implement initWithDevice:descriptor:)"
 
 [unserved]
-AGXA10Device = "the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which WebMetalDevice stands in for, and no AGXA10Device exists on this device"
-AGXA10FamilyDevice = "the superclass of AGXA10XDevice and AGXA10Device; nothing allocates it (AGXMetalA10 has no class reference to it), so its methods reach a client only through AGXA10XDevice, whose rows classify them"
-AGXBuffer = "the superclass of AGXA10FamilyBuffer; the driver allocates it directly only for its own storage (AGXMTLCounterSampleBuffer's samples, -reserveResourceIndicesForResourceType:indices:indexCount:'s tables and pipelines with additional binary functions), none of which the plugin creates, so every buffer it hands out is a WebMetalBuffer, whose AGXA10FamilyBuffer rows classify these selectors"
-AGXTexture = "the superclass of AGXA10FamilyTexture; nothing allocates it (AGXMetalA10 has no class reference to it), so every texture is a WebMetalTexture, whose AGXA10FamilyTexture rows classify these selectors"
+AGXA10Device = "the A10 device; the A10X's accelerator names AGXA10XDevice as its MetalPluginClassName (the AGX kext's only Metal plugin class string in the 21H461 kernelcache; -[AGXPrincipalDevice initWithAcceleratorPort:] at 0x21c8d1adc only logs that loading through it is not supported and answers nil), so Metal.framework creates AGXA10XDevice, which the plugin defines, and no AGXA10Device exists on this device"
 AGXA10FamilyVisibleFunctionTable = "made only by the pipelines' newVisibleFunctionTable... methods (the device's answers nil on the A10 family, as the plugin's does); the A10X has no function pointers (supportsFunctionPointers is NO) and the plugin's pipeline factories are LOUD, so it hands out none"
 AGXA10FamilyIndirectCommandBuffer = "made by -newIndirectCommandBufferWithDescriptor:maxCommandCount:options:, which the plugin answers with a LOUD method (indirect command buffers need a command layout the wire schema does not define yet), so it hands out none"
 AGXA10FamilyIndirectRenderCommand = "handed out only by an indirect command buffer (-indirectRenderCommandAtIndex:) or its render command encoder, which the plugin does not create (see AGXA10FamilyIndirectCommandBuffer)"
@@ -76,7 +77,7 @@ AGXA10FamilySampledComputeContext = "made by the command buffer's sampledCompute
 AGXA10FamilySampledRenderContext = "made by the command buffer's and the parallel encoder's sampledRenderCommandEncoder... factories, render encoders whose draws the GPU samples for the shader profiler; those factories are LOUD in the plugin (the host has no shader sampling)"
 AGXA10FamilyResourceStateContext = "made by -resourceStateCommandEncoder and -resourceStateCommandEncoderWithDescriptor:, for sparse textures, which the A10X does not have (supportsSparseTextures is NO); those factories are LOUD in the plugin"
 AGXA10FamilyLateEvalEvent = "made by -[AGXA10FamilyDevice newLateEvalEvent], a LOUD stub of the plugin's device"
-AGXA10FamilySparseHeap = "the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are WebMetalHeap"
+AGXA10FamilySparseHeap = "the heap of sparse textures, made at device creation and by -newHeapWithDescriptor: for a sparse heap; the A10X has no sparse heaps (supportsSparseHeaps is NO) and the plugin's heaps are AGXA10FamilyHeap"
 AGXMTLCounterSampleBuffer = "made by -newCounterSampleBufferWithDescriptor:error: and -newCounterSampleBufferWithLength:label:error:, LOUD stubs of the plugin's device"
 AGXA10FamilyDebugContext = "nothing in AGXMetalA10 allocates it (no class reference), and the command buffer does not answer -debugCommandEncoder on 21H461"
 AGXA10FamilyRasterizationRateMap = "made by -[AGXA10FamilyDevice newRasterizationRateMapWithDescriptor:], a LOUD stub of the plugin's device"

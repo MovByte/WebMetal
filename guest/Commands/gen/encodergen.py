@@ -2,7 +2,7 @@
 """Generate the encoder command methods of the guest plugin from the wire schema.
 
 Each Metal encoder command maps to one stream record that carries every argument verbatim (wire/README.md). For every
-driver selector of an encoder role (guest/Plugin/roles.toml) that some stream op of the schema lists among its Metal
+driver selector of an encoder class (guest/Plugin/roles.toml) that some stream op of the schema lists among its Metal
 methods, under a protocol of the role's encoder kind, this script writes the method that fills the op's record from the
 arguments and appends it to the encoder's stream. The method's parameter types follow the 21H461 type encoding of the
 driver selector (guest/Generated/WebMetalTargetSurface.h), so the plugin's method has the driver's signature.
@@ -25,13 +25,12 @@ SCHEMA = ROOT / 'wire/schema/webmetal.toml'
 SURFACE = ROOT / 'guest/Generated/WebMetalTargetSurface.h'
 OUTPUT = ROOT / 'guest/Commands/WebMetalEncoderRecords.mm'
 
-# Encoder roles: plugin class, driver class, and the protocols whose ops it serves.
+# The encoder classes (AGXMetalA10's names, guest/Plugin/roles.toml) and the protocols whose ops each serves.
 ROLES = [
-    ('WebMetalRenderCommandEncoder', 'AGXA10FamilyRenderContext', ('MTLRenderCommandEncoder', 'MTLRenderCommandEncoderSPI')),
-    ('WebMetalComputeCommandEncoder', 'AGXA10FamilyComputeContext', ('MTLComputeCommandEncoder', 'MTLComputeCommandEncoderSPI')),
-    ('WebMetalBlitCommandEncoder', 'AGXA10FamilyBlitContext', ('MTLBlitCommandEncoder', 'MTLBlitCommandEncoderSPI')),
-    ('WebMetalParallelRenderCommandEncoder', 'AGXA10FamilyThreadedRenderPass',
-     ('MTLParallelRenderCommandEncoder', 'MTLParallelRenderCommandEncoderSPI')),
+    ('AGXA10FamilyRenderContext', ('MTLRenderCommandEncoder', 'MTLRenderCommandEncoderSPI')),
+    ('AGXA10FamilyComputeContext', ('MTLComputeCommandEncoder', 'MTLComputeCommandEncoderSPI')),
+    ('AGXA10FamilyBlitContext', ('MTLBlitCommandEncoder', 'MTLBlitCommandEncoderSPI')),
+    ('AGXA10FamilyThreadedRenderPass', ('MTLParallelRenderCommandEncoder', 'MTLParallelRenderCommandEncoderSPI')),
 ]
 
 # Written by hand (WebMetalEncoders.mm).
@@ -296,11 +295,11 @@ def generate():
            '#import "WebMetalCommandState.h"', '#import "../Plugin/WebMetalReport.h"', '',
            '#pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"', '']
     counts = []
-    for plugin, driver, protocols in ROLES:
-        if driver not in selectors:
-            fail(f'{driver} has no driver selectors in {SURFACE}')
+    for cls, protocols in ROLES:
+        if cls not in selectors:
+            fail(f'{cls} has no driver selectors in {SURFACE}')
         methods = []
-        for selector, types in sorted(selectors[driver].items()):
+        for selector, types in sorted(selectors[cls].items()):
             if selector in HAND_WRITTEN:
                 continue
             matches = [op for protocol, op in ops.get(selector, []) if protocol in protocols]
@@ -308,12 +307,12 @@ def generate():
             if not matches:
                 continue
             if len(names) != 1:
-                fail(f'{driver} {selector}: several ops {sorted(names)}')
-            methods.append(Method(plugin, selector, types, matches[0]))
-        out += [f'@implementation {plugin} (WebMetalRecords)', '']
+                fail(f'{cls} {selector}: several ops {sorted(names)}')
+            methods.append(Method(cls, selector, types, matches[0]))
+        out += [f'@implementation {cls} (WebMetalRecords)', '']
         out += [m.source() for m in methods]
         out += ['@end', '']
-        counts.append((plugin, len(methods)))
+        counts.append((cls, len(methods)))
     return '\n'.join(out), counts
 
 
@@ -322,8 +321,8 @@ def main():
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     text, counts = generate()
-    for plugin, n in counts:
-        print(f'{plugin}: {n} record methods')
+    for cls, n in counts:
+        print(f'{cls}: {n} record methods')
     if args.check:
         if not OUTPUT.exists() or OUTPUT.read_text() != text:
             fail(f'{OUTPUT.relative_to(ROOT)} is stale; run {Path(__file__).relative_to(ROOT)}')

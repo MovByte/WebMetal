@@ -63,7 +63,7 @@ uint64_t encoderTraceID(id encoder)
     return *slot;
 }
 
-void checkNoOpenEncoder(WebMetalCommandBuffer *buffer, const char *function)
+void checkNoOpenEncoder(AGXA10FamilyCommandBuffer *buffer, const char *function)
 {
     if (buffer->_currentEncoder)
         MTLReportFailure(0, function, __LINE__, @"A command encoder is already encoding to this command buffer");
@@ -279,12 +279,12 @@ void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::RenderSetVisi
 
 using namespace webmetal;
 
-@implementation WebMetalCommandBuffer (WebMetalEncoders)
+@implementation AGXA10FamilyCommandBuffer (WebMetalEncoders)
 
 - (id<MTLBlitCommandEncoder>)blitCommandEncoder
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer blitCommandEncoder]");
-    WebMetalBlitCommandEncoder *encoder = [[WebMetalBlitCommandEncoder alloc] initWithCommandBuffer:self descriptor:nil];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer blitCommandEncoder]");
+    AGXA10FamilyBlitContext *encoder = [[AGXA10FamilyBlitContext alloc] initWithCommandBuffer:self descriptor:nil];
     wire::BeginBlit record;
     record.encoder = encoder->_encoder->handle;
     EmitEncoderRecord(self, _cmd, *encoder->_encoder, record);
@@ -293,9 +293,9 @@ using namespace webmetal;
 
 - (id<MTLBlitCommandEncoder>)blitCommandEncoderWithDescriptor:(MTLBlitPassDescriptor *)descriptor
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer blitCommandEncoderWithDescriptor:]");
-    WebMetalBlitCommandEncoder *encoder = [[WebMetalBlitCommandEncoder alloc] initWithCommandBuffer:self
-                                                                                        descriptor:descriptor];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer blitCommandEncoderWithDescriptor:]");
+    AGXA10FamilyBlitContext *encoder = [[AGXA10FamilyBlitContext alloc] initWithCommandBuffer:self
+                                                                                  descriptor:descriptor];
     EncoderState &state = *encoder->_encoder;
     wire::BeginBlitWithDescriptor record;
     record.encoder = state.handle;
@@ -315,8 +315,8 @@ using namespace webmetal;
 
 - (id<MTLComputeCommandEncoder>)computeCommandEncoder
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer computeCommandEncoder]");
-    WebMetalComputeCommandEncoder *encoder = [[WebMetalComputeCommandEncoder alloc] initWithCommandBuffer:self];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer computeCommandEncoder]");
+    AGXA10FamilyComputeContext *encoder = [[AGXA10FamilyComputeContext alloc] initWithCommandBuffer:self];
     wire::BeginCompute record;
     record.encoder = encoder->_encoder->handle;
     EmitEncoderRecord(self, _cmd, *encoder->_encoder, record);
@@ -325,8 +325,8 @@ using namespace webmetal;
 
 - (id<MTLComputeCommandEncoder>)computeCommandEncoderWithDispatchType:(MTLDispatchType)dispatchType
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer computeCommandEncoderWithDispatchType:]");
-    WebMetalComputeCommandEncoder *encoder = [[WebMetalComputeCommandEncoder alloc] initWithCommandBuffer:self];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer computeCommandEncoderWithDispatchType:]");
+    AGXA10FamilyComputeContext *encoder = [[AGXA10FamilyComputeContext alloc] initWithCommandBuffer:self];
     encoder->_dispatchType = dispatchType;
     wire::BeginComputeWithDispatchType record;
     record.encoder = encoder->_encoder->handle;
@@ -338,8 +338,8 @@ using namespace webmetal;
 - (id<MTLComputeCommandEncoder>)computeCommandEncoderWithDispatchType:(MTLDispatchType)dispatchType
                                                        substreamCount:(uint32_t)substreamCount
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer computeCommandEncoderWithDispatchType:substreamCount:]");
-    WebMetalComputeCommandEncoder *encoder = [[WebMetalComputeCommandEncoder alloc] initWithCommandBuffer:self];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer computeCommandEncoderWithDispatchType:substreamCount:]");
+    AGXA10FamilyComputeContext *encoder = [[AGXA10FamilyComputeContext alloc] initWithCommandBuffer:self];
     encoder->_dispatchType = dispatchType;
     wire::BeginComputeWithDispatchTypeSubstreams record;
     record.encoder = encoder->_encoder->handle;
@@ -351,8 +351,8 @@ using namespace webmetal;
 
 - (id<MTLComputeCommandEncoder>)computeCommandEncoderWithDescriptor:(MTLComputePassDescriptor *)descriptor
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer computeCommandEncoderWithDescriptor:]");
-    WebMetalComputeCommandEncoder *encoder = [[WebMetalComputeCommandEncoder alloc] initWithCommandBuffer:self];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer computeCommandEncoderWithDescriptor:]");
+    AGXA10FamilyComputeContext *encoder = [[AGXA10FamilyComputeContext alloc] initWithCommandBuffer:self];
     EncoderState &state = *encoder->_encoder;
     encoder->_dispatchType = descriptor.dispatchType;
     wire::BeginComputeWithDescriptor record;
@@ -377,9 +377,9 @@ using namespace webmetal;
 
 - (id<MTLRenderCommandEncoder>)renderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)descriptor
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer renderCommandEncoderWithDescriptor:]");
-    WebMetalRenderCommandEncoder *encoder = [[WebMetalRenderCommandEncoder alloc] initWithCommandBuffer:self
-                                                                                            descriptor:descriptor];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer renderCommandEncoderWithDescriptor:]");
+    AGXA10FamilyRenderContext *encoder = [[AGXA10FamilyRenderContext alloc] initWithCommandBuffer:self
+                                                                                      descriptor:descriptor];
     EncoderState &state = *encoder->_encoder;
     RenderPass pass;
     renderPass(self, _cmd, *state.stream, self.device, descriptor, pass);
@@ -393,9 +393,9 @@ using namespace webmetal;
 
 - (id<MTLParallelRenderCommandEncoder>)parallelRenderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)descriptor
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer parallelRenderCommandEncoderWithDescriptor:]");
-    WebMetalParallelRenderCommandEncoder *encoder =
-        [[WebMetalParallelRenderCommandEncoder alloc] initWithCommandBuffer:self renderPassDescriptor:descriptor];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer parallelRenderCommandEncoderWithDescriptor:]");
+    AGXA10FamilyThreadedRenderPass *encoder =
+        [[AGXA10FamilyThreadedRenderPass alloc] initWithCommandBuffer:self renderPassDescriptor:descriptor];
     EncoderState &state = *encoder->_encoder;
     RenderPass pass;
     renderPass(self, _cmd, *state.stream, self.device, descriptor, pass);
@@ -413,18 +413,19 @@ using namespace webmetal;
                                                      subEncoderIndex:(NSUInteger)index
                                                          framebuffer:(void *)framebuffer
 {
-    checkNoOpenEncoder(self, "-[WebMetalCommandBuffer subRenderCommandEncoderWithDescriptor:subEncoderIndex:framebuffer:]");
-    return [[WebMetalRenderCommandEncoder alloc] initWithCommandBuffer:self
-                                                           descriptor:descriptor
-                                                      subEncoderIndex:index
-                                                          framebuffer:framebuffer];
+    checkNoOpenEncoder(self, "-[AGXA10FamilyCommandBuffer subRenderCommandEncoderWithDescriptor:subEncoderIndex:"
+                             "framebuffer:]");
+    return [[AGXA10FamilyRenderContext alloc] initWithCommandBuffer:self
+                                                        descriptor:descriptor
+                                                   subEncoderIndex:index
+                                                       framebuffer:framebuffer];
 }
 
 @end
 
 // Blit -----------------------------------------------------------------------------------------------------------------
 
-@implementation WebMetalBlitCommandEncoder
+@implementation AGXA10FamilyBlitContext
 
 // -[AGXA10FamilyBlitContext initWithCommandBuffer:descriptor:]: the framework encoder, then the driver's blit state.
 - (instancetype)initWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer descriptor:(MTLBlitPassDescriptor *)descriptor
@@ -432,7 +433,7 @@ using namespace webmetal;
     self = [super initWithCommandBuffer:commandBuffer];
     if (!self)
         return nil;
-    _encoder = NewEncoderState((WebMetalCommandBuffer *)commandBuffer, nullptr);
+    _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, nullptr);
     return self;
 }
 
@@ -491,7 +492,7 @@ using namespace webmetal;
 
 // Compute --------------------------------------------------------------------------------------------------------------
 
-@implementation WebMetalComputeCommandEncoder
+@implementation AGXA10FamilyComputeContext
 
 // -[IOGPUMetalCommandEncoder initWithCommandBuffer:] under the driver's compute context; the dispatch type is serial
 // unless the creating method sets another.
@@ -500,9 +501,9 @@ using namespace webmetal;
     self = [super initWithCommandBuffer:commandBuffer];
     if (!self)
         return nil;
-    _encoder = NewEncoderState((WebMetalCommandBuffer *)commandBuffer, nullptr);
+    _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, nullptr);
     _dispatchType = MTLDispatchTypeSerial;
-    if ([(WebMetalCommandBuffer *)commandBuffer getSupportedAndEnabledErrorOptions] &
+    if ([(AGXA10FamilyCommandBuffer *)commandBuffer getSupportedAndEnabledErrorOptions] &
         MTLCommandBufferErrorOptionEncoderExecutionStatus)
         _markerID = encoderTraceID(self);
     return self;
@@ -576,7 +577,7 @@ using namespace webmetal;
 
 // Render ---------------------------------------------------------------------------------------------------------------
 
-@implementation WebMetalRenderCommandEncoder
+@implementation AGXA10FamilyRenderContext
 
 // -[AGXA10FamilyRenderContext initWithCommandBuffer:descriptor:]: the framework encoder, then the pass state (sent as
 // BeginRenderPass by the creating method).
@@ -585,7 +586,7 @@ using namespace webmetal;
     self = [super initWithCommandBuffer:commandBuffer];
     if (!self)
         return nil;
-    _encoder = NewEncoderState((WebMetalCommandBuffer *)commandBuffer, nullptr);
+    _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, nullptr);
     return self;
 }
 
@@ -596,7 +597,7 @@ using namespace webmetal;
                       subEncoderIndex:(NSUInteger)index
                           framebuffer:(void *)framebuffer
 {
-    WebMetalParallelRenderCommandEncoder *parent = (__bridge WebMetalParallelRenderCommandEncoder *)framebuffer;
+    AGXA10FamilyThreadedRenderPass *parent = (__bridge AGXA10FamilyThreadedRenderPass *)framebuffer;
     self = [super initWithCommandBuffer:commandBuffer];
     if (!self)
         return nil;
@@ -607,7 +608,7 @@ using namespace webmetal;
             WMLoudMethod(self, _cmd, "sub-encoders were not created in index order");
         parent->_subStreams.push_back(stream);
     }
-    _encoder = NewEncoderState((WebMetalCommandBuffer *)commandBuffer, stream.get());
+    _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, stream.get());
     _encoder->own = stream;
     _encoder->visibilityResultKey = KernelResourceKey(descriptor.visibilityResultBuffer);
     wire::BeginParallelSubEncoder record;
@@ -672,7 +673,7 @@ using namespace webmetal;
 
 // Parallel render ------------------------------------------------------------------------------------------------------
 
-@implementation WebMetalParallelRenderCommandEncoder
+@implementation AGXA10FamilyThreadedRenderPass
 
 - (instancetype)initWithCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
                  renderPassDescriptor:(MTLRenderPassDescriptor *)descriptor
@@ -680,7 +681,7 @@ using namespace webmetal;
     self = [super initWithCommandBuffer:commandBuffer renderPassDescriptor:descriptor];
     if (!self)
         return nil;
-    _encoder = NewEncoderState((WebMetalCommandBuffer *)commandBuffer, nullptr);
+    _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, nullptr);
     _descriptor = [descriptor copy];
     return self;
 }
@@ -699,7 +700,7 @@ using namespace webmetal;
 // -[AGXA10FamilyThreadedRenderPass renderCommandEncoder]: a command buffer from the framework, then a sub-encoder in it.
 - (id<MTLRenderCommandEncoder>)renderCommandEncoder
 {
-    WebMetalCommandBuffer *buffer = (WebMetalCommandBuffer *)[self _renderCommandEncoderCommon];
+    AGXA10FamilyCommandBuffer *buffer = (AGXA10FamilyCommandBuffer *)[self _renderCommandEncoderCommon];
     NSUInteger index;
     {
         std::lock_guard<std::mutex> guard(_subStreamsLock);

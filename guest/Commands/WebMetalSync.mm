@@ -161,7 +161,7 @@ uint64_t SharedEventHandle(Connection *connection, id event, std::string *proble
 
 using namespace webmetal;
 
-@implementation WebMetalDevice (WebMetalCommands)
+@implementation AGXA10FamilyDevice (WebMetalCommands)
 
 // -[AGXA10FamilyDevice newCommandQueue]: a driver queue through _MTLCommandQueue's -initWithDevice:, which configures
 // it with the framework's default descriptor.
@@ -171,7 +171,7 @@ using namespace webmetal;
     if (!CheckFrameworkEntryPoints(&problem))
         WMLoudMethod(self, _cmd, ("refused: the running Metal.framework lacks what the command path uses: " + problem).c_str());
     tPlainQueue = true;
-    WebMetalCommandQueue *queue = [[WebMetalCommandQueue alloc] initWithDevice:self];
+    AGXA10FamilyCommandQueue *queue = [[AGXA10FamilyCommandQueue alloc] initWithDevice:self];
     tPlainQueue = false;
     return queue;
 }
@@ -181,7 +181,7 @@ using namespace webmetal;
     std::string problem;
     if (!CheckFrameworkEntryPoints(&problem))
         WMLoudMethod(self, _cmd, ("refused: the running Metal.framework lacks what the command path uses: " + problem).c_str());
-    return [[WebMetalCommandQueue alloc] initWithDevice:self descriptor:descriptor];
+    return [[AGXA10FamilyCommandQueue alloc] initWithDevice:self descriptor:descriptor];
 }
 
 // AGX counts queues for its telemetry on top of _MTLDevice's count.
@@ -243,14 +243,14 @@ using namespace webmetal;
     if (!self)
         return nil;
     _device = device;
-    _connection = DeviceConnection((WebMetalDevice *)device);
+    _connection = DeviceConnection((AGXA10FamilyDevice *)device);
     _handle = _connection->NewHandle();
     wire::CreateEvent request;
     request.event = _handle;
     wire::Reply<wire::CreateEventReply> reply;
     std::string problem;
     if (!_connection->TryCall(request, &reply, &problem) || !reply.ok) {
-        WMReport("-[WebMetalDevice newEvent]", (problem.empty() ? reply.failure.message : problem).c_str());
+        WMReport("-[AGXA10FamilyDevice newEvent]", (problem.empty() ? reply.failure.message : problem).c_str());
         _handle = 0;
         return nil;
     }
@@ -312,14 +312,14 @@ using namespace webmetal;
     if (!self)
         return nil;
     _device = device;
-    _connection = DeviceConnection((WebMetalDevice *)device);
+    _connection = DeviceConnection((AGXA10FamilyDevice *)device);
     _handle = _connection->NewHandle();
     wire::CreateFence request;
     request.fence = _handle;
     wire::Reply<wire::CreateFenceReply> reply;
     std::string problem;
     if (!_connection->TryCall(request, &reply, &problem) || !reply.ok) {
-        WMReport("-[WebMetalDevice newFence]", (problem.empty() ? reply.failure.message : problem).c_str());
+        WMReport("-[AGXA10FamilyDevice newFence]", (problem.empty() ? reply.failure.message : problem).c_str());
         _handle = 0;
         return nil;
     }

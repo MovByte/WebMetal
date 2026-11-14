@@ -1,4 +1,4 @@
-// Shaders, pipelines, reflection, argument encoders and binary archives, standing in for the AGXMetalA10 classes of
+// Shaders, pipelines, reflection, argument encoders and binary archives, under the names of the AGXMetalA10 classes of
 // iPadOS 17.7.11 (21H461) that guest/Plugin/roles.toml names.
 //
 // Libraries and functions are Metal.framework's own objects (_MTLLibrary, _MTLFunction): the 21H461 driver's library
@@ -67,22 +67,22 @@
 @end
 
 // The pipeline state objects. Each holds the wire handle the host created it under, which the encoders reference.
-@interface WebMetalComputePipelineState : _MTLComputePipelineState <MTLComputePipelineStateSPI>
+@interface AGXA10FamilyComputePipeline : _MTLComputePipelineState <MTLComputePipelineStateSPI>
 - (instancetype)initWithDevice:(id<MTLDevice>)device pipelineStateDescriptor:(MTLComputePipelineDescriptor *)descriptor;
 @end
 
-@interface WebMetalRenderPipelineState : _MTLRenderPipelineState <MTLRenderPipelineStateSPI>
+@interface AGXA10FamilyRenderPipeline : _MTLRenderPipelineState <MTLRenderPipelineStateSPI>
 - (instancetype)initWithDevice:(id<MTLDevice>)device pipelineStateDescriptor:(MTLRenderPipelineDescriptor *)descriptor;
 @end
 
-@interface WebMetalComputePipelineState () {
+@interface AGXA10FamilyComputePipeline () {
 @public
     webmetal::Connection *_connection;
     uint64_t _handle;
 }
 @end
 
-@interface WebMetalRenderPipelineState () {
+@interface AGXA10FamilyRenderPipeline () {
 @public
     webmetal::Connection *_connection;
     uint64_t _handle;
@@ -101,8 +101,8 @@ extern NSString *const kDriverErrorDomain;
 NSError *DriverError(NSInteger code, NSString *message);
 
 // The driver's shader-debug-information flag of a device (-shaderDebugInfoCaching), NO until it is set.
-bool ShaderDebugInfoCaching(WebMetalDevice *device);
-void SetShaderDebugInfoCaching(WebMetalDevice *device, bool caching);
+bool ShaderDebugInfoCaching(AGXA10FamilyDevice *device);
+void SetShaderDebugInfoCaching(AGXA10FamilyDevice *device, bool caching);
 
 // The NSError of a failure Metal defines (a reply's status 1): its domain, code and message.
 NSError *MetalError(const wire::Failure &failure);
@@ -117,7 +117,7 @@ void RequireShaderEntryPoints(id self, SEL _cmd);
 // registered with the host once per connection (RegisterAir) and the function once per object (RegisterFunction); the
 // handle is released when the function is deallocated. A nil function is handle 0. Fails the call LOUD when the
 // function has no AIR bitcode or the host refuses it.
-uint64_t FunctionHandle(WebMetalDevice *device, id self, SEL _cmd, id<MTLFunction> function);
+uint64_t FunctionHandle(AGXA10FamilyDevice *device, id self, SEL _cmd, id<MTLFunction> function);
 
 // The handles of an array of objects that already have wire handles (binary archives, dynamic libraries); an object
 // without one fails the call LOUD.
@@ -136,7 +136,7 @@ MTLRenderPipelineReflection *NewRenderReflection(id self, SEL _cmd, const wire::
 
 // Gives a pipeline state the wire handle the host created it under: registered for the encoders (guest/Commands,
 // RegisterHandle) and released with the object.
-void AdoptPipelineHandle(WebMetalComputePipelineState *pipeline, Connection *connection, uint64_t handle);
-void AdoptPipelineHandle(WebMetalRenderPipelineState *pipeline, Connection *connection, uint64_t handle);
+void AdoptPipelineHandle(AGXA10FamilyComputePipeline *pipeline, Connection *connection, uint64_t handle);
+void AdoptPipelineHandle(AGXA10FamilyRenderPipeline *pipeline, Connection *connection, uint64_t handle);
 
 }  // namespace webmetal

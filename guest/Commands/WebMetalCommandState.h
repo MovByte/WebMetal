@@ -81,7 +81,7 @@ struct EncoderState {
 
 }  // namespace webmetal
 
-@interface WebMetalCommandQueue () {
+@interface AGXA10FamilyCommandQueue () {
 @public
     id<MTLDevice> _device;
     webmetal::Connection *_connection;
@@ -93,7 +93,7 @@ struct EncoderState {
 }
 @end
 
-@interface WebMetalCommandBuffer () {
+@interface AGXA10FamilyCommandBuffer () {
 @public
     std::shared_ptr<webmetal::CommandBufferState> _state;
     // The encoder Metal.framework's base records as current (-setCurrentCommandEncoder:), kept here because no
@@ -103,13 +103,13 @@ struct EncoderState {
 }
 @end
 
-@interface WebMetalRenderCommandEncoder () {
+@interface AGXA10FamilyRenderContext () {
 @public
     std::shared_ptr<webmetal::EncoderState> _encoder;
 }
 @end
 
-@interface WebMetalComputeCommandEncoder () {
+@interface AGXA10FamilyComputeContext () {
 @public
     std::shared_ptr<webmetal::EncoderState> _encoder;
     MTLDispatchType _dispatchType;
@@ -117,13 +117,13 @@ struct EncoderState {
 }
 @end
 
-@interface WebMetalBlitCommandEncoder () {
+@interface AGXA10FamilyBlitContext () {
 @public
     std::shared_ptr<webmetal::EncoderState> _encoder;
 }
 @end
 
-@interface WebMetalParallelRenderCommandEncoder () {
+@interface AGXA10FamilyThreadedRenderPass () {
 @public
     std::shared_ptr<webmetal::EncoderState> _encoder;
     // The sub-encoders' streams, in creation order, spliced into the command buffer's stream at endEncoding.
@@ -136,7 +136,7 @@ struct EncoderState {
 namespace webmetal {
 
 // Records a command-buffer-level record (outside any encoder). Fails the call LOUD when the record cannot be encoded.
-template <class Record> void EmitCommandBufferRecord(WebMetalCommandBuffer *buffer, SEL cmd, const Record &record);
+template <class Record> void EmitCommandBufferRecord(AGXA10FamilyCommandBuffer *buffer, SEL cmd, const Record &record);
 
 // The handle of an object an argument names, noted in `stream`; 0 for nil. An object that has no WebMetal handle fails
 // the call LOUD: the plugin cannot name it to the host.
@@ -158,7 +158,7 @@ inline uint64_t EncoderReference(id self, SEL cmd, EncoderState &encoder, id obj
 }
 
 // A new encoder of `buffer` that records into the buffer's stream, or into `subStream` (a parallel sub-encoder).
-std::shared_ptr<EncoderState> NewEncoderState(WebMetalCommandBuffer *buffer, Stream *subStream);
+std::shared_ptr<EncoderState> NewEncoderState(AGXA10FamilyCommandBuffer *buffer, Stream *subStream);
 
 // What a record's values do to the A10X driver's listing of the resources its arguments name (WebMetalEncoders.mm),
 // beyond what Reference notes: no access flags, which the kernel refuses, and the visibility result buffer.

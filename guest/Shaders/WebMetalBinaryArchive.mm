@@ -33,10 +33,10 @@
 - (NSUInteger)writingOptions;
 @end
 
-@interface WebMetalBinaryArchive : _MTLBinaryArchive <MTLBinaryArchiveSPI>
+@interface AGXA10FamilyBinaryArchive : _MTLBinaryArchive <MTLBinaryArchiveSPI>
 @end
 
-@interface WebMetalBinaryArchive () {
+@interface AGXA10FamilyBinaryArchive () {
 @public
     webmetal::Connection *_connection;
     uint64_t _handle;
@@ -63,7 +63,7 @@ NSError *validate(id device, id descriptor)
 
 }  // namespace
 
-@implementation WebMetalBinaryArchive
+@implementation AGXA10FamilyBinaryArchive
 
 - (void)dealloc
 {
@@ -82,7 +82,7 @@ NSError *validate(id device, id descriptor)
                                             error:(NSError **)error
 {
     RequireShaderEntryPoints(self, _cmd);
-    WebMetalDevice *device = (WebMetalDevice *)[self device];
+    AGXA10FamilyDevice *device = (AGXA10FamilyDevice *)[self device];
     [self storeComputePipelineDescriptor:descriptor];
     if (error)
         *error = nil;
@@ -127,7 +127,7 @@ NSError *validate(id device, id descriptor)
                                            error:(NSError **)error
 {
     RequireShaderEntryPoints(self, _cmd);
-    WebMetalDevice *device = (WebMetalDevice *)[self device];
+    AGXA10FamilyDevice *device = (AGXA10FamilyDevice *)[self device];
     [self storeRenderPipelineDescriptor:descriptor];
     if (error)
         *error = nil;
@@ -162,7 +162,7 @@ NSError *validate(id device, id descriptor)
 
 @end
 
-@implementation WebMetalDevice (WebMetalBinaryArchives)
+@implementation AGXA10FamilyDevice (WebMetalBinaryArchives)
 
 // -[AGXA10FamilyDevice newBinaryArchiveWithDescriptor:error:] (AGXMetalA10 0x21c8d8f90) is
 // -[AGXA10FamilyBinaryArchive initWithDevice:descriptor:error:], which is _MTLBinaryArchive's: Metal.framework opens
@@ -170,7 +170,9 @@ NSError *validate(id device, id descriptor)
 - (id<MTLBinaryArchive>)newBinaryArchiveWithDescriptor:(MTLBinaryArchiveDescriptor *)descriptor error:(NSError **)error
 {
     RequireShaderEntryPoints(self, _cmd);
-    WebMetalBinaryArchive *archive = [[WebMetalBinaryArchive alloc] initWithDevice:self descriptor:descriptor error:error];
+    AGXA10FamilyBinaryArchive *archive = [[AGXA10FamilyBinaryArchive alloc] initWithDevice:self
+                                                                                 descriptor:descriptor
+                                                                                      error:error];
     if (!archive)
         return nil;
     Connection *connection = DeviceConnection(self);

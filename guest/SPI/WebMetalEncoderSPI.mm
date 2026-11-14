@@ -6,7 +6,7 @@
 // The class adopts the driver's protocols; these categories implement the driver selectors they declare.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
-@implementation WebMetalBlitCommandEncoder (WebMetalSPI)
+@implementation AGXA10FamilyBlitContext (WebMetalSPI)
 
 // -[AGXA10FamilyBlitContext commandBatchIdOffset] (AGXMetalA10 0x21c8baf38): the constant 0.
 - (uint32_t)commandBatchIdOffset
@@ -16,7 +16,7 @@
 
 @end
 
-@implementation WebMetalComputeCommandEncoder (WebMetalSPI)
+@implementation AGXA10FamilyComputeContext (WebMetalSPI)
 
 // -[AGXA10FamilyComputeContext commandBatchIdOffset] (AGXMetalA10 0x21c90c414): the constant 0.
 - (uint32_t)commandBatchIdOffset
@@ -65,7 +65,7 @@
 
 @end
 
-@implementation WebMetalRenderCommandEncoder (WebMetalSPI)
+@implementation AGXA10FamilyRenderContext (WebMetalSPI)
 
 // -[AGXA10FamilyRenderContext useComputePipelineState:] and -useComputePipelineStates:count: (AGXMetalA10 0x21c9612b4,
 // 0x21c9612b8) return at once.
@@ -80,7 +80,7 @@
 
 @end
 
-@implementation WebMetalParallelRenderCommandEncoder (WebMetalSPI)
+@implementation AGXA10FamilyThreadedRenderPass (WebMetalSPI)
 
 // -[AGXA10FamilyThreadedRenderPass filterCounterRangeWithFirstBatch:lastBatch:filterIndex:] (AGXMetalA10 0x21c9c249c)
 // returns at once.

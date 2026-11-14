@@ -1,5 +1,4 @@
-// Sampler states: WebMetalSamplerState stands in for AGXA10FamilySampler (AGXA10FamilySampler -> _MTLSamplerState on
-// 21H461).
+// Sampler states: AGXA10FamilySampler (AGXA10FamilySampler -> _MTLSamplerState on 21H461).
 //
 // The driver encodes the descriptor into the A10X's sampler words (AGX::SamplerStateEncoderGen2) and keeps them in the
 // object; the GPU reads them. The plugin's GPU is the host's, which builds its own form of the state from the
@@ -18,12 +17,12 @@
 - (instancetype)initWithDevice:(id<MTLDevice>)device samplerDescriptor:(MTLSamplerDescriptor *)descriptor;
 @end
 
-@interface WebMetalSamplerState : _MTLSamplerState <MTLSamplerStateSPI>
+@interface AGXA10FamilySampler : _MTLSamplerState <MTLSamplerStateSPI>
 @end
 
-@interface WebMetalSamplerState () {
+@interface AGXA10FamilySampler () {
 @public
-    WebMetalDevice *_owner;
+    AGXA10FamilyDevice *_owner;
     uint64_t _handle;
     // AGXA10FamilySampler._impl: the driver's sampler state, whose address is the sampler's unique identifier.
     uint64_t _impl;
@@ -35,9 +34,9 @@ namespace webmetal {
 // -[AGXA10FamilyDevice newSamplerStateWithDescriptor:] (AGXMetalA10 0x21c8d7dc0) builds the driver descriptor and
 // calls -[AGXA10FamilySampler initWithDevice:samplerDescriptor:driverDescriptor:initialQOSOverride:] (0x21c97f330),
 // which initializes _MTLSamplerState with the device and the descriptor first. Neither refuses a descriptor.
-id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSamplerDescriptor *d)
+id<MTLSamplerState> NewSamplerState(AGXA10FamilyDevice *device, SEL _cmd, MTLSamplerDescriptor *d)
 {
-    WebMetalSamplerState *sampler = [[WebMetalSamplerState alloc] initWithDevice:device samplerDescriptor:d];
+    AGXA10FamilySampler *sampler = [[AGXA10FamilySampler alloc] initWithDevice:device samplerDescriptor:d];
     if (!sampler)
         return nil;
     sampler->_owner = device;
@@ -82,7 +81,7 @@ id<MTLSamplerState> NewSamplerState(WebMetalDevice *device, SEL _cmd, MTLSampler
 
 }  // namespace webmetal
 
-@implementation WebMetalSamplerState
+@implementation AGXA10FamilySampler
 
 - (void)dealloc
 {

@@ -1,4 +1,4 @@
-// Heaps: WebMetalHeap stands in for AGXA10FamilyHeap (AGXA10FamilyHeap -> IOGPUMetalHeap -> _MTLHeap on 21H461).
+// Heaps: AGXA10FamilyHeap (AGXA10FamilyHeap -> IOGPUMetalHeap -> _MTLHeap on 21H461; the plugin's subclasses _MTLHeap).
 //
 // An IOGPUMetalHeap is one kernel resource (the backing resource, here the host's heap object) and, for an automatic
 // heap, Metal.framework's range allocator over it; sub-allocation happens in the process, with the same allocator
@@ -28,7 +28,7 @@ NSString *MTLStorageModeString(MTLStorageMode mode);
 - (void)setLabel:(NSString *)label;
 @end
 
-@interface WebMetalHeap () {
+@interface AGXA10FamilyHeap () {
 @public
     webmetal::ResourceState _resource;  // IOGPUMetalHeap._resource: the backing kernel resource
     uint64_t _size;                     // IOGPUMetalHeap._size
@@ -70,8 +70,8 @@ void reportModes(const char *function, int cacheLine, int storageLine, uint64_t 
 // driver traps on any other) grants a range of at most its size, after the mode checks, from its allocator at the
 // alignment given. -[IOGPUMetalHeap newSubResourceAtOffset:withLength:alignment:options:] (IOGPU 0x1fcb3099c): a
 // placement heap grants a range inside the heap whose offset is a multiple of the alignment.
-bool HeapSubResource(WebMetalHeap *heap, SEL _cmd, uint64_t length, uint64_t alignment, uint64_t options, bool placement,
-                     uint64_t *offset)
+bool HeapSubResource(AGXA10FamilyHeap *heap, SEL _cmd, uint64_t length, uint64_t alignment, uint64_t options,
+                     bool placement, uint64_t *offset)
 {
     if (!placement) {
         if (heap.type != MTLHeapTypeAutomatic)
@@ -89,19 +89,19 @@ bool HeapSubResource(WebMetalHeap *heap, SEL _cmd, uint64_t length, uint64_t ali
     return !__builtin_add_overflow(*offset, length, &end) && end <= heap->_size && !((alignment | *offset) & (alignment - 1));
 }
 
-uint64_t HeapOptions(WebMetalHeap *heap)
+uint64_t HeapOptions(AGXA10FamilyHeap *heap)
 {
     return heap->_resource.options;
 }
 
-void *HeapContents(WebMetalHeap *heap, uint64_t offset)
+void *HeapContents(AGXA10FamilyHeap *heap, uint64_t offset)
 {
     return heap->_contents ? static_cast<uint8_t *>(heap->_contents) + offset : nullptr;
 }
 
 // -[AGXA10FamilyHeap initWithDevice:descriptor:] (AGXMetalA10 0x21c919e5c), then
 // -[IOGPUMetalHeap initWithDevice:size:options:args:argsSize:desc:] (IOGPU 0x1fcb2fc30).
-WebMetalHeap *NewHeap(WebMetalDevice *device, SEL _cmd, MTLHeapDescriptor *descriptor)
+AGXA10FamilyHeap *NewHeap(AGXA10FamilyDevice *device, SEL _cmd, MTLHeapDescriptor *descriptor)
 {
     if (![(id<WMDescriptorValidation>)descriptor validateWithDevice:device])
         return nil;
@@ -121,7 +121,7 @@ WebMetalHeap *NewHeap(WebMetalDevice *device, SEL _cmd, MTLHeapDescriptor *descr
     if (!(options & kHazardTrackingModeMask))
         options = (options & ~kHazardTrackingModeMask) | 0x100;
     const MTLHeapType type = descriptor.type;
-    WebMetalHeap *heap = [[WebMetalHeap alloc] initWithType:type options:options];
+    AGXA10FamilyHeap *heap = [[AGXA10FamilyHeap alloc] initWithType:type options:options];
     if (!heap)
         return nil;
     InitResourceState(heap->_resource, device, options);
@@ -163,20 +163,20 @@ WebMetalHeap *NewHeap(WebMetalDevice *device, SEL _cmd, MTLHeapDescriptor *descr
     return heap;
 }
 
-uint64_t HeapHandle(WebMetalHeap *heap)
+uint64_t HeapHandle(AGXA10FamilyHeap *heap)
 {
     return heap->_resource.handle;
 }
 
 }  // namespace webmetal
 
-@implementation WebMetalHeap
+@implementation AGXA10FamilyHeap
 
 - (void)dealloc
 {
     using namespace webmetal;
     DeviceAddAllocation(_resource.device, -static_cast<int64_t>(_size));
-    ReleaseObject(_resource, "-[WebMetalHeap dealloc]");
+    ReleaseObject(_resource, "-[AGXA10FamilyHeap dealloc]");
     if (self.type == MTLHeapTypeAutomatic)
         MTLRangeAllocatorDestroy(&_allocator);
     pthread_mutex_destroy(&_mutex);

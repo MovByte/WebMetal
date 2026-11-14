@@ -1,4 +1,4 @@
-// Heaps (WebMetalHeap, standing in for AGXA10FamilyHeap): what the device and the heap's buffers use.
+// Heaps (AGXA10FamilyHeap): what the device and the heap's buffers use.
 
 #pragma once
 
@@ -31,24 +31,24 @@ uint64_t MTLRangeAllocatorGetMaxFreeSize(MTLRangeAllocator *allocator, uint32_t 
 namespace webmetal {
 
 // -[AGXA10FamilyDevice newHeapWithDescriptor:] for an automatic or placement heap.
-WebMetalHeap *NewHeap(WebMetalDevice *device, SEL _cmd, MTLHeapDescriptor *descriptor);
-uint64_t HeapHandle(WebMetalHeap *heap);
+AGXA10FamilyHeap *NewHeap(AGXA10FamilyDevice *device, SEL _cmd, MTLHeapDescriptor *descriptor);
+uint64_t HeapHandle(AGXA10FamilyHeap *heap);
 
 // IOGPUMetalHeap's sub-resource methods: a range of `length` bytes at `alignment` from an automatic heap (its offset
 // returned in *offset), or, for `placement`, the range at *offset of a placement heap. False when the heap does not
 // grant it. The mode checks report through MTLReportFailure as IOGPU does.
-bool HeapSubResource(WebMetalHeap *heap, SEL _cmd, uint64_t length, uint64_t alignment, uint64_t options, bool placement,
-                     uint64_t *offset);
+bool HeapSubResource(AGXA10FamilyHeap *heap, SEL _cmd, uint64_t length, uint64_t alignment, uint64_t options,
+                     bool placement, uint64_t *offset);
 // The heap resource's options, which its sub-resources take (-[IOGPUMetalResource initWithResource:]).
-uint64_t HeapOptions(WebMetalHeap *heap);
+uint64_t HeapOptions(AGXA10FamilyHeap *heap);
 // The CPU address of a heap offset (null for a private heap).
-void *HeapContents(WebMetalHeap *heap, uint64_t offset);
+void *HeapContents(AGXA10FamilyHeap *heap, uint64_t offset);
 
 // A buffer over [offset, offset + rangeLength) of `heap`, which the heap has granted; `contents` is the range's CPU
 // address (null for a private heap). -[IOGPUMetalBuffer initWithHeap:resource:offset:length:] gives it the heap's
 // options (`heapOptions`); `options` are the caller's, carried to the host as given.
-WebMetalBuffer *NewHeapBuffer(WebMetalHeap *heap, SEL _cmd, NSUInteger length, MTLResourceOptions options,
-                              uint64_t heapOptions, uint64_t offset, uint64_t rangeLength, void *contents,
-                              bool placement);
+AGXA10FamilyBuffer *NewHeapBuffer(AGXA10FamilyHeap *heap, SEL _cmd, NSUInteger length, MTLResourceOptions options,
+                                  uint64_t heapOptions, uint64_t offset, uint64_t rangeLength, void *contents,
+                                  bool placement);
 
 }  // namespace webmetal
