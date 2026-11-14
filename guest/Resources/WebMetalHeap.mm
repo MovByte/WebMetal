@@ -112,6 +112,9 @@ AGXA10FamilyHeap *NewHeap(AGXA10FamilyDevice *device, SEL _cmd, MTLHeapDescripto
     const uint64_t page = PageSize();
     const uint64_t requested = descriptor.size;
     const uint64_t size = (requested + page - 1) / page * page;
+    // The heap's kernel resource is of type 0 with the size as its system memory (0x21c919ebc to 0x21c919f28).
+    if (KernelRefusesResourceSize(device, _cmd, size))
+        return nil;
     const uint64_t resourceOptions = descriptor.resourceOptions;
     uint64_t options = (descriptor.cpuCacheMode != 0 ? 1 : 0) |
                        (descriptor.storageMode == MTLStorageModePrivate ? 0x20 : 0) |

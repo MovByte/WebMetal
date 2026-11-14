@@ -121,6 +121,11 @@ int64_t DeviceUnsizedCount(AGXA10FamilyDevice *device);
 uint64_t DeviceCreationFlags(AGXA10FamilyDevice *device);
 // IOGPUMetalDevice._configBits: the IOGPU device configuration's bits (WebMetalIOGPUDevice.h).
 uint32_t DeviceConfigBits(AGXA10FamilyDevice *device);
+// Whether the kernel refuses to make a resource of this system memory size whose type has a clear low nibble: every
+// buffer (types 0 and 0x80, the caller's memory), texture and heap of the driver (IOGPUDevice::new_resource,
+// kernelcache 0xfffffff005bd04e8; textures are type 0, IOGPU 0x1fcb2c7c8). IOGPU then answers nil. LOUD where the
+// device does not know the limit.
+bool KernelRefusesResourceSize(AGXA10FamilyDevice *device, SEL cmd, uint64_t sysMemSize);
 // The AGX device's depth-stencil state cache (WebMetalDepthStencilCache.h).
 struct DepthStencilCache;
 DepthStencilCache &DeviceDepthStencilStates(AGXA10FamilyDevice *device);

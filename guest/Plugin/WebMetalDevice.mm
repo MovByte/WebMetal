@@ -6,13 +6,16 @@
 #import "WebMetalReport.h"
 #import "WebMetalSurface.h"
 #import "../Resources/WebMetalDepthStencilCache.h"
+#import "../Resources/WebMetalResources.h"
 
 #import <objc/message.h>
 #import <objc/runtime.h>
 
 #include <dispatch/dispatch.h>
+#include <sys/sysctl.h>
 
 #include <atomic>
+#include <cerrno>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -110,6 +113,10 @@ DeviceOptions gatherDeviceOptions()
     uint32_t _configBits;
     uint64_t _videoRam;
     uint64_t _sharedMemorySize;
+    // The largest system memory size IOGPUDevice::new_resource accepts for a resource whose type has a clear low
+    // nibble (webmetal::KernelRefusesResourceSize), and whether it is known.
+    uint64_t _resourceSizeLimit;
+    bool _resourceSizeLimitKnown;
 }
 @end
 
@@ -120,6 +127,22 @@ namespace {
 
 // IOGPU's kdebug trace gate: the word at the graphics commpage IOSurfaceGetGraphicsCommPageAddress gives, or a zeroed
 // word where there is none (the once block of IOGPUDeviceCreateWithAPIProperty, 0x1fcb30374).
+// Whether the wired limit IOGPU::getSharedMemorySize reads first (the word at 0xfffffff007aeb6e0 in the 21H461 kernel,
+// the sysctls iogpu.wired_limit_mb and debug.iogpu.wired_limit, oids 0xfffffff007aeb0a8 and 0xfffffff007aeaf18) is 0.
+// A kernel that has neither sysctl has nothing that sets it.
+bool wiredLimitClear()
+{
+    for (const char *name : {"iogpu.wired_limit_mb", "debug.iogpu.wired_limit"}) {
+        int megabytes = 0;
+        size_t length = sizeof megabytes;
+        if (sysctlbyname(name, &megabytes, &length, nullptr, 0) == 0)
+            return megabytes == 0;
+        if (errno != ENOENT)
+            return false;
+    }
+    return true;
+}
+
 bool kdebugTracing()
 {
     static const uint32_t *word = [] {
@@ -162,6 +185,16 @@ int64_t DeviceUnsizedCount(AGXA10FamilyDevice *device)
 uint64_t DeviceCreationFlags(AGXA10FamilyDevice *device)
 {
     return device->_creationFlags;
+}
+
+bool KernelRefusesResourceSize(AGXA10FamilyDevice *device, SEL cmd, uint64_t sysMemSize)
+{
+    if (!device->_resourceSizeLimitKnown)
+        WMLoudMethod(device, cmd,
+                     "the kernel refuses a resource whose system memory size is above three quarters of the IOGPU's "
+                     "shared memory size (IOGPUDevice::new_resource, kernelcache 0xfffffff005bd04e8), and with a wired "
+                     "limit set (iogpu.wired_limit_mb) the device configuration reports that limit instead of the size");
+    return sysMemSize > device->_resourceSizeLimit;
 }
 
 uint32_t DeviceConfigBits(AGXA10FamilyDevice *device)
@@ -213,6 +246,14 @@ DepthStencilCache &DeviceDepthStencilStates(AGXA10FamilyDevice *device)
     _configBits = _iogpuConfig.configBits;
     _sharedMemorySize = _iogpuConfig.sharedMemorySize;
     _videoRam = 0;
+    // IOGPUDevice::new_resource (kernelcache 0xfffffff005bd04e8 to 0xfffffff005bd050c) refuses a system memory size
+    // above ((IOGPU +0x110) * 3 >> 2) & -PAGE_SIZE, in 64-bit arithmetic. +0x110 is the IOGPU's shared memory size
+    // (AGXG9G 0xfffffff005be6774 sets it from hw.memsize_physical, IOGPU::start 0xfffffff005bd4848), which the
+    // configuration reports (IOGPU::getSharedMemorySize(0), 0xfffffff005bd60fc) while the wired limit is 0; with a
+    // wired limit set the configuration reports that limit instead and +0x110 is not known. The shim's configuration
+    // stands in for the kernel and has no wired limit.
+    _resourceSizeLimit = ((_iogpuConfig.sharedMemorySize * 3) >> 2) & ~(webmetal::kKernelPageSize - 1);
+    _resourceSizeLimitKnown = webmetal::ShimIOGPUConfig() || wiredLimitClear();
     // _MTLDevice._globalTraceObjectID takes IOGPUDeviceGetGlobalTraceObjectID (0x1fcb2f308): the trace object selector 4
     // answered, or 0 where it did not (the shim's kernel stand-in serves no selector 4).
     Ivar traceObject = class_getInstanceVariable([_MTLDevice class], "_globalTraceObjectID");

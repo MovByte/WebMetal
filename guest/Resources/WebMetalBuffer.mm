@@ -136,8 +136,9 @@ static AGXA10FamilyBuffer *finishCreation(AGXA10FamilyBuffer *buffer)
 // (0x21c8d5e48) and -newBufferWithBytes:length:options: (0x21c8d5f0c) call it. The size requested from the kernel is the
 // length rounded up to the page size; a length whose rounding overflows fails. A length below the page size is
 // sub-allocated unless the preference disables it or the sub-allocator refuses it; otherwise the buffer is a dedicated
-// kernel resource. The kernel resource cannot be made for a zero length or one above the device's maxBufferLength (the
-// IOGPUMetalSuballocatorAllocate path refuses zero, the kernel refuses both): nil, as Metal answers.
+// kernel resource. IOGPUMetalSuballocatorAllocate refuses a zero length, and the kernel a zero size and one above its
+// limit (KernelRefusesResourceSize): nil, as Metal answers. Neither AGXMetalA10 nor IOGPU compares the length with
+// maxBufferLength.
 AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length, MTLResourceOptions options,
                                     const void *bytes)
 {
@@ -151,7 +152,7 @@ AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInt
     const uint64_t storage = (options & kStorageModeMask) >> kStorageModeShift;
     // A memoryless resource has no kernel resource (-[IOGPUMetalResource initWithDevice:options:args:argsSize:]).
     const bool memoryless = storage == MTLStorageModeMemoryless;
-    if (!memoryless && (length == 0 || length > [device maxBufferLength]))
+    if (!memoryless && (length == 0 || (!suballocated && KernelRefusesResourceSize(device, _cmd, sysMemSize))))
         return nil;
     AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
     InitResourceState(buffer->_state, device, options);
@@ -200,14 +201,14 @@ AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInt
 // -[AGXBuffer initWithDevice:bytes:length:alignment:options:deallocator:pinnedGPUAddress:] (0x21c8a45f4) with alignment
 // 1, which asks IOGPU for a kernel resource over the caller's memory with the length as its system memory size, and
 // keeps the deallocator, run when the buffer is deallocated. The kernel resource's resident size is the caller's pages
-// under the length (ClientMemoryResidentSize).
+// under the length (ClientMemoryResidentSize). The kernel refuses a length above its limit (KernelRefusesResourceSize).
 AGXA10FamilyBuffer *NewNoCopyBuffer(AGXA10FamilyDevice *device, SEL _cmd, void *pointer, NSUInteger length,
                                     MTLResourceOptions options, void (^deallocator)(void *pointer, NSUInteger length))
 {
     reportInitFailures(options, true);
     const uint64_t storage = (options & kStorageModeMask) >> kStorageModeShift;
     const bool memoryless = storage == MTLStorageModeMemoryless;
-    if (!memoryless && (length == 0 || length > [device maxBufferLength]))
+    if (!memoryless && (length == 0 || KernelRefusesResourceSize(device, _cmd, length)))
         return nil;
     AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
     InitResourceState(buffer->_state, device, options);

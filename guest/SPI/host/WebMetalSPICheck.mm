@@ -470,6 +470,11 @@ void checkNoCopy(id<MTLDevice> device)
                   across.allocatedSize == 0x8000,
               "a no-copy buffer's kernel resource holds the caller's pages under its length");
     }
+    // A length above three quarters of the shared memory size (the shim's 0xAAAAC000: 0x80000000) is refused by the
+    // kernel before any memory is mapped.
+    check(![device newBufferWithBytesNoCopy:pagesForBuffer length:0x80000001 options:MTLResourceStorageModeShared
+                                deallocator:nil],
+          "the kernel refuses a resource above three quarters of the shared memory size");
     free(pagesForBuffer);
     free(bytes);
 }

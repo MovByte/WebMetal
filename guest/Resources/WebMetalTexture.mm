@@ -288,15 +288,20 @@ AGXTexture *NewDeviceTexture(AGXA10FamilyDevice *device, SEL _cmd, MTLTextureDes
     const agx::TextureAllocation layout = agx::initImplDevice(LayoutDescriptorFields(d), LayoutSystemValues());
     if (!layout.initialized)
         return nil;
-    AGXTexture *texture = newTextureObject(device, _cmd, d);
-    setLayout(texture, layout);
     uint64_t options = d.resourceOptions;
     if ((options & kStorageModeMask) == (uint64_t(MTLStorageModePrivate) << kStorageModeShift))
         options |= 0x20000;
-    texture->_suballocated = d.storageMode != MTLStorageModeMemoryless && d.protectionOptions == 0 &&
-                             layout.cpuSizeBytes < PageSize() && !(layout.textureData58 & 1) &&
-                             !SuballocationDisabled() && SuballocatorServes(layout.cpuSizeBytes, options) &&
-                             layout.alignment <= 0x20000;
+    const bool suballocated = d.storageMode != MTLStorageModeMemoryless && d.protectionOptions == 0 &&
+                              layout.cpuSizeBytes < PageSize() && !(layout.textureData58 & 1) &&
+                              !SuballocationDisabled() && SuballocatorServes(layout.cpuSizeBytes, options) &&
+                              layout.alignment <= 0x20000;
+    // A dedicated kernel resource is of type 0 with the CPU size as its system memory, which the kernel may refuse.
+    if (!suballocated && d.storageMode != MTLStorageModeMemoryless &&
+        KernelRefusesResourceSize(device, _cmd, layout.cpuSizeBytes))
+        return nil;
+    AGXTexture *texture = newTextureObject(device, _cmd, d);
+    setLayout(texture, layout);
+    texture->_suballocated = suballocated;
     // A sub-allocated texture is a texture over the primary buffer with a kernel resource of its own
     // (-[IOGPUMetalTexture initWithPrimaryBuffer:...] 0x1fcb2e244), whose resident size is the primary's. Otherwise
     // -[IOGPUMetalTexture initWithDevice:descriptor:sysMemSize:...] creates the kernel resource with the CPU size as its
@@ -334,6 +339,10 @@ AGXTexture *NewNoCopyTexture(AGXA10FamilyDevice *device, SEL _cmd, void *bytes, 
     const wire::TextureDescriptor d = WireTextureDescriptor(device, _cmd, descriptor);
     const agx::TextureAllocation layout = agx::initImplDevice(LayoutDescriptorFields(d), LayoutSystemValues());
     if (!layout.initialized)
+        return nil;
+    // The kernel resource over the caller's memory is of type 0x80 with the layout's size as its system memory
+    // (IOGPU 0x1fcb30484), which the kernel may refuse.
+    if (d.storageMode != MTLStorageModeMemoryless && KernelRefusesResourceSize(device, _cmd, layout.cpuSizeBytes))
         return nil;
     AGXTexture *texture = newTextureObject(device, _cmd, d);
     setLayout(texture, layout);
