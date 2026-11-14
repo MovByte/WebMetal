@@ -34,6 +34,9 @@ struct FormatInfo {
     uint32_t chroma;               // +0x48 (3: 4:2:0)
     uint32_t planesWithoutSurface; // +0x50
     uint8_t planeBytes[2];         // +0x58, +0x59
+    // (+0x3c & 0x3) != 0: clear for the compressed, YUV and depth/stencil entries. -[AGXA10FamilyBlitContext
+    // generateMipmapsForTexture:] fills no level of a texture whose entry has it clear (0x21c8b9a0c to 0x21c8b9a18).
+    bool mipmapGeneration;
 };
 
 // AGX::G9::TextureFormatTable::chooseTextureFormatOBJC (0x21c9c1318). Never null; unsupported formats return the
