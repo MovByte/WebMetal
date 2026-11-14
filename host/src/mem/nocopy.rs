@@ -36,6 +36,7 @@ use super::memory::Memory;
 use super::options::StorageMode;
 use super::texture::{
     GET_BYTES_CALL, GET_BYTES_SLICE_CALL, REPLACE_REGION_CALL, REPLACE_REGION_SLICE_CALL, Texture, TextureRead,
+    get_bytes_image_pitch,
 };
 
 const CALL: &str = "-[MTLDeviceSPI newTextureWithBytesNoCopy:length:descriptor:deallocator:]";
@@ -348,10 +349,7 @@ pub fn get_bytes_copy(r: &GetBytes) -> (RegionCopy, &'static str) {
         region: wire_region(&r.region),
         slice: 0,
         level: r.level as u32,
-        linear: Linear {
-            bytes_per_row: r.bytes_per_row,
-            bytes_per_image: r.region.size.height.wrapping_mul(r.bytes_per_row),
-        },
+        linear: Linear { bytes_per_row: r.bytes_per_row, bytes_per_image: get_bytes_image_pitch(r) },
     };
     (c, GET_BYTES_CALL)
 }

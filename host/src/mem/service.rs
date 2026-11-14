@@ -68,7 +68,7 @@ use super::purgeable::Purgeable;
 use super::surface::SurfaceReadback;
 use super::texture::{
     GET_BYTES_CALL, GET_BYTES_SLICE_CALL, REPLACE_REGION_CALL, REPLACE_REGION_SLICE_CALL, Texture, TextureBytes,
-    TextureRead,
+    TextureRead, get_bytes_image_pitch,
 };
 use super::view::{Parent, TextureView, ViewArgs};
 
@@ -374,16 +374,18 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                         Err(e) => fail(opcode::GET_BYTES, e),
                     }));
                 }
+                let image_pitch = get_bytes_image_pitch(r);
                 if let Some(v) = payload::<TextureView<A>>(objects, r.texture) {
-                    let read =
-                        mem.get_bytes_view(g, GET_BYTES_CALL, &v, &args(&r.region, r.level, 0, r.bytes_per_row, 0))?;
+                    let a = args(&r.region, r.level, 0, r.bytes_per_row, image_pitch);
+                    let read = mem.get_bytes_view(g, GET_BYTES_CALL, &v, &a)?;
                     return Ok(self.later(task, read, r.pixel_bytes.0, |res| match res {
                         Ok(()) => ok!(GetBytes, GetBytesReply),
                         Err(e) => fail(opcode::GET_BYTES, e),
                     }));
                 }
                 let lt = payload::<LinearTexture<A>>(objects, r.texture).ok_or_else(|| missing(r.texture))?;
-                mem.get_bytes_linear(e, task, &lt, &args(&r.region, r.level, 0, r.bytes_per_row, 0), r.pixel_bytes.0)?;
+                let a = args(&r.region, r.level, 0, r.bytes_per_row, image_pitch);
+                mem.get_bytes_linear(e, task, &lt, &a, r.pixel_bytes.0)?;
                 return Ok(Served::Ready(ok!(GetBytes, GetBytesReply)));
             }
             Request::GetBytesSlice(r) => {

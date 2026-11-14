@@ -97,6 +97,14 @@ pub(crate) const GET_BYTES_CALL: &str = "-[MTLTexture getBytes:bytesPerRow:fromR
 pub(crate) const GET_BYTES_SLICE_CALL: &str =
     "-[MTLTexture getBytes:bytesPerRow:bytesPerImage:fromRegion:mipmapLevel:slice:]";
 
+/// The image pitch `getBytes:bytesPerRow:fromRegion:mipmapLevel:` passes to the slice form:
+/// `-[IOGPUMetalTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:]` (IOGPU 0x1fcb31158) multiplies the region's
+/// height by bytesPerRow (`ldr x8, [x4, #0x20]; mul x8, x8, x3`) for every texture type, with slice 0.
+/// (`replaceRegion:mipmapLevel:withBytes:bytesPerRow:`, IOGPU 0x1fcb2e204, passes slice 0 and bytesPerImage 0.)
+pub(crate) fn get_bytes_image_pitch(r: &GetBytes) -> u64 {
+    r.region.size.height.wrapping_mul(r.bytes_per_row)
+}
+
 /// The WebGPU texture format of a format module format.
 pub fn idl_format(f: WebGpuFormat) -> TextureFormat {
     *TextureFormat::ALL.iter().find(|t| t.as_str() == f.name()).expect("the format tables share the IDL's names")
@@ -1127,7 +1135,7 @@ impl<A: Api> Memory<A> {
             level: r.level,
             slice: 0,
             bytes_per_row: r.bytes_per_row,
-            bytes_per_image: 0,
+            bytes_per_image: get_bytes_image_pitch(r),
         };
         self.read_region(g, GET_BYTES_CALL, t, &a)
     }

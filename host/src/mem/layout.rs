@@ -193,7 +193,13 @@ impl RegionLayout {
     /// - bytesPerImage: "Supply a nonzero value only when you copy data to a type3D type texture ... For data that
     ///   consists only of a single image, use 0 ... For ordinary or packed pixel formats, use a multiple of pixel
     ///   size. For compressed pixel data, use a multiple of the compression block size. When working with PVRTC, use
-    ///   0."
+    ///   0." The A10X driver reads it only between the images of a region more than one image deep, which only a 3D
+    ///   texture has: `AGX::Texture::readRegion` and `writeRegion` (0x21c9a4e84, 0x21c982fe0) step the linear pointer
+    ///   by it once per depth slice of a 3D texture (readRegion 0x21c9a5240) and copy the one image of every other
+    ///   texture type on a path that never reads it (readRegion 0x21c9a4f4c, writeRegion 0x21c983584), and
+    ///   `agxaAssertBufferIsValid` probes `depth - 1` images of it. Whatever a region one image deep is given is
+    ///   unread: `-[IOGPUMetalTexture getBytes:bytesPerRow:fromRegion:mipmapLevel:]` (IOGPU 0x1fcb31158) gives the
+    ///   region's height times bytesPerRow for every texture type.
     /// - "If the texture image has a compressed pixel format, only write to block-aligned regions. If the size of a
     ///   dimension of region isn't a multiple of the block size, include both the edge block and additional space up
     ///   to the texture dimensions"; for PVRTC "use the entire texture for the region".
@@ -225,8 +231,9 @@ impl RegionLayout {
             if (ox, oy, oz, sw, sh) != (0, 0, 0, lw, lh) {
                 return bad("a PVRTC transfer must cover the entire level".into());
             }
-            if a.bytes_per_row != 0 || a.bytes_per_image != 0 {
-                return bad("PVRTC transfers take bytesPerRow and bytesPerImage 0".into());
+            // PVRTC levels are 2D: the driver does not read bytesPerImage.
+            if a.bytes_per_row != 0 {
+                return bad("PVRTC transfers take bytesPerRow 0".into());
             }
             let (wx, wy) = blocks.count(lw, lh);
             let len = pvrtc::data_len(bpp, lw, lh) as u64;
@@ -263,9 +270,8 @@ impl RegionLayout {
         };
         let image = (u64::from(by) - 1) * bytes_per_row + row_bytes;
         let bytes_per_image = match (a.bytes_per_image, sd) {
-            (0, 1) => image,
+            (_, 1) => image,
             (0, _) => return bad(format!("bytesPerImage 0 for a region {sd} images deep")),
-            (_, _) if !g.kind.is_3d() => return bad("a nonzero bytesPerImage for a texture that is not 3D".into()),
             (i, _) if i < image => return bad(format!("bytesPerImage {i} is less than an image of {image} bytes")),
             (i, _) if !i.is_multiple_of(unit) => return bad(format!("bytesPerImage {i} is not a multiple of {unit}")),
             (i, _) => i,
@@ -396,8 +402,12 @@ mod tests {
         assert!(RegionLayout::new("t", &g2d(8, 4, 1), RGBA8, &args((0, 0, 0), (8, 2, 1), 30, 0)).is_err());
         assert!(RegionLayout::new("t", &g2d(8, 4, 1), RGBA8, &args((0, 0, 0), (8, 2, 1), 34, 0)).is_err());
         assert!(RegionLayout::new("t", &g2d(8, 4, 1), RGBA8, &args((5, 0, 0), (4, 1, 1), 0, 0)).is_err());
-        // bytesPerImage only for 3D.
-        assert!(RegionLayout::new("t", &g2d(8, 4, 1), RGBA8, &args((0, 0, 0), (8, 2, 1), 32, 64)).is_err());
+        // The image pitch of a region one image deep is not read: the 2D region of the getBytes short form
+        // (height * bytesPerRow), or any other, lays out as with 0.
+        for bpi in [0, 64, 8, 33] {
+            let l = RegionLayout::new("t", &g2d(8, 4, 1), RGBA8, &args((0, 0, 0), (8, 2, 1), 32, bpi)).unwrap();
+            assert_eq!((l.bytes_per_image, l.span), (64, 64));
+        }
     }
 
     #[test]
@@ -429,6 +439,10 @@ mod tests {
         assert!(RegionLayout::new("t", &g, RGBA8, &a).is_err());
         a.bytes_per_image = 8;
         assert_eq!(RegionLayout::new("t", &g, RGBA8, &a).unwrap().span, 12);
+        // One depth slice of a 3D level: its image pitch is not read either.
+        a.size.2 = 1;
+        a.bytes_per_image = 2;
+        assert_eq!(RegionLayout::new("t", &g, RGBA8, &a).unwrap().bytes_per_image, 4);
         let cube = Geometry { kind: TextureType::CubeArray, array_length: 2, ..g2d(4, 4, 1) };
         assert_eq!(cube.slices(), 12);
         let mut a = args((0, 0, 0), (4, 4, 1), 16, 0);
@@ -446,6 +460,7 @@ mod tests {
         assert_eq!((l.blocks, l.span), ((4, 4), 128));
         assert!(RegionLayout::new("t", &g, b, &args((0, 0, 0), (8, 8, 1), 0, 0)).is_err());
         assert!(RegionLayout::new("t", &g, b, &args((0, 0, 0), (16, 16, 1), 32, 0)).is_err());
+        assert_eq!(RegionLayout::new("t", &g, b, &args((0, 0, 0), (16, 16, 1), 0, 64)).unwrap().span, 128);
         // Levels below two words keep two.
         let small = g2d(4, 4, 1);
         assert_eq!(RegionLayout::new("t", &small, b, &args((0, 0, 0), (4, 4, 1), 0, 0)).unwrap().span, 32);
