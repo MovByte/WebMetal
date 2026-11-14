@@ -134,7 +134,8 @@ static AGXA10FamilyBuffer *finishCreation(AGXA10FamilyBuffer *buffer)
 
 // The steps of a buffer whose memory the kernel provides once the driver's checks pass: the resource state, the CPU
 // copy of a shared buffer's memory (allocated here, `size` bytes) and the host's buffer, with the initial bytes when
-// given. A memoryless buffer has no kernel resource (-[IOGPUMetalResource initWithDevice:options:args:argsSize:]).
+// given. A memoryless buffer has no kernel resource and a resident size of 0 (-[IOGPUMetalResource initWithDevice:
+// options:args:argsSize:] keeps only the top byte of _res.info.resourceSize, IOGPU 0x1fcb2bc00 to 0x1fcb2bc08).
 static AGXA10FamilyBuffer *newOwnedBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length,
                                           MTLResourceOptions options, const void *bytes, uint64_t residentSize,
                                           uint64_t size)
@@ -202,7 +203,7 @@ AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInt
     const bool memoryless = ((options & kStorageModeMask) >> kStorageModeShift) == MTLStorageModeMemoryless;
     if (!memoryless && (length == 0 || (!suballocated && KernelRefusesResourceSize(device, _cmd, sysMemSize))))
         return nil;
-    const uint64_t residentSize = suballocated ? kSuballocatedResourceSize : sysMemSize;
+    const uint64_t residentSize = memoryless ? 0 : suballocated ? kSuballocatedResourceSize : sysMemSize;
     AGXA10FamilyBuffer *buffer =
         newOwnedBuffer(device, _cmd, length, options, bytes, residentSize, sysMemSize ? sysMemSize : page);
     if (!buffer)
@@ -233,7 +234,7 @@ AGXA10FamilyBuffer *NewNoCopyBuffer(AGXA10FamilyDevice *device, SEL _cmd, void *
     if (!pointer) {
         const uint64_t page = PageSize();
         const uint64_t size = (static_cast<uint64_t>(length) + kKernelPageSize - 1) & ~(kKernelPageSize - 1);
-        AGXA10FamilyBuffer *buffer = newOwnedBuffer(device, _cmd, length, options, nullptr, memoryless ? length : size,
+        AGXA10FamilyBuffer *buffer = newOwnedBuffer(device, _cmd, length, options, nullptr, memoryless ? 0 : size,
                                                     (static_cast<uint64_t>(length) + page - 1) & ~(page - 1));
         if (!buffer)
             return nil;
@@ -245,7 +246,7 @@ AGXA10FamilyBuffer *NewNoCopyBuffer(AGXA10FamilyDevice *device, SEL _cmd, void *
     buffer->_length = length;
     buffer->_contents = pointer;
     buffer->_pointer = pointer;
-    buffer->_state.residentSize = memoryless ? length : ClientMemoryResidentSize(device, _cmd, pointer, length);
+    buffer->_state.residentSize = memoryless ? 0 : ClientMemoryResidentSize(device, _cmd, pointer, length);
     buffer->_deallocator = [deallocator copy];
     Connection *connection = DeviceConnection(device);
     buffer->_state.handle = connection->NewHandle();
