@@ -42,9 +42,12 @@ NSError *counterError(NSInteger code, NSString *description)
 const char kCounterSampleStorage[] =
     "AGXMTLCounterSampleBuffer keeps its samples in an AGXBuffer that -[AGXBuffer initCounterSampleBufferWithDevice:"
     "length:options:] (0x21c8a4544) creates unsub-allocated with the AGX resource argument 0x10 at +0x5c of the creation "
-    "arguments, whose effect in the AGX kernel extension (and so the contents a resolve reads before any pass samples) is "
-    "not read; the passes' sample buffer attachments then have the GPU write timestamps into it at stage boundaries, and "
-    "the host writes no GPU timestamps";
+    "arguments. With it the AGX kernel extension counts the kernel resource against 1024 such resources per system and "
+    "32 per device (AGXResource's initializer, kernelcache 0xfffffff005c393d8, and 0xfffffff005c31c2c) and resolves the "
+    "passes' sample locations to its 8-byte samples (0xfffffff005c31cb8), into which the GPU writes timestamps at stage "
+    "boundaries. The plugin does not define AGXMTLCounterSampleBuffer, and the host writes no GPU timestamps: WebGPU's "
+    "timestamp queries are optional and count in a time base of their own, the A10X's in mach_absolute_time's "
+    "(-sampleTimestamps:gpuTimestamp:, 0x21c8db364)";
 
 // -[AGXMTLCounterSampleBuffer initWithDevice:length:label:options:error:] (AGXMetalA10 0x21c9ce7d0): clears *error,
 // refuses a length outside 1 to 32768 bytes and one that is not a multiple of 8 (MTLCounterSampleBufferErrorInvalid
