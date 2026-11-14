@@ -579,14 +579,13 @@ fn texture_types_and_regions() {
                             &data,
                             (bpr, bpi),
                         );
+                        r.unwrap_or_else(|e| panic!("{}: format {format} type {kind} level {level}: {e}", g.name()));
                         if pvrtc && pvrtc_copy_len(b, lw, lh) < data.len() {
-                            // The A10X driver replaces only the level's first words; the rest are not kept on the
-                            // CPU, so the write is LOUD and the level keeps its zeros.
-                            assert!(matches!(r, Err(MemError::Unimplemented { .. })), "{r:?}");
-                            model.subs.push(vec![0; data.len()]);
+                            // The A10X driver replaces only the level's first words; the others keep their zeros.
+                            let n = pvrtc_copy_len(b, lw, lh);
+                            model.subs.push([&data[..n], &vec![0; data.len() - n][..]].concat());
                             continue;
                         }
-                        r.unwrap_or_else(|e| panic!("{}: format {format} type {kind} level {level}: {e}", g.name()));
                         model.subs.push(data);
                     }
                 }
@@ -888,6 +887,69 @@ fn decoded_textures_refresh_after_blits() {
         let tight: Vec<u8> =
             (0..h as usize).flat_map(|y| got[y * row as usize..][..(w * footprint) as usize].to_vec()).collect();
         assert_eq!(tight, want, "{case}");
+    }
+    g.assert_no_errors();
+}
+
+/// A PVRTC `replaceRegion` replaces only the level's first words, as many as the region's blocks fill (the A10X
+/// driver's `agxsTwiddleAddressPVRTC4` and `agxsTwiddleAddressPVRTC2`), and the level's other words keep their values:
+/// a whole mip chain uploads, levels below two words by two included. Once GPU work has written a level, the host no
+/// longer holds its words, and a write of part of it is LOUD.
+#[test]
+fn pvrtc_partial_writes_keep_the_other_words() {
+    let g = Gpu::new(false);
+    let guest = Guest::new(16 << 20, None);
+    let ctx = Ctx::new(&g, &guest);
+    for format in [166u32, 164] {
+        let t = Rc::new(
+            ctx.mem
+                .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(2, format, (16, 16, 1), 1, 5, SHARED, 1))
+                .unwrap(),
+        );
+        let b = t.blocks.unwrap();
+        let bpp = b.pvrtc.unwrap();
+        for level in 0..5u32 {
+            let (lw, lh, _) = t.geometry.level_extent(level);
+            let n = pvrtc_copy_len(b, lw, lh).min(pvrtc::data_len(bpp, lw, lh));
+            let whole = region((0, 0, 0), (u64::from(lw), u64::from(lh), 1));
+            for seed in [1usize, 2] {
+                let words: Vec<u8> = (0..n).map(|i| (i * 7 + seed * 31 + level as usize) as u8).collect();
+                ctx.replace(&t, (u64::from(level), 0), whole.clone(), &words, (0, 0))
+                    .unwrap_or_else(|e| panic!("format {format} level {level}: {e}"));
+                assert_eq!(
+                    ctx.get(&t, (u64::from(level), 0), whole.clone(), (0, 0), n).unwrap(),
+                    words,
+                    "level {level}"
+                );
+            }
+        }
+        // GPU work writes level 0 whole.
+        let (lw, lh, _) = t.geometry.level_extent(0);
+        let rows = pvrtc::reorder(bpp, lw, lh, &vec![9u8; pvrtc::data_len(bpp, lw, lh)], false).unwrap();
+        let src = ctx.shared_buffer(&rows);
+        let (wx, wy) = b.count(lw, lh);
+        let n = rows.len() as u64;
+        let layout = RegionLayout {
+            origin: (0, 0, 0),
+            size: (lw, lh, 1),
+            blocks: (wx, wy),
+            images: 1,
+            row_bytes: u64::from(wx) * 8,
+            bytes_per_row: u64::from(wx) * 8,
+            bytes_per_image: n,
+            span: n,
+            pvrtc: false,
+        };
+        let encoder = g.device.create_command_encoder(&CommandEncoderDescriptor::new());
+        let r = TextureRegion { level: 0, slice: 0, layout };
+        ctx.mem.encode_buffer_to_texture(&ctx.direct, &encoder, (&src, 0), &t, &r).unwrap();
+        ctx.finish(encoder, &[]);
+        let r = ctx.replace(&t, (0, 0), region((0, 0, 0), (8, 8, 1)), &[1; 32], (0, 0));
+        assert!(matches!(r, Err(MemError::Unimplemented { .. })), "{r:?}");
+        // The other levels keep the CPU's words.
+        let (l2w, l2h, _) = t.geometry.level_extent(2);
+        let n2 = pvrtc_copy_len(b, l2w, l2h);
+        ctx.replace(&t, (2, 0), region((0, 0, 0), (u64::from(l2w), u64::from(l2h), 1)), &vec![3; n2], (0, 0)).unwrap();
     }
     g.assert_no_errors();
 }

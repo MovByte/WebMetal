@@ -24,6 +24,11 @@
 //! - GPU writes of the stored texture ([`Memory::note_texture_write`]) leave the twin stale;
 //! - reads (`getBytes`, blits to a buffer) use the twin when it is current, else the stored texture.
 //!
+//! A PVRTC texture also keeps each level's words on the CPU as the A10X stores them, in reflected Morton order, while
+//! no GPU work has written them since: the driver's `replaceRegion` replaces only the first words of a level (as many
+//! as the region's blocks fill), and the level's other words keep their values, which the host writes back with the
+//! new ones as a whole level.
+//!
 //! Moving bytes between the CPU or a buffer and a stored texture of a format whose copies are not bit-exact needs the
 //! host's texel copies of that format to be proven exact first ([`super::proof`]); without that the transfer is
 //! refused, never approximated.
@@ -144,6 +149,18 @@ struct State {
     /// whether GPU work wrote it since its last write-back.
     surface_version: u64,
     backing_written: bool,
+    /// For a PVRTC texture, per subresource: the level's words in reflected Morton order as the CPU last wrote them, or
+    /// `None` once GPU work may have written the subresource. Empty for other formats.
+    pvrtc_words: Vec<Option<Vec<u8>>>,
+}
+
+impl State {
+    /// GPU work writes subresource `i`: its words are no longer the CPU's.
+    fn gpu_wrote(&mut self, i: usize) {
+        if let Some(words) = self.pvrtc_words.get_mut(i) {
+            *words = None;
+        }
+    }
 }
 
 /// A second texture that holds a texture's contents in another WebGPU format: the storage of the texture's views in
@@ -325,6 +342,7 @@ impl<A: Api> Texture<A> {
         let mut st = self.state.borrow_mut();
         st.stored[i] = stored;
         st.twin[i] = twin && self.has_twin();
+        st.gpu_wrote(i);
         for a in &mut st.aliases {
             a[i] = false;
         }
@@ -601,7 +619,8 @@ impl<A: Api> Memory<A> {
                 );
             }
         }
-        let subs = (geometry.mip_levels * if kind.is_3d() { 1 } else { geometry.slices() }) as usize;
+        let per_level = if kind.is_3d() { 1 } else { geometry.slices() };
+        let subs = (geometry.mip_levels * per_level) as usize;
         let state = State {
             stored: vec![true; subs],
             twin: vec![!twins.is_empty(); subs],
@@ -609,6 +628,7 @@ impl<A: Api> Memory<A> {
             purgeable: Purgeable::NonVolatile,
             surface_version: 0,
             backing_written: false,
+            pvrtc_words: pvrtc_zero_words(&geometry, blocks, per_level),
         };
         let label = desc.label.clone();
         Ok(Rc::new(Texture {
@@ -987,6 +1007,7 @@ impl<A: Api> Memory<A> {
                 let i = t.sub(level, t.layer_of(layer));
                 st.stored[i] = false;
                 st.twin[i] = false;
+                st.gpu_wrote(i);
                 for (k, a) in st.aliases.iter_mut().enumerate() {
                     a[i] = k == alias.index;
                 }
@@ -1055,20 +1076,34 @@ impl<A: Api> Memory<A> {
         (task, pixel_bytes): (TaskId, u64),
     ) -> Result<(), MemError> {
         let (l, blocks) = self.cpu_region(call, t, a)?;
-        if let Some(bpp) = blocks.pvrtc {
-            let (w, h, _) = t.geometry.level_extent(a.level as u32);
-            if l.span != pvrtc::data_len(bpp, w, h) as u64 {
-                return Err(MemError::unimplemented(format!(
-                    "{call}: a PVRTC write of {} of the level's {} bytes: the A10X driver replaces only those, and the \
-                     host keeps no copy of the level's other words to write the rest back from",
-                    l.span,
-                    pvrtc::data_len(bpp, w, h)
-                )));
-            }
-        }
         let mut metal = vec![0u8; l.span as usize];
         e.read_guest(task, pixel_bytes, &mut metal)?;
-        self.upload_region(g, call, t, &l, (a.level as u32, a.slice as u32), &l.pack(&metal))
+        let (level, slice) = (a.level as u32, a.slice as u32);
+        if blocks.pvrtc.is_none() {
+            return self.upload_region(g, call, t, &l, (level, slice), &l.pack(&metal));
+        }
+        // The driver replaces the level's first words (RegionLayout::agx); the others keep the values the CPU copy
+        // holds, and the whole level is written.
+        let i = t.sub(level, t.layer_of(slice));
+        let Some(mut words) = t.state.borrow().pvrtc_words[i].clone() else {
+            return Err(MemError::unimplemented(format!(
+                "{call}: a PVRTC write of {} bytes of a level GPU work has written since the CPU last did: the A10X \
+                 driver replaces only those words, and the host has not read the level's other words back",
+                l.span
+            )));
+        };
+        let Some(first) = words.get_mut(..metal.len()) else {
+            return Err(MemError::invalid(format!(
+                "{call}: a PVRTC write of {} bytes into a level of {} bytes",
+                metal.len(),
+                words.len()
+            )));
+        };
+        first.copy_from_slice(&metal);
+        let whole = full_level(t, blocks, level)?;
+        self.upload_region(g, call, t, &whole, (level, slice), &words)?;
+        t.state.borrow_mut().pvrtc_words[i] = Some(words);
+        Ok(())
     }
 
     /// Write a region of a depth32float texture from bytes the CPU holds, through a render pass (`encode_depth_write`):
@@ -1282,6 +1317,7 @@ impl<A: Api> Memory<A> {
                 if !t.twins.is_empty() {
                     st.twin[i] = false;
                 }
+                st.gpu_wrote(i);
                 for a in &mut st.aliases {
                     a[i] = false;
                 }
@@ -1342,6 +1378,7 @@ impl<A: Api> Memory<A> {
         for a in &mut st.aliases {
             a.fill(false);
         }
+        st.pvrtc_words = pvrtc_zero_words(&t.geometry, t.blocks, t.per_level());
         Ok(())
     }
 
@@ -1422,6 +1459,7 @@ impl<A: Api> Memory<A> {
         } else {
             st.stored[i] = true;
         }
+        st.gpu_wrote(i);
         for a in &mut st.aliases {
             a[i] = false;
         }
@@ -1695,6 +1733,18 @@ impl<A: Api> Memory<A> {
         t.state.borrow_mut().stored[t.sub(level, layer)] = true;
         Ok(())
     }
+}
+
+/// The words of every PVRTC subresource of a texture as it starts, and as emptying its purgeable state leaves it: zeros,
+/// as the stored texture and the twin start (a level below two words by two keeps two by two, `pvrtc::data_len`).
+fn pvrtc_zero_words(g: &Geometry, blocks: Option<Blocks>, per_level: u32) -> Vec<Option<Vec<u8>>> {
+    let Some(bpp) = blocks.and_then(|b| b.pvrtc) else { return Vec::new() };
+    (0..g.mip_levels)
+        .flat_map(|level| {
+            let (w, h, _) = g.level_extent(level);
+            (0..per_level).map(move |_| Some(vec![0u8; pvrtc::data_len(bpp, w, h)]))
+        })
+        .collect()
 }
 
 /// The layout of a whole level (all of a 3D level's images), as tight rows.
