@@ -1179,7 +1179,8 @@ fn cpu_transfers_through_views() {
             assert_eq!(got, want, "{}: parent level 1 slice 1 texel ({x}, {y})", h.name());
         }
     }
-    // Metal's rules apply to the view: its level 2 and its slice 2 do not exist, though the parent's do.
+    // The A10X driver's validateRegion applies to the view's layout: its level 2 and its slice 2 do not exist, though
+    // the parent's do, so the guest logs and drops such a copy and the host refuses it as an invalid request.
     for (level, slice) in [(2, 0), (0, 2)] {
         let f = h.status(Request::GetBytesSlice(GetBytesSlice {
             texture: range_view,
@@ -1190,8 +1191,8 @@ fn cpu_transfers_through_views() {
             level,
             slice,
         }));
-        assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
-        assert!(f.message.contains("behavior Metal does not define"), "{f:?}");
+        assert_eq!(f.status, status::INVALID, "{f:?}");
+        assert!(f.message.contains("validateRegion refuses"), "{f:?}");
     }
 
     // An sRGB view's bytes are the texture's.
