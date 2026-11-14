@@ -9,8 +9,10 @@
 
 #import <Foundation/Foundation.h>
 
+#include <os/log.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,3 +41,16 @@ void WMLastReport(char *buffer, size_t size);
 #ifdef __cplusplus
 }
 #endif
+
+// The A10X driver's own report of misuse it detects, which it logs and goes on from: `AGX: <file>:<line>:<function>: ***
+// <message>` on standard error, then on the default os_log, at the error type and then at the info type, each when
+// enabled (e.g. -[AGXA10FamilyBlitContext resolveCounters:inRange:destinationBuffer:destinationOffset:], 0x21c8bb048 to
+// 0x21c8bb0ec).
+#define WM_AGX_LOG(file, line, function, message)                                                                    \
+    do {                                                                                                             \
+        fprintf(stderr, "AGX: %s:%d:%s: *** " message "\n", file, line, function);                                   \
+        if (os_log_type_enabled(OS_LOG_DEFAULT, OS_LOG_TYPE_ERROR))                                                  \
+            os_log_error(OS_LOG_DEFAULT, "AGX: AGX: %s:%d:%s: *** " message "\n", file, line, function);             \
+        if (os_log_type_enabled(OS_LOG_DEFAULT, OS_LOG_TYPE_INFO))                                                   \
+            os_log_info(OS_LOG_DEFAULT, "AGX: AGX: %s:%d:%s: *** " message "\n", file, line, function);              \
+    } while (0)

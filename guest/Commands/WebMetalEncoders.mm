@@ -488,6 +488,27 @@ using namespace webmetal;
                      @"device");
 }
 
+// -[AGXA10FamilyBlitContext resolveCounters:inRange:destinationBuffer:destinationOffset:] (AGXMetalA10 0x21c8bafdc)
+// does nothing for an empty range, and logs a range past the buffer's sampleCount, which is 0 for nil
+// (agxa_blit_template.hpp line 3355), and encodes nothing. Otherwise it copies the samples out of the buffer's sample
+// storage as a buffer copy (0x21c8bb174); the plugin makes no counter sample buffer (its storage is LOUD), so a buffer
+// here is another device's.
+- (void)resolveCounters:(id<MTLCounterSampleBuffer>)sampleBuffer
+                inRange:(NSRange)range
+      destinationBuffer:(id<MTLBuffer>)destinationBuffer
+      destinationOffset:(NSUInteger)destinationOffset
+{
+    if (!range.length)
+        return;
+    if (!sampleBuffer) {
+        WM_AGX_LOG("agxa_blit_template.hpp", 3355, "resolveCounters",
+                   "Cannot resolve MTLCounter data: out of bounds access");
+        return;
+    }
+    WMLoudMethod(self, _cmd, "a counter sample buffer the plugin did not make (-newCounterSampleBufferWithDescriptor:"
+                             "error: fails LOUD where the A10X driver makes the sample storage)");
+}
+
 @end
 
 // Compute --------------------------------------------------------------------------------------------------------------

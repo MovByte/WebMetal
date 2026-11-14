@@ -6,7 +6,29 @@
 // The class adopts the driver's protocols; these categories implement the driver selectors they declare.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
+namespace {
+
+// The encoders' -setMTLCounterSampleLocationWithBuffer:... with a counter sample buffer: the driver keeps the indices,
+// checks each against the buffer's sampleCount (0x21c9ced9c) and attaches the buffer's sample storage to the encoder
+// when one is valid (0x21c9ceaf4), and the pass then samples it at the encoder's boundaries. The plugin makes no
+// AGXMTLCounterSampleBuffer (its storage is LOUD), so a buffer here is another device's.
+const char kSampleLocation[] =
+    "a counter sample buffer the plugin did not make (-newCounterSampleBufferWithDescriptor:error: fails LOUD where the "
+    "A10X driver makes the sample storage): the driver checks the indices against its sampleCount and attaches it only "
+    "if it is an AGXMTLCounterSampleBuffer";
+
+}  // namespace
+
 @implementation AGXA10FamilyBlitContext (WebMetalSPI)
+
+// -[AGXA10FamilyBlitContext setMTLCounterSampleLocationWithBuffer:startIndex:endIndex:] (AGXMetalA10 0x21c8baf5c):
+// NO for a nil buffer, before anything is kept.
+- (BOOL)setMTLCounterSampleLocationWithBuffer:(id)buffer startIndex:(uint32_t)start endIndex:(uint32_t)end
+{
+    if (!buffer)
+        return NO;
+    WMLoudMethod(self, _cmd, kSampleLocation);
+}
 
 // -[AGXA10FamilyBlitContext commandBatchIdOffset] (AGXMetalA10 0x21c8baf38): the constant 0.
 - (uint32_t)commandBatchIdOffset
@@ -17,6 +39,15 @@
 @end
 
 @implementation AGXA10FamilyComputeContext (WebMetalSPI)
+
+// -[AGXA10FamilyComputeContext setMTLCounterSampleLocationWithBuffer:startIndex:endIndex:] (AGXMetalA10 0x21c90c438):
+// NO for a nil buffer, before anything is kept.
+- (BOOL)setMTLCounterSampleLocationWithBuffer:(id)buffer startIndex:(uint32_t)start endIndex:(uint32_t)end
+{
+    if (!buffer)
+        return NO;
+    WMLoudMethod(self, _cmd, kSampleLocation);
+}
 
 // -[AGXA10FamilyComputeContext commandBatchIdOffset] (AGXMetalA10 0x21c90c414): the constant 0.
 - (uint32_t)commandBatchIdOffset
@@ -66,6 +97,35 @@
 @end
 
 @implementation AGXA10FamilyRenderContext (WebMetalSPI)
+
+// -[AGXA10FamilyRenderContext setMTLCounterSampleLocationWithBuffer:startIndex:endIndex:dm:] (AGXMetalA10 0x21c9652a8):
+// the A10 family's render encoders take the vertex and fragment form; the driver logs that (agxa_render_objc.mm line
+// 1268) and raises through -doesNotRecognizeSelector:.
+- (BOOL)setMTLCounterSampleLocationWithBuffer:(id)buffer
+                                   startIndex:(uint32_t)start
+                                     endIndex:(uint32_t)end
+                                           dm:(uint32_t)dm
+{
+    WM_AGX_LOG("agxa_render_objc.mm", 1268,
+               "-[AGXA10FamilyRenderContext setMTLCounterSampleLocationWithBuffer:startIndex:endIndex:dm:]",
+               "Please use setMTLCounterSampleLocationWithBuffer:vertexStartIndex:vertexEndIndex:fragmentStartIndex:"
+               "fragmentEndIndex:");
+    [self doesNotRecognizeSelector:_cmd];
+    return NO;
+}
+
+// -[AGXA10FamilyRenderContext setMTLCounterSampleLocationWithBuffer:vertexStartIndex:vertexEndIndex:fragmentStartIndex:
+// fragmentEndIndex:] (AGXMetalA10 0x21c965420): NO for a nil buffer, before anything is kept.
+- (BOOL)setMTLCounterSampleLocationWithBuffer:(id)buffer
+                             vertexStartIndex:(uint32_t)vertexStart
+                               vertexEndIndex:(uint32_t)vertexEnd
+                           fragmentStartIndex:(uint32_t)fragmentStart
+                             fragmentEndIndex:(uint32_t)fragmentEnd
+{
+    if (!buffer)
+        return NO;
+    WMLoudMethod(self, _cmd, kSampleLocation);
+}
 
 // -[AGXA10FamilyRenderContext useComputePipelineState:] and -useComputePipelineStates:count: (AGXMetalA10 0x21c9612b4,
 // 0x21c9612b8) return at once.

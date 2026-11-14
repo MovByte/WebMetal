@@ -5,6 +5,7 @@
 #import <objc/runtime.h>
 
 #include <dlfcn.h>
+#include <mach/mach_time.h>
 
 // The class adopts the driver's protocols; these categories implement the driver selectors they declare.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
@@ -29,9 +30,87 @@ NSString *metalString(id self, SEL _cmd, const char *symbol)
     return *address;
 }
 
+// AGXMTLCounterSampleBuffer's refusals: an NSError of MTLCounterErrorDomain with the description as
+// NSLocalizedDescriptionKey (none when the description is nil), autoreleased.
+NSError *counterError(NSInteger code, NSString *description)
+{
+    NSDictionary *info = description ? [NSDictionary dictionaryWithObject:description forKey:NSLocalizedDescriptionKey]
+                                     : nil;
+    return [[NSError alloc] initWithDomain:MTLCounterErrorDomain code:code userInfo:info];
+}
+
+const char kCounterSampleStorage[] =
+    "AGXMTLCounterSampleBuffer keeps its samples in an AGXBuffer that -[AGXBuffer initCounterSampleBufferWithDevice:"
+    "length:options:] (0x21c8a4544) creates unsub-allocated with the AGX resource argument 0x10 at +0x5c of the creation "
+    "arguments, whose effect in the AGX kernel extension (and so the contents a resolve reads before any pass samples) is "
+    "not read; the passes' sample buffer attachments then have the GPU write timestamps into it at stage boundaries, and "
+    "the host writes no GPU timestamps";
+
+// -[AGXMTLCounterSampleBuffer initWithDevice:length:label:options:error:] (AGXMetalA10 0x21c9ce7d0): clears *error,
+// refuses a length outside 1 to 32768 bytes and one that is not a multiple of 8 (MTLCounterSampleBufferErrorInvalid
+// with the driver's descriptions, 0x21c9ce828 to 0x21c9ce900), then makes the sample storage.
+id newCounterSampleBuffer(id self, SEL _cmd, uint64_t length, NSError *__autoreleasing *error)
+{
+    if (error)
+        *error = nil;
+    if (length - 1 >= 0x8000 || (length & 7)) {
+        NSString *refusal =
+            length - 1 >= 0x8000
+                ? [NSString stringWithFormat:@"Invalid sample buffer length: %llu B. Expected range: %zu -> %u",
+                                             static_cast<unsigned long long>(length), size_t(8), 32768u]
+                : [NSString stringWithFormat:@"Invalid sample buffer length: %llu B. Length must be aligned to %zu B",
+                                             static_cast<unsigned long long>(length), size_t(8)];
+        if (error)
+            *error = counterError(MTLCounterSampleBufferErrorInvalid, refusal);
+        return nil;
+    }
+    WMLoudMethod(self, _cmd, kCounterSampleStorage);
+}
+
 }  // namespace
 
 @implementation AGXA10FamilyDevice (WebMetalSPI)
+
+// -[AGXA10FamilyDevice newCounterSampleBufferWithDescriptor:error:] (AGXMetalA10 0x21c8db494) through
+// -[AGXMTLCounterSampleBuffer initWithDevice:descriptor:error:] (0x21c9ce600): clears *error and refuses a counter set
+// that does not hold exactly one counter, one not named MTLCommonCounterSetTimestamp and a counter not named
+// MTLCommonCounterTimestamp (MTLCounterSampleBufferErrorInvalid with the driver's descriptions); otherwise it makes a
+// buffer of sampleCount 8-byte samples with the descriptor's label and storage mode.
+- (id<MTLCounterSampleBuffer>)newCounterSampleBufferWithDescriptor:(MTLCounterSampleBufferDescriptor *)descriptor
+                                                             error:(NSError *__autoreleasing *)error
+{
+    if (error)
+        *error = nil;
+    NSString *refusal = nil;
+    if (descriptor.counterSet.counters.count != 1) {
+        refusal = @"Invalid counter set size. Expecting 1 counter";
+    } else {
+        NSString *expectedSet = metalString(self, _cmd, "MTLCommonCounterSetTimestamp");
+        NSString *foundSet = descriptor.counterSet.name;
+        NSString *expectedCounter = metalString(self, _cmd, "MTLCommonCounterTimestamp");
+        if (![foundSet isEqualToString:expectedSet]) {
+            refusal = [NSString stringWithFormat:@"Invalid counter set name. Expecting: %@. Found: %@", expectedSet,
+                                                 foundSet];
+        } else {
+            NSString *foundCounter = descriptor.counterSet.counters[0].name;
+            if (![foundCounter isEqualToString:expectedCounter])
+                refusal = [NSString stringWithFormat:@"Invalid counter name. Expecting: %@. Found: %@",
+                                                     expectedCounter, foundCounter];
+            else
+                return newCounterSampleBuffer(self, _cmd, uint64_t(descriptor.sampleCount) << 3, error);
+        }
+    }
+    if (error)
+        *error = counterError(MTLCounterSampleBufferErrorInvalid, refusal);
+    return nil;
+}
+
+// -[AGXA10FamilyDevice newCounterSampleBufferWithLength:label:error:] (AGXMetalA10 0x21c8db4e0): the length form of the
+// initializer with options 0.
+- (id)newCounterSampleBufferWithLength:(NSUInteger)length label:(NSString *)label error:(NSError *__autoreleasing *)error
+{
+    return newCounterSampleBuffer(self, _cmd, length, error);
+}
 
 // -[AGXA10FamilyDevice vendorName] (AGXMetalA10 0x21c8d4d24): the constant string "Apple".
 - (NSString *)vendorName
@@ -123,6 +202,31 @@ NSString *metalString(id self, SEL _cmd, const char *symbol)
          description:metalString(self, _cmd, "MTLCounterSetDescriptionTimestamp")
             counters:[NSArray arrayWithObjects:counter, nil]];
     return [NSArray arrayWithObjects:set, nil];
+}
+
+// -[AGXA10FamilyDevice counterSampleBufferLimits] (AGXMetalA10 0x21c8db530): one constant dictionary (0x22b7d86a8),
+// the same object on every call, of int numbers: maxBufferSize 32768, maxDeviceBufferNum 32, maxGlobalBufferNum 1024.
+- (NSDictionary *)counterSampleBufferLimits
+{
+    static NSDictionary *limits = [[NSDictionary alloc]
+        initWithObjects:@[ [NSNumber numberWithInt:32768], [NSNumber numberWithInt:32], [NSNumber numberWithInt:1024] ]
+                forKeys:@[ @"maxBufferSize", @"maxDeviceBufferNum", @"maxGlobalBufferNum" ]];
+    return limits;
+}
+
+// -[AGXA10FamilyDevice sampleTimestamps:gpuTimestamp:] (AGXMetalA10 0x21c8db364): one mach_absolute_time reading
+// converted to nanoseconds with the timebase (t * numer / denom in 64 bits, the timebase read once), stored in both.
+- (void)sampleTimestamps:(MTLTimestamp *)cpuTimestamp gpuTimestamp:(MTLTimestamp *)gpuTimestamp
+{
+    const uint64_t ticks = mach_absolute_time();
+    static const mach_timebase_info_data_t timebase = [] {
+        mach_timebase_info_data_t info;
+        mach_timebase_info(&info);
+        return info;
+    }();
+    const uint64_t nanoseconds = ticks * timebase.numer / timebase.denom;
+    *cpuTimestamp = nanoseconds;
+    *gpuTimestamp = nanoseconds;
 }
 
 // -[AGXA10FamilyDevice disableComputeEncoderCoalescing] and -setDisableComputeEncoderCoalescing: (AGXMetalA10

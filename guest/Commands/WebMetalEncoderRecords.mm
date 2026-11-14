@@ -2447,17 +2447,6 @@
     webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
 }
 
-// BlitResolveCounters (0x1514).
-- (void)resolveCounters:(id<MTLCounterSampleBuffer>)sampleBuffer inRange:(NSRange)range destinationBuffer:(id<MTLBuffer>)destinationBuffer destinationOffset:(NSUInteger)destinationOffset
-{
-    webmetal::wire::BlitResolveCounters record;
-    record.sampleBuffer = webmetal::EncoderReference(self, _cmd, *_encoder, sampleBuffer, true);
-    record.range = {range.location, range.length};
-    record.destinationBuffer = webmetal::EncoderReference(self, _cmd, *_encoder, destinationBuffer, true);
-    record.destinationOffset = destinationOffset;
-    webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
-}
-
 // BlitSynchronizeResource (0x1516).
 - (void)synchronizeResource:(id<MTLResource>)resource
 {

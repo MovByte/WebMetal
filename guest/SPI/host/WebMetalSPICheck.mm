@@ -13,6 +13,7 @@
 #import <objc/runtime.h>
 
 #include <dlfcn.h>
+#include <mach/mach_time.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -36,6 +37,8 @@
 - (NSUInteger)gpuCoreCount;
 - (NSString *)gpuRevisionName;
 - (id)newTextureLayoutWithDescriptor:(MTLTextureDescriptor *)descriptor isHeapOrBufferBacked:(BOOL)heapOrBufferBacked;
+- (NSDictionary *)counterSampleBufferLimits;
+- (id)newCounterSampleBufferWithLength:(NSUInteger)length label:(NSString *)label error:(NSError **)error;
 @end
 
 @protocol SPITextureLayout
@@ -176,6 +179,43 @@ void checkDevice(id<MTLDevice> device)
               sets[0].counters.count == 1 && [sets[0].counters[0].name isEqualToString:MTLCommonCounterTimestamp],
           "counterSets is one timestamp set of one timestamp counter");
     check(device.counterSets != sets, "counterSets makes a new array on every call");
+    // -[AGXA10FamilyDevice counterSampleBufferLimits] 0x21c8db530: one constant dictionary of int numbers.
+    NSDictionary *limits = [spi counterSampleBufferLimits];
+    check(limits == [spi counterSampleBufferLimits] && limits.count == 3 &&
+              [limits[@"maxBufferSize"] isEqual:@32768] && [limits[@"maxDeviceBufferNum"] isEqual:@32] &&
+              [limits[@"maxGlobalBufferNum"] isEqual:@1024] &&
+              strcmp([limits[@"maxBufferSize"] objCType], @encode(int)) == 0,
+          "counterSampleBufferLimits is the A10X's constant dictionary");
+    // -[AGXA10FamilyDevice sampleTimestamps:gpuTimestamp:] 0x21c8db364: one reading in nanoseconds for both.
+    MTLTimestamp cpuTime = 0, gpuTime = 0, laterCpu = 0, laterGpu = 0;
+    [device sampleTimestamps:&cpuTime gpuTimestamp:&gpuTime];
+    [device sampleTimestamps:&laterCpu gpuTimestamp:&laterGpu];
+    mach_timebase_info_data_t timebase;
+    mach_timebase_info(&timebase);
+    const uint64_t now = mach_absolute_time() * timebase.numer / timebase.denom;
+    check(cpuTime == gpuTime && laterCpu == laterGpu && cpuTime <= laterCpu && laterCpu <= now,
+          "sampleTimestamps:gpuTimestamp: stores one nanosecond reading in both");
+    // AGXMTLCounterSampleBuffer's refusals (0x21c9ce600, 0x21c9ce7d0).
+    MTLCounterSampleBufferDescriptor *cd = [MTLCounterSampleBufferDescriptor new];
+    cd.sampleCount = 4;
+    NSError *counterError = nil;
+    id refusedSet = [device newCounterSampleBufferWithDescriptor:cd error:&counterError];
+    check(!refusedSet && [counterError.domain isEqualToString:MTLCounterErrorDomain] &&
+              counterError.code == MTLCounterSampleBufferErrorInvalid &&
+              [counterError.localizedDescription isEqualToString:@"Invalid counter set size. Expecting 1 counter"],
+          "a counter sample buffer without a counter set is refused as the A10X refuses it");
+    counterError = nil;
+    id refusedLength = [spi newCounterSampleBufferWithLength:0 label:nil error:&counterError];
+    check(!refusedLength && counterError.code == MTLCounterSampleBufferErrorInvalid &&
+              [counterError.localizedDescription
+                  isEqualToString:@"Invalid sample buffer length: 0 B. Expected range: 8 -> 32768"],
+          "a counter sample buffer of 0 bytes is refused as the A10X refuses it");
+    counterError = nil;
+    id refusedAlignment = [spi newCounterSampleBufferWithLength:12 label:nil error:&counterError];
+    check(!refusedAlignment && counterError.code == MTLCounterSampleBufferErrorInvalid &&
+              [counterError.localizedDescription
+                  isEqualToString:@"Invalid sample buffer length: 12 B. Length must be aligned to 8 B"],
+          "a counter sample buffer of 12 bytes is refused as the A10X refuses it");
     // The descriptions are 21H461's MTLCounterSetDescriptionTimestamp and MTLCounterDescriptionTimestamp.
     check(sets.count == 1 && [[(id)sets[0] description] isEqualToString:@"A counter set containing only a GPU timestamp."] &&
               [[(id)sets[0].counters[0] description] isEqualToString:@"A timestamp in nanoseconds on the GPU."],
@@ -568,6 +608,15 @@ void checkListings(id<MTLDevice> device)
           destinationOrigin:MTLOriginMake(0, 0, 0)];
     [blitter generateMipmapsForTexture:mipmapped];
     [blitter copyFromBuffer:source sourceOffset:0 toBuffer:untouched destinationOffset:0 size:0];
+    // -resolveCounters:... with no counter sample buffer: nothing for an empty range, the driver's log otherwise.
+    __block BOOL noLocation = NO;
+    id<MTLCounterSampleBuffer> noSamples = nil;
+    check(quiet(^{
+        [blitter resolveCounters:noSamples inRange:NSMakeRange(0, 0) destinationBuffer:untouched destinationOffset:0];
+        [blitter resolveCounters:noSamples inRange:NSMakeRange(0, 1) destinationBuffer:untouched destinationOffset:0];
+        noLocation = ![(id<SPIConstants>)blitter setMTLCounterSampleLocationWithBuffer:nil startIndex:0 endIndex:1];
+    }) && noLocation,
+          "resolveCounters with no sample buffer encodes nothing and a nil sample location is NO");
     [blitter endEncoding];
     [blits encodeWaitForEvent:blitEvent value:1];
     [blits commit];
