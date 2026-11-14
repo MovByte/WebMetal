@@ -7,6 +7,22 @@
 
 #include <TargetConditionals.h>
 
+#if TARGET_OS_OSX
+// Whether the device under test is a macOS GPU, as it reports through
+// supportsFamily: with MTLGPUFamilyMac2, the family of the macOS GPUs (the
+// Apple M4 reports it: device.families family.mac2). The properties
+// MTLDevice.h declares for macOS alone are recorded for such a device only: a
+// device of another platform made available on this Mac (a provider's)
+// answers what its own platform's devices answer, and those have none of them.
+static BOOL WMDeviceIsMacGPU(id<MTLDevice> device)
+{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [device supportsFamily:MTLGPUFamilyMac2];
+#pragma clang diagnostic pop
+}
+#endif
+
 WMREF_CASE(deviceIdentity, "device.identity", "device.identity",
            "Device name, architecture and memory model")
 {
@@ -17,6 +33,7 @@ WMREF_CASE(deviceIdentity, "device.identity", "device.identity",
     // registryID and currentAllocatedSize change between boots and runs; they
     // are not recorded.
 #if TARGET_OS_OSX
+    if (!WMDeviceIsMacGPU(c.device)) return;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     [c value:@"low-power" boolean:c.device.lowPower rule:WMDevice()];
@@ -114,6 +131,7 @@ WMREF_CASE(deviceLimits, "device.limits", "device.limits",
         [c value:[NSString stringWithFormat:@"supports-vertex-amplification-count.%lu", (unsigned long)count]
          boolean:[d supportsVertexAmplificationCount:count] rule:WMDevice()];
 #if TARGET_OS_OSX
+    if (!WMDeviceIsMacGPU(d)) return;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     [c value:@"depth24-stencil8-pixel-format-supported" boolean:d.depth24Stencil8PixelFormatSupported
