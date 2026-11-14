@@ -2,20 +2,28 @@
 // implementations do nothing or answer a constant.
 
 #import "WebMetalSPI.h"
+#import "../Commands/WebMetalCommandState.h"
+#import "../Resources/WebMetalCounterSampleBuffer.h"
 
 // The class adopts the driver's protocols; these categories implement the driver selectors they declare.
 #pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 
 namespace {
 
-// The encoders' -setMTLCounterSampleLocationWithBuffer:... with a counter sample buffer: the driver keeps the indices,
-// checks each against the buffer's sampleCount (0x21c9ced9c) and attaches the buffer's sample storage to the encoder
-// when one is valid (0x21c9ceaf4), and the pass then samples it at the encoder's boundaries. The plugin makes no
-// AGXMTLCounterSampleBuffer (its storage is LOUD), so a buffer here is another device's.
-const char kSampleLocation[] =
-    "a counter sample buffer the plugin did not make (-newCounterSampleBufferWithDescriptor:error: fails LOUD where the "
-    "A10X driver makes the sample storage): the driver checks the indices against its sampleCount and attaches it only "
-    "if it is an AGXMTLCounterSampleBuffer";
+// The encoders' -setMTLCounterSampleLocationWithBuffer:... with a buffer: the driver keeps the indices, checks each in
+// order against the buffer's sampleCount (validateSampleIndex, 0x21c9ced9c, which logs one past the samples and makes it
+// MTLCounterDontSample) and, when one is a sample, attaches the buffer's storage to the encoder (setCounterSampleBuffer,
+// 0x21c9ceaf4), answering whether it did; the GPU then writes timestamps into the storage, which the encoder's
+// endEncoding refuses.
+BOOL setSampleLocation(webmetal::EncoderState &encoder, id buffer, std::initializer_list<uint32_t> values)
+{
+    bool sampled = false;
+    for (uint32_t value : values) {
+        uint32_t index = value;
+        sampled |= webmetal::ValidateSampleIndex(buffer, &index);
+    }
+    return sampled && webmetal::AttachSampleStorage(&encoder.sampleStorage, buffer);
+}
 
 }  // namespace
 
@@ -27,7 +35,7 @@ const char kSampleLocation[] =
 {
     if (!buffer)
         return NO;
-    WMLoudMethod(self, _cmd, kSampleLocation);
+    return setSampleLocation(*_encoder, buffer, {start, end});
 }
 
 // -[AGXA10FamilyBlitContext commandBatchIdOffset] (AGXMetalA10 0x21c8baf38): the constant 0.
@@ -46,7 +54,7 @@ const char kSampleLocation[] =
 {
     if (!buffer)
         return NO;
-    WMLoudMethod(self, _cmd, kSampleLocation);
+    return setSampleLocation(*_encoder, buffer, {start, end});
 }
 
 // -[AGXA10FamilyComputeContext commandBatchIdOffset] (AGXMetalA10 0x21c90c414): the constant 0.
@@ -124,7 +132,7 @@ const char kSampleLocation[] =
 {
     if (!buffer)
         return NO;
-    WMLoudMethod(self, _cmd, kSampleLocation);
+    return setSampleLocation(*_encoder, buffer, {vertexStart, vertexEnd, fragmentStart, fragmentEnd});
 }
 
 // -[AGXA10FamilyRenderContext useComputePipelineState:] and -useComputePipelineStates:count: (AGXMetalA10 0x21c9612b4,

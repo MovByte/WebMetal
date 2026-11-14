@@ -82,6 +82,11 @@
 - (void)encodeDashboardTagForResourceGroup:(id)group;
 @end
 
+@protocol SPICounterSampleBuffer
+- (NSUInteger)sampleSize;
+- (id<MTLBuffer>)buffer;
+@end
+
 @protocol SPIResources
 - (NSUInteger)resourceSize;
 - (BOOL)isComplete;
@@ -674,6 +679,83 @@ void checkListings(id<MTLDevice> device)
     check(blits.status == MTLCommandBufferStatusCompleted, "the command buffer with the blits completes");
 }
 
+// AGXMTLCounterSampleBuffer (0x21c9ce600 to 0x21c9cea64): sampleCount 8-byte samples in an AGXBuffer the kernel counts,
+// at most 32 per device (0xfffffff005c31c2c); its range resolves on the CPU and through a blit, and an encoder whose
+// sample location attaches it has the GPU write timestamps, which is LOUD.
+void checkCounterSampleBuffers(id<MTLDevice> device)
+{
+    id<SPIDevice> spi = (id<SPIDevice>)device;
+    MTLCounterSampleBufferDescriptor *cd = [MTLCounterSampleBufferDescriptor new];
+    cd.counterSet = device.counterSets[0];
+    cd.sampleCount = 4;
+    cd.label = @"samples";
+    cd.storageMode = MTLStorageModeShared;
+    NSError *error = nil;
+    id<MTLCounterSampleBuffer> samples = [device newCounterSampleBufferWithDescriptor:cd error:&error];
+    id<SPICounterSampleBuffer> storage = (id<SPICounterSampleBuffer>)samples;
+    check(samples && !error && [NSStringFromClass([(id)samples class]) isEqualToString:@"AGXMTLCounterSampleBuffer"] &&
+              samples.sampleCount == 4 && [samples.label isEqualToString:@"samples"] && samples.device == device &&
+              [storage sampleSize] == 8 && [[storage buffer] length] == 32 &&
+              [NSStringFromClass([(id)[storage buffer] class]) isEqualToString:@"AGXBuffer"],
+          "a counter sample buffer is an AGXMTLCounterSampleBuffer of 8-byte samples in an AGXBuffer");
+    uint64_t *words = (uint64_t *)[[storage buffer] contents];
+    words[1] = 0x1122334455667788ull;
+    words[2] = 0x99aabbccddeeff00ull;
+    NSData *resolved = [samples resolveCounterRange:NSMakeRange(1, 2)];
+    check(resolved.length == 16 && !memcmp(resolved.bytes, words + 1, 16) &&
+              ![samples resolveCounterRange:NSMakeRange(3, 2)] && ![samples resolveCounterRange:NSMakeRange(0, 0)],
+          "resolveCounterRange: copies the range's samples and answers nil for an empty one or one past the samples");
+
+    // resolveCounters:inRange:destinationBuffer:destinationOffset: copies the samples on the GPU.
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+    id<MTLBuffer> into = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+    memset(into.contents, 0xee, 64);
+    id<MTLCommandBuffer> resolve = [queue commandBuffer];
+    id<MTLBlitCommandEncoder> blit = [resolve blitCommandEncoder];
+    [blit resolveCounters:samples inRange:NSMakeRange(1, 2) destinationBuffer:into destinationOffset:8];
+    [blit endEncoding];
+    [resolve commit];
+    [resolve waitUntilCompleted];
+    const uint8_t *got = (const uint8_t *)into.contents;
+    check(resolve.status == MTLCommandBufferStatusCompleted && got[0] == 0xee && got[7] == 0xee &&
+              !memcmp(got + 8, words + 1, 16) && got[24] == 0xee,
+          "resolveCounters copies the samples into the destination");
+
+    // An index past the samples is MTLCounterDontSample (logged); with no sample the storage is not attached.
+    id<MTLCommandBuffer> located = [queue commandBuffer];
+    id<MTLBlitCommandEncoder> sampling = [located blitCommandEncoder];
+    const BOOL none = [(id<SPIConstants>)sampling setMTLCounterSampleLocationWithBuffer:samples startIndex:9
+                                                                               endIndex:UINT32_MAX];
+    const BOOL some = [(id<SPIConstants>)sampling setMTLCounterSampleLocationWithBuffer:samples startIndex:1
+                                                                               endIndex:UINT32_MAX];
+    NSString *reason = loudReason(^{
+        [sampling endEncoding];
+    });
+    check(!none && some && [reason containsString:@"timestamps"],
+          "a sample location attaches the storage when an index is a sample, and the GPU's timestamps are LOUD");
+    // The encoder did not end: keep it and its command buffer, whose deallocation asserts that it ended.
+    CFBridgingRetain(sampling);
+    CFBridgingRetain(located);
+
+    // The kernel counts 32 per device: the 33rd fails as an allocation failure; a released one frees its place.
+    NSMutableArray *held = [NSMutableArray arrayWithObject:samples];
+    while (held.count < 32) {
+        id more = [spi newCounterSampleBufferWithLength:8 label:nil error:nil];
+        if (!more)
+            break;
+        [held addObject:more];
+    }
+    error = nil;
+    id refused = [spi newCounterSampleBufferWithLength:8 label:nil error:&error];
+    check(held.count == 32 && !refused && [error.domain isEqualToString:MTLCounterErrorDomain] &&
+              error.code == MTLCounterSampleBufferErrorOutOfMemory &&
+              [error.localizedDescription isEqualToString:@"Cannot allocate sample buffer"],
+          "the 33rd counter sample buffer of a device is refused as an allocation failure");
+    [held removeLastObject];
+    id again = [spi newCounterSampleBufferWithLength:8 label:nil error:nil];
+    check(again != nil, "a released counter sample buffer frees its place");
+}
+
 void checkConstants()
 {
     // -[AGXA10FamilyRenderPipeline ...] 0x21c977a54 to 0x21c977c20.
@@ -735,6 +817,9 @@ int main(int argc, char **argv)
         checkNoCopy(device);
         checkStamps(device);
         checkListings(device);
+        @autoreleasepool {
+            checkCounterSampleBuffers(device);
+        }
         checkConstants();
         printf("%s: %u of %u SPI checks failed\n", gFailures ? "FAIL" : "PASS", gFailures, gChecks);
         return gFailures ? 1 : 0;

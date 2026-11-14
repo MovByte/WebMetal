@@ -407,6 +407,32 @@ fn texture_cpu_access_through_the_executor() {
     h.g.assert_no_errors();
 }
 
+/// The AGX kernel extension counts 1024 counter sample buffers per system (kernelcache 0xfffffff005c31c2c): the
+/// 1025th is not counted; a released one is not counted any more, which frees its place; counting needs a buffer and
+/// happens once.
+#[test]
+fn counter_sample_buffers_are_counted_per_system() {
+    let h = Harness::new();
+    let count = |buffer: Handle| match h.request(Request::CountCounterSampleBuffer(CountCounterSampleBuffer { buffer }))
+    {
+        Reply::CountCounterSampleBuffer(Ok(r)) => r.counted,
+        other => panic!("{other:?}"),
+    };
+    // Private (0x20) 8-byte buffers: no guest memory.
+    let buffers: Vec<Handle> = (0..1025).map(|_| h.buffer(&[0; 8], 0x20).0).collect();
+    for &b in &buffers[..1024] {
+        assert!(count(b));
+    }
+    assert!(!count(buffers[1024]));
+    h.ok(Request::Release(Release { object: buffers[7] }));
+    assert!(count(buffers[1024]));
+    let f = h.status(Request::CountCounterSampleBuffer(CountCounterSampleBuffer { buffer: buffers[0] }));
+    assert_eq!(f.status, status::INVALID, "{f:?}");
+    let f = h.status(Request::CountCounterSampleBuffer(CountCounterSampleBuffer { buffer: h.handle() }));
+    assert_eq!(f.status, status::INVALID, "{f:?}");
+    h.g.assert_no_errors();
+}
+
 /// `resource.purgeable-state` and the heap and aliasing rules through the executor.
 #[test]
 fn purgeable_state_and_heaps_through_the_executor() {

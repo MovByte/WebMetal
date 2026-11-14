@@ -68,3 +68,6 @@ name = "AGXA10FamilyBinaryArchive"
 
 [[class]]
 name = "AGXTextureLayout"
+
+[[class]]
+name = "AGXMTLCounterSampleBuffer"

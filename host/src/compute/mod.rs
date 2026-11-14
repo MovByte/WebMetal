@@ -210,7 +210,7 @@ impl<A: Api> ComputeService<A> {
                 }
                 if d.sample_buffer_attachments.iter().any(|a| a.sample_buffer.is_some()) {
                     return refused(
-                        "counter sample buffer attachments: the wire protocol has no request that creates a counter sample buffer",
+                        "counter sample buffer attachments: counter sample buffers have no handle (the guest keeps the attachments)",
                     );
                 }
                 if d.substream_count != 0 {
@@ -416,7 +416,7 @@ impl<A: Api> ComputeService<A> {
             ),
             Command::ComputeSampleCountersInBuffer(_) => refused(
                 "the A10X does not support MTLCounterSamplingPointAtDispatchBoundary (device profile, \
-                 supportsCounterSampling:), and the wire protocol has no request that creates a counter sample buffer",
+                 supportsCounterSampling:), and counter sample buffers have no handle",
             ),
             Command::ComputeSetAccelerationStructure(_)
             | Command::ComputeSetIntersectionFunctionTable(_)

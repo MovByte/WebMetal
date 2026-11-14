@@ -54,3 +54,13 @@ void WMLastReport(char *buffer, size_t size);
         if (os_log_type_enabled(OS_LOG_DEFAULT, OS_LOG_TYPE_INFO))                                                   \
             os_log_info(OS_LOG_DEFAULT, "AGX: AGX: %s:%d:%s: *** " message "\n", file, line, function);              \
     } while (0)
+
+// As WM_AGX_LOG, with arguments for the message's conversions (e.g. validateSampleIndex, 0x21c9ced9c).
+#define WM_AGX_LOG_ARGS(file, line, function, message, ...)                                                          \
+    do {                                                                                                             \
+        fprintf(stderr, "AGX: %s:%d:%s: *** " message "\n", file, line, function, __VA_ARGS__);                      \
+        if (os_log_type_enabled(OS_LOG_DEFAULT, OS_LOG_TYPE_ERROR))                                                  \
+            os_log_error(OS_LOG_DEFAULT, "AGX: AGX: %s:%d:%s: *** " message "\n", file, line, function, __VA_ARGS__); \
+        if (os_log_type_enabled(OS_LOG_DEFAULT, OS_LOG_TYPE_INFO))                                                   \
+            os_log_info(OS_LOG_DEFAULT, "AGX: AGX: %s:%d:%s: *** " message "\n", file, line, function, __VA_ARGS__);  \
+    } while (0)

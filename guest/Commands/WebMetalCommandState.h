@@ -77,6 +77,9 @@ struct EncoderState {
     // A render encoder's: the kernel resource of its pass's visibility result buffer (KernelResourceKey), which the
     // driver lists once the encoder sets a visibility result mode other than Disabled.
     uint64_t visibilityResultKey = 0;
+    // The counter sample storage the encoder's sample location attaches (setCounterSampleBuffer, AGXMetalA10
+    // 0x21c9ceaf4): the GPU then writes timestamps into it, which endEncoding refuses.
+    __strong id sampleStorage = nil;
     // The objects the arguments of the record being written name where the A10X driver's listing depends on the
     // record's values (Listing::ByRecord): the record's NoteRecordListing decides each and clears the list.
     struct RecordObject {

@@ -36,7 +36,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 use crate::embed::{Embedder, TaskId};
@@ -45,13 +45,14 @@ use crate::format::handling::{self, Resolution, Upload};
 use crate::format::webgpu::{HostFeatures, WebGpuFormat};
 use crate::gpu::{Api, GpuFuture};
 use webmetal_wire::{
-    BufferDidModifyRangeReply, CreateBufferNoCopyReply, CreateBufferReply, CreateBufferTextureReply,
-    CreateBufferWithBytesReply, CreateHeapReply, CreateLinearTextureReply, CreateTextureNoCopyReply,
-    CreateTextureReply, CreateTextureViewLevelsSlicesReply, CreateTextureViewLevelsSlicesResourceIndexReply,
-    CreateTextureViewLevelsSlicesSwizzleReply, CreateTextureViewLevelsSlicesSwizzleResourceIndexReply,
-    CreateTextureViewReply, CreateTextureViewResourceIndexReply, CreateTextureWithIOSurfaceReply, Failure,
-    GetBytesReply, GetBytesSliceReply, Handle, HeapCreateBufferReply, HeapCreateTextureReply, MakeAliasableReply,
-    Region, ReplaceRegionReply, ReplaceRegionSliceReply, Reply, Request, SetPurgeableState, SetPurgeableStateReply,
+    BufferDidModifyRangeReply, CountCounterSampleBufferReply, CreateBufferNoCopyReply, CreateBufferReply,
+    CreateBufferTextureReply, CreateBufferWithBytesReply, CreateHeapReply, CreateLinearTextureReply,
+    CreateTextureNoCopyReply, CreateTextureReply, CreateTextureViewLevelsSlicesReply,
+    CreateTextureViewLevelsSlicesResourceIndexReply, CreateTextureViewLevelsSlicesSwizzleReply,
+    CreateTextureViewLevelsSlicesSwizzleResourceIndexReply, CreateTextureViewReply,
+    CreateTextureViewResourceIndexReply, CreateTextureWithIOSurfaceReply, Failure, GetBytesReply, GetBytesSliceReply,
+    Handle, HeapCreateBufferReply, HeapCreateTextureReply, MakeAliasableReply, Region, ReplaceRegionReply,
+    ReplaceRegionSliceReply, Reply, Request, SetPurgeableState, SetPurgeableStateReply,
     TextureLayoutCopyFromLinearBytesReply, TextureLayoutCopyFromTextureMemoryReply, opcode,
 };
 
@@ -130,7 +131,12 @@ impl<A: Api, E: Embedder + 'static> MemoryServices<A, E> {
 
     /// The control service.
     pub fn control(&self) -> Box<dyn ControlService<A, E>> {
-        Box::new(Control { memory: self.memory.clone(), embedder: self.embedder.clone(), heaps: self.heaps.clone() })
+        Box::new(Control {
+            memory: self.memory.clone(),
+            embedder: self.embedder.clone(),
+            heaps: self.heaps.clone(),
+            counted: HashSet::new(),
+        })
     }
 
     /// The coherence service.
@@ -172,10 +178,16 @@ fn fail(opcode: u16, e: MemError) -> Reply {
     crate::exec::schema::failure_reply(opcode, e.failure()).expect("a control request")
 }
 
+/// The counter sample buffers the AGX kernel extension counts per system (AGXMTLCounterSampler, kernelcache
+/// 0xfffffff005c31c2c: it refuses a 1025th).
+const COUNTER_SAMPLE_BUFFERS: usize = 1024;
+
 struct Control<A: Api, E: Embedder> {
     memory: Rc<Memory<A>>,
     embedder: Rc<E>,
     heaps: HeapMembers<A>,
+    /// The buffers counted as counter sample storage (`CountCounterSampleBuffer`), of every task.
+    counted: HashSet<(TaskId, Handle)>,
 }
 
 macro_rules! ok {
@@ -446,6 +458,21 @@ impl<A: Api, E: Embedder + 'static> Control<A, E> {
                     TextureLayoutCopyFromTextureMemoryReply { refusal },
                 ))));
             }
+            Request::CountCounterSampleBuffer(r) => {
+                if payload::<Buffer<A>>(objects, r.buffer).is_none() {
+                    return Err(missing(r.buffer));
+                }
+                if self.counted.contains(&(task, r.buffer)) {
+                    return Err(MemError::invalid(format!("buffer {:#x} is counted already", r.buffer.get())));
+                }
+                let counted = self.counted.len() < COUNTER_SAMPLE_BUFFERS;
+                if counted {
+                    self.counted.insert((task, r.buffer));
+                }
+                return Ok(Served::Ready(Reply::CountCounterSampleBuffer(Ok(CountCounterSampleBufferReply {
+                    counted,
+                }))));
+            }
             Request::SetPurgeableState(r) => {
                 let previous = self.set_purgeable(cx, r)?;
                 return Ok(Served::Ready(Reply::SetPurgeableState(Ok(SetPurgeableStateReply {
@@ -621,6 +648,7 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for Control<A, E> {
             opcode::BUFFER_DID_MODIFY_RANGE,
             opcode::TEXTURE_LAYOUT_COPY_FROM_LINEAR_BYTES,
             opcode::TEXTURE_LAYOUT_COPY_FROM_TEXTURE_MEMORY,
+            opcode::COUNT_COUNTER_SAMPLE_BUFFER,
         ]
     }
 
@@ -633,10 +661,12 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for Control<A, E> {
 
     fn release(&mut self, task: TaskId, handle: Handle, _: &Entry) {
         self.heaps.borrow_mut().remove(&(task, handle));
+        self.counted.remove(&(task, handle));
     }
 
     fn task_exited(&mut self, task: TaskId) {
         self.heaps.borrow_mut().retain(|(t, _), _| *t != task);
+        self.counted.retain(|(t, _)| *t != task);
     }
 }
 

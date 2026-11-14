@@ -1257,6 +1257,14 @@ args = ["buffer: IndirectCommandBuffer", "descriptor: IndirectCommandBufferDescr
 doc = "contents is the guest allocation that holds the commands the guest encodes on the CPU (MTLIndirectRenderCommand and MTLIndirectComputeCommand setters), in a layout this schema does not define yet; until it does, the host refuses to execute those commands (status 2)."
 
 [[op]]
+code = 0x022a
+name = "CountCounterSampleBuffer"
+channel = "control"
+args = ["buffer: Buffer"]
+reply = ["counted: bool"]
+doc = "Count a buffer the guest made as counter sample storage, as the AGX kernel extension counts a kernel resource made with AGX resource argument 0x10 (AGXResource's initializer, kernelcache 0xfffffff005c393d8, through 0xfffffff005c31c2c): counted is false, and the buffer stays uncounted, when 1024 buffers of the executor's tasks are counted already. A counted buffer stops counting when it is released or its task exits (AGXResource's release from its device, 0xfffffff005c39850, which IOGPUDevice::delete_resource calls). The limit of 32 per device is the guest's."
+
+[[op]]
 code = 0x0228
 name = "TextureLayoutCopyFromLinearBytes"
 channel = "control"

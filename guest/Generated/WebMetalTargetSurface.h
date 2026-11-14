@@ -1207,6 +1207,18 @@ inline constexpr DriverSelector kAGXTextureLayoutDriver[] = {
     {SelectorKind::Instance, "watermark", "{?=[2Q]}16@0:8", "AGXTextureLayout", ""},
 };
 
+// Driver-layer selectors AGXMTLCounterSampleBuffer carries (AGXMTLCounterSampleBuffer).
+inline constexpr DriverSelector kAGXMTLCounterSampleBufferDriver[] = {
+    {SelectorKind::Instance, "buffer", "@16@0:8", "AGXMTLCounterSampleBuffer", ""},
+    {SelectorKind::Instance, "device", "@16@0:8", "AGXMTLCounterSampleBuffer", ""},
+    {SelectorKind::Instance, "initWithDevice:descriptor:error:", "@40@0:8@16@24^@32", "AGXMTLCounterSampleBuffer", ""},
+    {SelectorKind::Instance, "initWithDevice:length:label:options:error:", "@56@0:8@16Q24@32Q40^@48", "AGXMTLCounterSampleBuffer", ""},
+    {SelectorKind::Instance, "label", "@16@0:8", "AGXMTLCounterSampleBuffer", ""},
+    {SelectorKind::Instance, "resolveCounterRange:", "@32@0:8{_NSRange=QQ}16", "AGXMTLCounterSampleBuffer", ""},
+    {SelectorKind::Instance, "sampleCount", "Q16@0:8", "AGXMTLCounterSampleBuffer", ""},
+    {SelectorKind::Instance, "sampleSize", "Q16@0:8", "AGXMTLCounterSampleBuffer", ""},
+};
+
 // The AGXMetalA10 classes the plugin defines, each over its superclass in the bundle or its base.
 inline constexpr Role kRoles[] = {
     {"AGXA10XDevice", "AGXA10FamilyDevice", "_MTLDevice", kAGXA10XDeviceDriver, 2},
@@ -1229,6 +1241,7 @@ inline constexpr Role kRoles[] = {
     {"AGXA10FamilyIndirectArgumentEncoder", "_MTLIndirectArgumentEncoder", "_MTLIndirectArgumentEncoder", kAGXA10FamilyIndirectArgumentEncoderDriver, 30},
     {"AGXA10FamilyBinaryArchive", "_MTLBinaryArchive", "_MTLBinaryArchive", kAGXA10FamilyBinaryArchiveDriver, 6},
     {"AGXTextureLayout", "NSObject", "NSObject", kAGXTextureLayoutDriver, 10},
+    {"AGXMTLCounterSampleBuffer", "NSObject", "NSObject", kAGXMTLCounterSampleBufferDriver, 8},
 };
 
 inline constexpr BaseIvar k_MTLAccelerationStructureCommandEncoderIvars[] = {

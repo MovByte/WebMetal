@@ -10,8 +10,12 @@
 
 #import "WebMetalCommandState.h"
 #import "../Plugin/WebMetalReport.h"
+#import "../Resources/WebMetalCounterSampleBuffer.h"
 
 #import <objc/runtime.h>
+
+#include <type_traits>
+#include <vector>
 
 #pragma clang diagnostic ignored "-Wprotocol"
 #pragma clang diagnostic ignored "-Wobjc-protocol-property-synthesis"
@@ -42,6 +46,13 @@
 - (NSUInteger)maxColorAttachments;
 @end
 
+// The pass descriptors' sample buffer attachment arrays (MTL{Render,Compute,Blit}PassSampleBufferAttachmentDescriptor
+// ArrayInternal): the attachment at an index, or nil where none was made (unlike -objectAtIndexedSubscript:, which
+// makes one).
+@protocol WebMetalSampleBufferAttachments
+- (id)_descriptorAtIndex:(NSUInteger)index;
+@end
+
 namespace webmetal {
 
 namespace {
@@ -50,6 +61,31 @@ namespace {
 // -[MTL{Render,Compute,Blit}PassSampleBufferAttachmentDescriptorArrayInternal objectAtIndexedSubscript:] accept indices
 // below 4 (cmp x2, #0x4 at 0x187b9b914, 0x187b5c834, 0x187bb2914).
 constexpr NSUInteger kPassSampleBuffers = 4;
+
+// A pass descriptor's sample buffer attachments, as the driver reads them when it makes the encoder (blit and compute:
+// AGXMetalA10 0x21c9cef60 and 0x21c9cf168; render: -[AGXA10FamilyRenderContext initWithCommandBuffer:descriptor:
+// subEncoderIndex:framebuffer:] from 0x21c95ed40): each of the four that exists (_descriptorAtIndex:) and names a buffer
+// has its indices checked in order (validateSampleIndex, logging one past the buffer's samples), as 32-bit values, and
+// the buffer's storage attached to the encoder when one of them is a sample (setCounterSampleBuffer).
+template <class Attachment> void attachPassSamples(EncoderState &encoder, id attachments)
+{
+    for (NSUInteger i = 0; i < kPassSampleBuffers; i++) {
+        Attachment *a = [(id<WebMetalSampleBufferAttachments>)attachments _descriptorAtIndex:i];
+        if (!a || !a.sampleBuffer)
+            continue;
+        std::vector<uint32_t> indices;
+        if constexpr (std::is_same_v<Attachment, MTLRenderPassSampleBufferAttachmentDescriptor>)
+            indices = {uint32_t(a.startOfVertexSampleIndex), uint32_t(a.endOfVertexSampleIndex),
+                       uint32_t(a.startOfFragmentSampleIndex), uint32_t(a.endOfFragmentSampleIndex)};
+        else
+            indices = {uint32_t(a.startOfEncoderSampleIndex), uint32_t(a.endOfEncoderSampleIndex)};
+        bool sampled = false;
+        for (uint32_t &index : indices)
+            sampled |= ValidateSampleIndex(a.sampleBuffer, &index);
+        if (sampled)
+            AttachSampleStorage(&encoder.sampleStorage, a.sampleBuffer);
+    }
+}
 
 // _MTLCommandEncoder._globalTraceObjectID, which IOGPU fills lazily from the device's trace ID ranges.
 uint64_t encoderTraceID(id encoder)
@@ -69,8 +105,18 @@ void checkNoOpenEncoder(AGXA10FamilyCommandBuffer *buffer, const char *function)
         MTLReportFailure(0, function, __LINE__, @"A command encoder is already encoding to this command buffer");
 }
 
+// An encoder with counter sample storage attached has the GPU write timestamps into the storage at its boundaries, at
+// the sample locations the AGX kernel extension resolves to the storage's 8-byte samples (0xfffffff005c31cb8).
+const char kGPUTimestamps[] =
+    "the encoder samples the GPU's timestamps into a counter sample buffer: the A10X writes them into the buffer's "
+    "storage at the encoder's boundaries, in mach_absolute_time's time base (-sampleTimestamps:gpuTimestamp:, "
+    "0x21c8db364), and the host writes no GPU timestamps: WebGPU's timestamp queries are an optional feature and count "
+    "in a time base of their own";
+
 void endEncoder(id self, SEL cmd, EncoderState &encoder)
 {
+    if (encoder.sampleStorage)
+        WMLoudMethod(self, cmd, kGPUTimestamps);
     EmitEncoderRecord(self, cmd, encoder, wire::EncoderEndEncoding{});
     encoder.ended = true;
     encoder.stream->endEncoder();
@@ -176,10 +222,11 @@ void renderPass(id self, SEL cmd, Stream &stream, id<MTLDevice> device, MTLRende
         for (id archive in [state binaryArchives])
             out.archives.push_back(Reference(stream, self, cmd, archive));
     d.binaryArchives = {out.archives.data(), out.archives.size()};
+    // The sample buffers stay in the guest (attachPassSamples).
     for (NSUInteger i = 0; i < kPassSampleBuffers; i++) {
-        MTLRenderPassSampleBufferAttachmentDescriptor *attachment = in.sampleBufferAttachments[i];
+        MTLRenderPassSampleBufferAttachmentDescriptor *attachment =
+            [(id<WebMetalSampleBufferAttachments>)in.sampleBufferAttachments _descriptorAtIndex:i];
         wire::RenderPassSampleBufferAttachment s;
-        s.sampleBuffer = Reference(stream, self, cmd, attachment.sampleBuffer);
         s.startOfVertexSampleIndex = attachment.startOfVertexSampleIndex;
         s.endOfVertexSampleIndex = attachment.endOfVertexSampleIndex;
         s.startOfFragmentSampleIndex = attachment.startOfFragmentSampleIndex;
@@ -307,10 +354,11 @@ using namespace webmetal;
     wire::BeginBlitWithDescriptor record;
     record.encoder = state.handle;
     std::vector<wire::BlitPassSampleBufferAttachment> attachments;
+    // The sample buffers stay in the guest (attachPassSamples, in the encoder's initializer).
     for (NSUInteger i = 0; i < kPassSampleBuffers; i++) {
-        MTLBlitPassSampleBufferAttachmentDescriptor *in = descriptor.sampleBufferAttachments[i];
+        MTLBlitPassSampleBufferAttachmentDescriptor *in =
+            [(id<WebMetalSampleBufferAttachments>)descriptor.sampleBufferAttachments _descriptorAtIndex:i];
         wire::BlitPassSampleBufferAttachment out;
-        out.sampleBuffer = Reference(*state.stream, self, _cmd, in.sampleBuffer);
         out.startOfEncoderSampleIndex = in.startOfEncoderSampleIndex;
         out.endOfEncoderSampleIndex = in.endOfEncoderSampleIndex;
         attachments.push_back(out);
@@ -369,10 +417,12 @@ using namespace webmetal;
     record.computePassDescriptor.allowCommandEncoderCoalescing = [extra allowCommandEncoderCoalescing];
     record.computePassDescriptor.substreamCount = [extra substreamCount];
     std::vector<wire::ComputePassSampleBufferAttachment> attachments;
+    // The sample buffers stay in the guest.
+    attachPassSamples<MTLComputePassSampleBufferAttachmentDescriptor>(state, descriptor.sampleBufferAttachments);
     for (NSUInteger i = 0; i < kPassSampleBuffers; i++) {
-        MTLComputePassSampleBufferAttachmentDescriptor *in = descriptor.sampleBufferAttachments[i];
+        MTLComputePassSampleBufferAttachmentDescriptor *in =
+            [(id<WebMetalSampleBufferAttachments>)descriptor.sampleBufferAttachments _descriptorAtIndex:i];
         wire::ComputePassSampleBufferAttachment out;
-        out.sampleBuffer = Reference(*state.stream, self, _cmd, in.sampleBuffer);
         out.startOfEncoderSampleIndex = in.startOfEncoderSampleIndex;
         out.endOfEncoderSampleIndex = in.endOfEncoderSampleIndex;
         attachments.push_back(out);
@@ -441,6 +491,7 @@ using namespace webmetal;
     if (!self)
         return nil;
     _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, nullptr);
+    attachPassSamples<MTLBlitPassSampleBufferAttachmentDescriptor>(*_encoder, descriptor.sampleBufferAttachments);
     return self;
 }
 
@@ -496,10 +547,13 @@ using namespace webmetal;
 }
 
 // -[AGXA10FamilyBlitContext resolveCounters:inRange:destinationBuffer:destinationOffset:] (AGXMetalA10 0x21c8bafdc)
-// does nothing for an empty range, and logs a range past the buffer's sampleCount, which is 0 for nil
-// (agxa_blit_template.hpp line 3355), and encodes nothing. Otherwise it copies the samples out of the buffer's sample
-// storage as a buffer copy (0x21c8bb174); the plugin makes no counter sample buffer (its storage is LOUD), so a buffer
-// here is another device's.
+// does nothing for an empty range, and logs a range past the buffer's sampleCount (location + length in 64 bits; 0
+// for nil) (agxa_blit_template.hpp line 3355) and encodes nothing. Otherwise it copies length * sampleSize bytes from
+// location * sampleSize of the buffer's sample storage to the destination as a buffer copy (0x21c8bb174 to
+// 0x21c8bb208), listing the storage with flags 0x103 while it does (ctx+0x730), so the kernel stamps the storage only
+// for the parts the vertex copy moves, which are not traced here; the destination it stamps as any copy's. Before the
+// copy it ends the encoder's segment when the encoder samples into the range (0x21c8bb100 to 0x21c8bb148), which only
+// an encoder with attached storage does, and endEncoding refuses that.
 - (void)resolveCounters:(id<MTLCounterSampleBuffer>)sampleBuffer
                 inRange:(NSRange)range
       destinationBuffer:(id<MTLBuffer>)destinationBuffer
@@ -507,13 +561,24 @@ using namespace webmetal;
 {
     if (!range.length)
         return;
-    if (!sampleBuffer) {
+    if (range.location + range.length > [sampleBuffer sampleCount]) {
         WM_AGX_LOG("agxa_blit_template.hpp", 3355, "resolveCounters",
                    "Cannot resolve MTLCounter data: out of bounds access");
         return;
     }
-    WMLoudMethod(self, _cmd, "a counter sample buffer the plugin did not make (-newCounterSampleBufferWithDescriptor:"
-                             "error: fails LOUD where the A10X driver makes the sample storage)");
+    AGXBuffer *storage = [(AGXMTLCounterSampleBuffer *)sampleBuffer buffer];
+    const NSUInteger size = [(AGXMTLCounterSampleBuffer *)sampleBuffer sampleSize];
+    // The buffer copy begins no kick when it would copy the storage onto itself (0x21c8bb2ac).
+    const bool inPlace = destinationBuffer == (id)storage && destinationOffset == size * range.location;
+    wire::BlitCopyBufferToBuffer record;
+    record.sourceBuffer =
+        Reference(*_encoder->stream, self, _cmd, storage, inPlace ? Listing::Unlisted : Listing::Untraced);
+    record.sourceOffset = size * range.location;
+    record.destinationBuffer = Reference(*_encoder->stream, self, _cmd, destinationBuffer,
+                                         inPlace ? Listing::Unlisted : Listing::Stamped);
+    record.destinationOffset = destinationOffset;
+    record.size = size * range.length;
+    EmitEncoderRecord(self, _cmd, *_encoder, record);
 }
 
 @end
@@ -615,6 +680,7 @@ using namespace webmetal;
     if (!self)
         return nil;
     _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, nullptr);
+    attachPassSamples<MTLRenderPassSampleBufferAttachmentDescriptor>(*_encoder, descriptor.sampleBufferAttachments);
     return self;
 }
 
@@ -639,6 +705,7 @@ using namespace webmetal;
     _encoder = NewEncoderState((AGXA10FamilyCommandBuffer *)commandBuffer, stream.get());
     _encoder->own = stream;
     _encoder->visibilityResultKey = KernelResourceKey(descriptor.visibilityResultBuffer);
+    attachPassSamples<MTLRenderPassSampleBufferAttachmentDescriptor>(*_encoder, descriptor.sampleBufferAttachments);
     wire::BeginParallelSubEncoder record;
     record.parent = parent->_encoder->handle;
     record.encoder = _encoder->handle;

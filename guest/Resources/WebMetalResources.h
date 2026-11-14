@@ -113,6 +113,14 @@ constexpr uint64_t kSuballocatedResourceSize = 0x20000;
 Connection *DeviceConnection(AGXA10FamilyDevice *device);
 void DeviceAddAllocation(AGXA10FamilyDevice *device, int64_t bytes);
 int64_t DeviceAllocatedSize(AGXA10FamilyDevice *device);
+
+// The AGX kernel extension's count of counter sample storage (AGXMTLCounterSampler, kernelcache 0xfffffff005c31c2c):
+// a resource counts when its device counts fewer than 32 (the device's +392) and the system fewer than 1024 (the host
+// counts the system's: CountCounterSampleBuffer), and both counts drop when it is deleted (AGXResource's release from
+// its device, 0xfffffff005c39850, from IOGPUDevice::delete_resource, which IOGPUMetalResource's dealloc reaches).
+// Returns whether the buffer whose handle is given now counts.
+bool DeviceCountCounterSampleStorage(AGXA10FamilyDevice *device, SEL _cmd, uint64_t handle);
+void DeviceUncountCounterSampleStorage(AGXA10FamilyDevice *device);
 // Live resources whose allocated size has no source yet (it depends on the AGX texture layout); while any lives, the
 // device total is not answered.
 void DeviceAddUnsized(AGXA10FamilyDevice *device, int64_t count);

@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: 707a829bcc45e650236e3fa87257f2c06d819345ebf9b22e3caf187aef65b19f
+// Schema SHA-256: b12b180a4b320628c280987b41a63844866db425cdf7be14bb49c1b4630a8ff2
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0x70, 0x7a, 0x82, 0x9b, 0xcc, 0x45, 0xe6, 0x50, 0x23, 0x6e, 0x3f, 0xa8, 0x72, 0x57, 0xf2, 0xc0, 0x6d, 0x81, 0x93, 0x45, 0xeb, 0xf9, 0xb2, 0x2e, 0x3c, 0xaf, 0x18, 0x7a, 0xef, 0x65, 0xb1, 0x9f};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0xb1, 0x2b, 0x18, 0x0a, 0x4b, 0x32, 0x06, 0x28, 0xc2, 0x80, 0x98, 0x7b, 0x41, 0xa6, 0x38, 0x44, 0x86, 0x6d, 0xb4, 0x25, 0xcd, 0xf7, 0xbe, 0x14, 0xbb, 0x49, 0xc1, 0xb4, 0x63, 0x0a, 0x8f, 0xf2};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -390,6 +390,7 @@ constexpr uint16_t kBufferDidModifyRange = 0x021d;
 constexpr uint16_t kBufferAddDebugMarker = 0x021e;
 constexpr uint16_t kBufferRemoveAllDebugMarkers = 0x021f;
 constexpr uint16_t kCreateIndirectCommandBuffer = 0x0220;
+constexpr uint16_t kCountCounterSampleBuffer = 0x022a;
 constexpr uint16_t kTextureLayoutCopyFromLinearBytes = 0x0228;
 constexpr uint16_t kTextureLayoutCopyFromTextureMemory = 0x0229;
 constexpr uint16_t kRegisterAir = 0x0301;
@@ -4268,6 +4269,49 @@ inline bool decodeFields(Reader&, CreateIndirectCommandBufferReply&) {
 // Decode the reply to a CreateIndirectCommandBuffer request: either its fields or the failure.
 inline bool decodeReply(const uint8_t* data, size_t size, Reply<CreateIndirectCommandBufferReply>& out, DecodeError* error = nullptr) {
     return decodeReplyRecord(data, size, CreateIndirectCommandBufferReply::kOpcode, out, error);
+}
+
+// 0x022a control record. Count a buffer the guest made as counter sample storage, as the AGX kernel extension counts
+// a kernel resource made with AGX resource argument 0x10 (AGXResource's initializer, kernelcache 0xfffffff005c393d8,
+// through 0xfffffff005c31c2c): counted is false, and the buffer stays uncounted, when 1024 buffers of the executor's
+// tasks are counted already. A counted buffer stops counting when it is released or its task exits (AGXResource's
+// release from its device, 0xfffffff005c39850, which IOGPUDevice::delete_resource calls). The limit of 32 per device
+// is the guest's.
+struct CountCounterSampleBuffer {
+    static constexpr uint16_t kOpcode = 0x022a;
+    uint64_t buffer = 0;  // wire type `Buffer`.
+};
+
+inline bool encodeFields(Writer& w, const CountCounterSampleBuffer& v) {
+    if (v.buffer == 0) return false;
+    w.u64(v.buffer);
+    return true;
+}
+
+// Append the record; returns false (writer unchanged) if the value breaks a format rule.
+inline bool encode(Writer& w, const CountCounterSampleBuffer& v) {
+    size_t start = w.begin(CountCounterSampleBuffer::kOpcode);
+    if (!encodeFields(w, v)) {
+        w.abandon(start);
+        return false;
+    }
+    return w.finish(start);
+}
+
+// 0x022a reply fields.
+struct CountCounterSampleBufferReply {
+    static constexpr uint16_t kOpcode = 0x822a;
+    bool counted = false;  // wire type `bool`.
+};
+
+inline bool decodeFields(Reader& r, CountCounterSampleBufferReply& v) {
+    if (!r.boolean(v.counted)) return false;
+    return true;
+}
+
+// Decode the reply to a CountCounterSampleBuffer request: either its fields or the failure.
+inline bool decodeReply(const uint8_t* data, size_t size, Reply<CountCounterSampleBufferReply>& out, DecodeError* error = nullptr) {
+    return decodeReplyRecord(data, size, CountCounterSampleBufferReply::kOpcode, out, error);
 }
 
 // 0x0228 control record. Metal methods: -[MTLTextureLayout

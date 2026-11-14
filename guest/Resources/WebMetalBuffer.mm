@@ -10,6 +10,7 @@
 // requests (sysMemSize: the length rounded up to the page size, or the length for caller memory).
 
 #import "WebMetalBuffer.h"
+#import "WebMetalCounterSampleBuffer.h"
 #import "WebMetalTexture.h"
 #import "WebMetalHeapPrivate.h"
 
@@ -95,6 +96,7 @@ void reportInitFailures(MTLResourceOptions options, bool callerMemory)
     void *_pointer;        // the caller's pointer of a no-copy buffer (IOGPUMetalBuffer._pointer), which may be null
     int64_t _accounted;    // what the buffer adds to the device's currentAllocatedSize
     bool _suballocated;    // the driver sub-allocates it: its allocated size is its length
+    bool _counted;         // counter sample storage the kernel counts (NewCounterSampleStorage)
     void (^_deallocator)(void *pointer, NSUInteger length);
 }
 @end
@@ -124,7 +126,8 @@ void *BufferContents(AGXBuffer *buffer)
 
 // The steps the driver's dedicated and sub-allocated paths share once the kernel resource exists: the buffer joins the
 // device's allocation total.
-static AGXA10FamilyBuffer *finishCreation(AGXA10FamilyBuffer *buffer)
+template <class Buffer>
+static Buffer *finishCreation(Buffer *buffer)
 {
     buffer->_state.created = buffer->_state.storageMode != MTLStorageModeMemoryless;
     buffer->_accounted = static_cast<int64_t>(buffer.allocatedSize);
@@ -136,12 +139,12 @@ static AGXA10FamilyBuffer *finishCreation(AGXA10FamilyBuffer *buffer)
 // copy of a shared buffer's memory (allocated here, `size` bytes) and the host's buffer, with the initial bytes when
 // given. A memoryless buffer has no kernel resource and a resident size of 0 (-[IOGPUMetalResource initWithDevice:
 // options:args:argsSize:] keeps only the top byte of _res.info.resourceSize, IOGPU 0x1fcb2bc00 to 0x1fcb2bc08).
-static AGXA10FamilyBuffer *newOwnedBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length,
-                                          MTLResourceOptions options, const void *bytes, uint64_t residentSize,
-                                          uint64_t size)
+template <class Buffer = AGXA10FamilyBuffer>
+static Buffer *newOwnedBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length, MTLResourceOptions options,
+                              const void *bytes, uint64_t residentSize, uint64_t size)
 {
     const uint64_t storage = (options & kStorageModeMask) >> kStorageModeShift;
-    AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
+    Buffer *buffer = [Buffer new];
     InitResourceState(buffer->_state, device, options);
     buffer->_length = length;
     buffer->_state.residentSize = residentSize;
@@ -209,6 +212,37 @@ AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInt
     if (!buffer)
         return nil;
     buffer->_suballocated = suballocated;
+    return finishCreation(buffer);
+}
+
+// -[AGXBuffer initCounterSampleBufferWithDevice:length:options:] (AGXMetalA10 0x21c8a4544), as
+// -[AGXMTLCounterSampleBuffer initWithDevice:length:label:options:error:] calls it on a new AGXBuffer: the dedicated
+// path of -initWithDevice:length:alignment:options:isSuballocDisabled:resourceInArgs:pinnedGPULocation: (0x21c8a4900,
+// through 0x21c8a48cc with alignment 1) with sub-allocation disabled and the AGX resource argument 0x10 at +0x5c of
+// the creation arguments, which IOGPU passes to the kernel (-[IOGPUMetalBuffer initWithDevice:pointer:...] with an
+// argument size of 104). The kernel's resource size limit applies first (KernelRefusesResourceSize); then AGXResource's
+// initializer counts the resource as counter sample storage (kernelcache 0xfffffff005c393d8 through
+// 0xfffffff005c31c2c), which fails, and the resource with it, past 32 per device or 1024 per system
+// (DeviceCountCounterSampleStorage). A memoryless buffer has no kernel resource, so nothing to count.
+AGXBuffer *NewCounterSampleStorage(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length, MTLResourceOptions options)
+{
+    const uint64_t page = PageSize();
+    const uint64_t sysMemSize = (static_cast<uint64_t>(length) + page - 1) & ~(page - 1);
+    if (sysMemSize < length)
+        return nil;
+    reportInitFailures(options, false);
+    const bool memoryless = ((options & kStorageModeMask) >> kStorageModeShift) == MTLStorageModeMemoryless;
+    if (!memoryless && (length == 0 || KernelRefusesResourceSize(device, _cmd, sysMemSize)))
+        return nil;
+    AGXBuffer *buffer = newOwnedBuffer<AGXBuffer>(device, _cmd, length, options, nullptr, memoryless ? 0 : sysMemSize,
+                                                  sysMemSize ? sysMemSize : page);
+    if (!buffer)
+        return nil;
+    if (!memoryless) {
+        if (!DeviceCountCounterSampleStorage(device, _cmd, buffer->_state.handle))
+            return nil;
+        buffer->_counted = true;
+    }
     return finishCreation(buffer);
 }
 
@@ -311,6 +345,8 @@ AGXA10FamilyBuffer *NewHeapBuffer(AGXA10FamilyHeap *heap, SEL _cmd, NSUInteger l
 {
     using namespace webmetal;
     DeviceAddAllocation(_state.device, -_accounted);
+    if (_counted)
+        DeviceUncountCounterSampleStorage(_state.device);
     if (_state.heap) {
         MakeAliasable(self, _cmd, _state, true);
         [(AGXA10FamilyHeap *)_state.heap deallocHeapSubResource];

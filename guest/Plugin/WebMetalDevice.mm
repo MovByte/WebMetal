@@ -18,6 +18,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <memory>
+#include <mutex>
 #include <string>
 
 // AGXA10FamilyDevice adopts MTLDeviceSPI as 21H461's does, and each class implements only what the driver layers it
@@ -117,6 +118,10 @@ DeviceOptions gatherDeviceOptions()
     // nibble (webmetal::KernelRefusesResourceSize), and whether it is known.
     uint64_t _resourceSizeLimit;
     bool _resourceSizeLimitKnown;
+    // The counter sample storage the AGX kernel extension counts for the device (its +392), under the lock that also
+    // orders the host's count of the system's (DeviceCountCounterSampleStorage).
+    uint32_t _counterSampleStorage;
+    std::mutex _counterSampleLock;
 }
 @end
 
@@ -170,6 +175,33 @@ void DeviceAddAllocation(AGXA10FamilyDevice *device, int64_t bytes)
 int64_t DeviceAllocatedSize(AGXA10FamilyDevice *device)
 {
     return device->_allocated.load(std::memory_order_relaxed);
+}
+
+// AGXMTLCounterSampler's count (kernelcache 0xfffffff005c31c2c): under the sampler's lock, it refuses when the system
+// counts more than 1023 or the device more than 31, else increments both; the release from the device
+// (0xfffffff005c39850) decrements both while both are nonzero.
+bool DeviceCountCounterSampleStorage(AGXA10FamilyDevice *device, SEL _cmd, uint64_t handle)
+{
+    std::lock_guard<std::mutex> hold(device->_counterSampleLock);
+    if (device->_counterSampleStorage > 31)
+        return false;
+    wire::CountCounterSampleBuffer request;
+    request.buffer = handle;
+    wire::Reply<wire::CountCounterSampleBufferReply> reply;
+    device->_connection->Call(device, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(device, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+    if (!reply.value.counted)
+        return false;
+    device->_counterSampleStorage++;
+    return true;
+}
+
+void DeviceUncountCounterSampleStorage(AGXA10FamilyDevice *device)
+{
+    std::lock_guard<std::mutex> hold(device->_counterSampleLock);
+    if (device->_counterSampleStorage)
+        device->_counterSampleStorage--;
 }
 
 void DeviceAddUnsized(AGXA10FamilyDevice *device, int64_t count)

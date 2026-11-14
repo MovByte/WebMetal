@@ -11,7 +11,7 @@
 //! | `optimizeContentsForGPUAccess:` / `ForCPUAccess:` (and the slice and level forms) | Hints with no effect on contents (`blit.optimize-contents`); the arguments are checked. |
 //! | `synchronizeResource:`, `synchronizeTexture:slice:level:` | `API_UNAVAILABLE(ios)`: undefined. |
 //! | `sampleCountersInBuffer:atSampleIndex:withBarrier:` | The A10X does not support `MTLCounterSamplingPointAtBlitBoundary` (device profile): "this method is not available and will generate an error if called" (`MTLBlitCommandEncoder.h`): undefined. |
-//! | `resolveCounters:inRange:destinationBuffer:destinationOffset:`, a pass descriptor's sample buffer attachments | Refused: the wire protocol has no request that creates a counter sample buffer. |
+//! | `resolveCounters:inRange:destinationBuffer:destinationOffset:`, a pass descriptor's sample buffer attachments | Refused: counter sample buffers have no handle; the guest resolves them as buffer copies of their storage and keeps the attachments, refusing the GPU timestamps they ask for. |
 //! | Indirect command buffer copies, resets and optimizations | Refused: the wire protocol does not define the indirect command buffer's memory yet (`CreateIndirectCommandBuffer`). |
 //! | Texture access counters, the SPI fills and compressed-texture invalidations, `copyFromTexture:...options:` with options | Refused: their semantics are not established. |
 //!
@@ -663,7 +663,7 @@ impl<A: Api> BlitService<A> {
                 if r.blit_pass_descriptor.sample_buffer_attachments.iter().any(|a| a.sample_buffer.is_some()) {
                     return Err(failure::unimplemented(
                         "-[MTLCommandBuffer blitCommandEncoderWithDescriptor:] with counter sample buffer attachments: \
-                         the wire protocol has no request that creates a counter sample buffer",
+                         counter sample buffers have no handle (the guest keeps the attachments)",
                     ));
                 }
                 Ok(())
@@ -812,7 +812,7 @@ impl<A: Api> BlitService<A> {
                 failure::record_methods(record.opcode())
             ))),
             Command::BlitResolveCounters(_) => Err(failure::unimplemented(format!(
-                "{}: the wire protocol has no request that creates a counter sample buffer",
+                "{}: counter sample buffers have no handle (the guest resolves them as buffer copies of their storage)",
                 failure::record_methods(record.opcode())
             ))),
             Command::BlitCopyIndirectCommandBuffer(_)
