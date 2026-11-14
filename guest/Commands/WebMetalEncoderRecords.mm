@@ -2264,15 +2264,6 @@
     webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
 }
 
-// BlitCopyTextureToTextureAll (0x1508).
-- (void)copyFromTexture:(id<MTLTexture>)sourceTexture toTexture:(id<MTLTexture>)destinationTexture
-{
-    webmetal::wire::BlitCopyTextureToTextureAll record;
-    record.sourceTexture = webmetal::EncoderReference(self, _cmd, *_encoder, sourceTexture, true);
-    record.destinationTexture = webmetal::EncoderReference(self, _cmd, *_encoder, destinationTexture, true);
-    webmetal::EmitEncoderRecord(self, _cmd, *_encoder, record);
-}
-
 // BlitCopyIndirectCommandBuffer (0x1509).
 - (void)copyIndirectCommandBuffer:(id<MTLIndirectCommandBuffer>)source sourceRange:(NSRange)sourceRange destination:(id<MTLIndirectCommandBuffer>)destination destinationIndex:(NSUInteger)destinationIndex
 {

@@ -14,6 +14,8 @@
 
 #import <objc/runtime.h>
 
+#include <algorithm>
+#include <cassert>
 #include <type_traits>
 #include <vector>
 
@@ -544,6 +546,52 @@ using namespace webmetal;
     MTLReportFailure(0, "-[AGXA10FamilyBlitContext sampleCountersInBuffer:atSampleIndex:withBarrier:]", 404,
                      @"MTLBlitCommandEncoder:sampleCountersInBuffer:atSampleIndex:withBarrier not supported on this "
                      @"device");
+}
+
+// -[IOGPUMetalBlitCommandEncoder copyFromTexture:toTexture:] (IOGPU 0x1fcb317cc): MTLPickLargestMip (MTLTexture_Private.h)
+// halves the larger texture's width, height and depth, without a floor of 1, until none exceeds the other's: the
+// source's when one of its dimensions exceeds the destination's, else the destination's. The levels must then agree in
+// every dimension (each at least 1), or the process asserts. The copy then takes the levels both have from those
+// (mipmapLevelCount minus the level, the smaller) and the slices both have (arrayLength, six per cube for the cube
+// and cube-array types), through the slices-and-levels form.
+- (void)copyFromTexture:(id<MTLTexture>)sourceTexture toTexture:(id<MTLTexture>)destinationTexture
+{
+    const NSUInteger sw = sourceTexture.width, sh = sourceTexture.height, sd = sourceTexture.depth;
+    const NSUInteger dw = destinationTexture.width, dh = destinationTexture.height, dd = destinationTexture.depth;
+    NSUInteger sourceMip = 0, destinationMip = 0;
+    const bool sourceLarger = sw > dw || sh > dh || sd > dd;
+    NSUInteger w = sourceLarger ? sw : dw, h = sourceLarger ? sh : dh, d = sourceLarger ? sd : dd;
+    const NSUInteger ow = sourceLarger ? dw : sw, oh = sourceLarger ? dh : sh, od = sourceLarger ? dd : sd;
+    NSUInteger mip = 0;
+    while (w > ow || h > oh || d > od) {
+        w >>= 1;
+        h >>= 1;
+        d >>= 1;
+        mip++;
+    }
+    (sourceLarger ? sourceMip : destinationMip) = mip;
+    auto at = [](NSUInteger v, NSUInteger level) { return std::max<NSUInteger>(v >> level, 1); };
+    if (at(sw, sourceMip) != at(dw, destinationMip) || at(sh, sourceMip) != at(dh, destinationMip) ||
+        at(sd, sourceMip) != at(dd, destinationMip) || (sourceMip && destinationMip))
+        __assert_rtn("MTLPickLargestMip", "MTLTexture_Private.h", 474,
+                     "MAX(srcSize->width >> *srcMip, 1UL) == MAX(dstSize->width >> *dstMip, 1UL) && "
+                     "MAX(srcSize->height >> *srcMip, 1UL) == MAX(dstSize->height >> *dstMip, 1UL) && "
+                     "MAX(srcSize->depth >> *srcMip, 1UL) == MAX(dstSize->depth >> *dstMip, 1UL) && "
+                     "(*srcMip == 0 || *dstMip == 0) && \"Postcondition does not hold\"");
+    const NSUInteger levels = std::min(sourceTexture.mipmapLevelCount - sourceMip,
+                                       destinationTexture.mipmapLevelCount - destinationMip);
+    auto slices = [](id<MTLTexture> texture) {
+        const NSUInteger type = texture.textureType;
+        return texture.arrayLength * (type - MTLTextureTypeCube < 2 ? 6 : 1);
+    };
+    [self copyFromTexture:sourceTexture
+              sourceSlice:0
+              sourceLevel:sourceMip
+                toTexture:destinationTexture
+         destinationSlice:0
+         destinationLevel:destinationMip
+               sliceCount:std::min(slices(sourceTexture), slices(destinationTexture))
+               levelCount:levels];
 }
 
 // -[AGXA10FamilyBlitContext resolveCounters:inRange:destinationBuffer:destinationOffset:] (AGXMetalA10 0x21c8bafdc)

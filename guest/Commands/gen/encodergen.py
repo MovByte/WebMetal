@@ -36,7 +36,7 @@ ROLES = [
 # Written by hand (WebMetalEncoders.mm).
 HAND_WRITTEN = {'endEncoding', 'setLabel:', 'pushDebugGroup:', 'popDebugGroup', 'insertDebugSignpost:',
                 'renderCommandEncoder', 'sampleCountersInBuffer:atSampleIndex:withBarrier:',
-                'resolveCounters:inRange:destinationBuffer:destinationOffset:'}
+                'resolveCounters:inRange:destinationBuffer:destinationOffset:', 'copyFromTexture:toTexture:'}
 
 # Object kinds: the protocol of the parameter type.
 KIND_PROTOCOLS = {
