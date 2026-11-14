@@ -146,7 +146,7 @@ struct Run<A: Api, E: Embedder> {
     events: HashMap<Handle, EventRef<E>>,
     /// The failure the command buffer completes with, and the stream offset of the record that failed.
     failure: Option<(Failure, u64)>,
-    /// Where the failure stands in the stream ([`Run::fail`]).
+    /// The failure's position in the stream ([`Run::fail_at`]).
     failure_at: u64,
     /// CommandBufferScheduled carried the failure: it is the command buffer's error from then on.
     failure_final: bool,
@@ -157,7 +157,11 @@ struct Run<A: Api, E: Embedder> {
     gpu_start: Option<u64>,
     gpu_end: u64,
     scheduled: bool,
+    /// The next position in the stream. Each job, action and failure found while the stream is replayed takes one,
+    /// in the order the replay reaches it: a job's comes after the work replayed before the job was started. Position
+    /// 0 is the commit's.
     next_job: u64,
+    /// The jobs not yet finished, by position.
     outstanding: BTreeSet<u64>,
     actions: VecDeque<Action<E>>,
     /// The completion action ran; CommandBufferCompleted is posted once every earlier command buffer of the queue has
@@ -170,17 +174,22 @@ struct Run<A: Api, E: Embedder> {
 }
 
 impl<A: Api, E: Embedder> Run<A, E> {
-    /// A failure found while the stream is replayed, at the point where the run has started `next_job` jobs: after
-    /// the work of every job started so far.
+    /// The next position in the stream, for an action or a failure found while the stream is replayed.
+    fn position(&mut self) -> u64 {
+        let at = self.next_job;
+        self.next_job += 1;
+        at
+    }
+
+    /// A failure found while the stream is replayed, after everything replayed so far.
     fn fail(&mut self, failure: Failure, offset: u64) {
-        let at = 2 * self.next_job;
+        let at = self.position();
         self.fail_at(failure, offset, at);
     }
 
-    /// The failure of job `seq`, which follows the work replayed before the job was started: after a failure
-    /// [`Run::fail`] finds while `next_job` is `seq`, before one it finds later.
-    fn fail_job(&mut self, failure: Failure, seq: u64) {
-        self.fail_at(failure, NO_RECORD, 2 * seq + 1);
+    /// Whether a failure earlier in the stream than position `at` is known.
+    fn failed_before(&self, at: u64) -> bool {
+        self.failure.is_some() && self.failure_at < at
     }
 
     /// The command buffer reports the failure earliest in its stream. A Metal command buffer has one error, and the
@@ -752,7 +761,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
             gpu_start: None,
             gpu_end: 0,
             scheduled: false,
-            next_job: 0,
+            next_job: 1,
             outstanding: BTreeSet::new(),
             actions: VecDeque::new(),
             complete: false,
@@ -912,13 +921,13 @@ impl<A: Api, E: Embedder> Core<A, E> {
                     if let Some(f) = wb {
                         add_job(&mut self.jobs, run, id, written_back(f));
                     }
-                    let after = run.next_job;
-                    run.actions.push_back(Action { after, kind: ActionKind::EncoderComplete(segment.encoder) });
                     // The services' checks of the encoder's results (EncodeCx::check), now that its work is
-                    // submitted: a check's failure takes the encoder's place in the stream.
+                    // submitted: a check's failure is the encoder's.
                     for f in std::mem::take(&mut run.recording.checks) {
                         add_job(&mut self.jobs, run, id, written_back(f));
                     }
+                    let after = run.position();
+                    run.actions.push_back(Action { after, kind: ActionKind::EncoderComplete(segment.encoder) });
                 }
                 Step::Wait { event, value, timeout, offset } => {
                     let shared = match run.events.get(&event).expect("event") {
@@ -1070,7 +1079,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
                             if let Some(f) = wb {
                                 add_job(&mut self.jobs, run, id, written_back(f));
                             }
-                            let after = run.next_job;
+                            let after = run.position();
                             run.actions.push_back(Action { after, kind: ActionKind::SignalShared(s, value, offset) });
                         }
                     }
@@ -1135,7 +1144,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
                 add_job(&mut self.jobs, run, id, written_back(f));
             }
         }
-        let after = run.next_job;
+        let after = run.position();
         run.actions.push_back(Action { after, kind: ActionKind::Complete });
         let qs = self.tasks.get_mut(&run.task).expect("task").queues.get_mut(&run.queue).expect("queue");
         qs.active = None;
@@ -1154,17 +1163,20 @@ impl<A: Api, E: Embedder> Core<A, E> {
                 let after = action.after;
                 match action.kind {
                     ActionKind::SignalShared(event, value, offset) => {
-                        // A command buffer that failed stops at the failure; its later signals do not happen. A
-                        // signal that fails stands after the jobs started before it.
-                        if run.failure.is_none()
+                        // A command buffer stops at its first fault in the stream: the signals after it do not
+                        // happen, those before it do, whenever the fault was found. Every job before the signal has
+                        // finished, so no failure before it can still be found.
+                        if !run.failed_before(after)
                             && self.lost.is_none()
                             && let Err(e) = self.embedder.shared_event_signal(event.id, value)
                         {
-                            run.fail_at(failure::invalid(format!("EncodeSignalEvent: {e}")), offset, 2 * after);
+                            run.fail_at(failure::invalid(format!("EncodeSignalEvent: {e}")), offset, after);
                         }
                     }
                     ActionKind::EncoderComplete(encoder) => {
-                        if self.lost.is_none() {
+                        // An encoder at or after the command buffer's first fault did not run to completion and gets
+                        // no EncoderCompleted; CommandBufferCompleted ends it.
+                        if !run.failed_before(after) && self.lost.is_none() {
                             self.embedder.post(
                                 run.task,
                                 Some(run.queue),
@@ -1274,10 +1286,10 @@ impl<A: Api, E: Embedder> Core<A, E> {
             JobOut::Done => {}
             JobOut::Settled(captured) => {
                 if let Some(cause) = GpuCause::worst(&captured) {
-                    run.fail_job(cause.command_buffer_failure(), seq);
+                    run.fail_at(cause.command_buffer_failure(), NO_RECORD, seq);
                 }
             }
-            JobOut::WrittenBack(Err(f)) => run.fail_job(f, seq),
+            JobOut::WrittenBack(Err(f)) => run.fail_at(f, NO_RECORD, seq),
             JobOut::WrittenBack(Ok(())) => {}
         }
     }

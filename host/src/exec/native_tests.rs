@@ -454,6 +454,8 @@ impl EncoderService<Native, TestEmbedder> for ExhaustingCompute {
 enum Script {
     /// Registers a check that fails naming the encoder, settling only once the flag is set.
     LateCheck(Rc<Cell<bool>>),
+    /// Registers a check that passes, settling only once the flag is set.
+    LatePass(Rc<Cell<bool>>),
     /// Registers a check that fails naming the encoder at once and sets the flag.
     CheckSetting(Rc<Cell<bool>>),
     /// Registers a check that fails naming the encoder once the queue's work submitted so far is done.
@@ -477,6 +479,10 @@ impl EncoderService<Native, TestEmbedder> for ScriptedCompute {
             Script::LateCheck(flag) => cx.check(Box::pin(async move {
                 std::future::poll_fn(|_| if flag.get() { Poll::Ready(()) } else { Poll::Pending }).await;
                 fail()
+            })),
+            Script::LatePass(flag) => cx.check(Box::pin(async move {
+                std::future::poll_fn(|_| if flag.get() { Poll::Ready(()) } else { Poll::Pending }).await;
+                Ok(())
             })),
             Script::CheckSetting(flag) => cx.check(Box::pin(async move {
                 flag.set(true);
@@ -1779,6 +1785,44 @@ fn failures_are_reported_in_stream_order() {
         assert_eq!(c.failure.message, "scripted encoder 0");
         assert_eq!(c.failed_offset, NO_RECORD);
     }
+}
+
+/// A command buffer stops at its first fault in the stream, whenever the fault is found: a shared event signal before
+/// the fault happens, and the encoders before it complete, even when a later encoder's failure is found before the
+/// work before the signal has finished; the faulting encoder gets no EncoderCompleted.
+#[test]
+fn work_before_a_later_fault_completes() {
+    let flag = Rc::new(Cell::new(false));
+    let script = vec![Script::LatePass(flag.clone()), Script::CheckSetting(flag)];
+    let x = Harness::with_compute(false, Box::new(ScriptedCompute { script: script.into(), encoded: 0 }));
+    x.open(T1);
+    let q = x.queue(T1);
+    x.em.shared_event(T1, 78, 9002, 0);
+    let event = x.handle();
+    x.ok(T1, Request::RegisterSharedEvent(RegisterSharedEvent { event, port: 78 }));
+    let (first, second) = (x.handle(), x.handle());
+    let records = [
+        Command::BeginCompute(BeginCompute { encoder: first }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+        signal(event, 1),
+        Command::BeginCompute(BeginCompute { encoder: second }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+    ];
+    let cb = x.commit(T1, q, &records, &[event]);
+    x.idle();
+    let posted = x.em.take_posted();
+    let c = completion(&posted, cb);
+    assert_eq!(c.status, command_buffer_status::ERROR);
+    assert_eq!(c.failure.message, "scripted encoder 1");
+    assert_eq!(x.em.value(9002), 1, "the signal before the fault did not happen");
+    let completed: Vec<Handle> = posted
+        .iter()
+        .filter_map(|(_, _, e)| match e {
+            Event::EncoderCompleted(e) => Some(e.encoder),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completed, vec![first]);
 }
 
 // Device loss and out-of-memory --------------------------------------------------------------------------------------
