@@ -110,11 +110,16 @@ void PendingRelease::bound(const std::vector<uint64_t> &handles, Connection *con
 // != 0), -useHeap: (0x21c90c16c) and -useHeaps:count: (0x21c90c274) with 1,
 // -setStageInRegionWithIndirectBuffer:indirectBufferOffset: with 1 (0x21c90b7c8). Blit (AGXA10FamilyBlitContext):
 // -invalidateCompressedTexture:, -optimizeContentsForGPUAccess:, -optimizeContentsForCPUAccess: and their slice and
-// level forms return at once (0x21c8b9954 to 0x21c8b9968). Every other use is untraced: the binds the driver lists at
-// draw and dispatch time by masks of the bound pipeline's compiled program (render 0x21c96ad3c, compute 0x21c90f2c4),
-// which come from its compiler (packages G4 and G5); the indirect dispatch's buffer, listed only while the threadgroup
-// fits the pipeline (0x21c90b8a0 to 0x21c90b8ac); and the blit operations, which the driver runs as blit or render
-// kicks over the arguments by paths not read yet.
+// level forms return at once (0x21c8b9954 to 0x21c8b9968), as do -getTextureAccessCounters:... (0x21c8bab54) and
+// -resetTextureAccessCounters:... (0x21c8bab70); the copies between buffers and textures, the buffer and texture fills
+// and -generateMipmapsForTexture: run as blit or render kicks that list their arguments as their values decide
+// (WebMetalBlitListing.mm). Every other use is untraced: the binds the driver lists at draw and dispatch time by masks
+// of the bound pipeline's compiled program (render 0x21c96ad3c, compute 0x21c90f2c4), which come from its compiler
+// (packages G4 and G5); the indirect dispatch's buffer, listed only while the threadgroup fits the pipeline
+// (0x21c90b8a0 to 0x21c90b8ac); and the copies between textures by slices and levels
+// (-copyFromTexture:sourceSlice:sourceLevel:toTexture:destinationSlice:destinationLevel:sliceCount:levelCount:,
+// 0x21c8ba05c, which -copyFromTexture:toTexture: reaches through IOGPU 0x1fcb317cc), whose region lists are not read
+// yet.
 Listing listingOf(id self, SEL cmd)
 {
     static const std::vector<SEL> render = {
@@ -147,6 +152,29 @@ Listing listingOf(id self, SEL cmd)
         @selector(optimizeContentsForGPUAccess:slice:level:),
         @selector(optimizeContentsForCPUAccess:),
         @selector(optimizeContentsForCPUAccess:slice:level:),
+        @selector(getTextureAccessCounters:region:mipLevel:slice:resetCounters:countersBuffer:countersBufferOffset:),
+        @selector(resetTextureAccessCounters:region:mipLevel:slice:),
+    };
+    static const std::vector<SEL> blitByRecord = {
+        @selector(copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:),
+        @selector(copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:
+                      destinationSlice:destinationLevel:destinationOrigin:),
+        @selector(copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:
+                      destinationSlice:destinationLevel:destinationOrigin:options:),
+        @selector(copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:
+                      destinationBytesPerRow:destinationBytesPerImage:),
+        @selector(copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:
+                      destinationBytesPerRow:destinationBytesPerImage:options:),
+        @selector(copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:
+                      destinationLevel:destinationOrigin:),
+        @selector(copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:
+                      destinationLevel:destinationOrigin:options:),
+        @selector(fillBuffer:range:value:),
+        @selector(fillBuffer:range:pattern4:),
+        @selector(fillTexture:level:slice:region:bytes:length:),
+        @selector(fillTexture:level:slice:region:color:),
+        @selector(fillTexture:level:slice:region:color:pixelFormat:),
+        @selector(generateMipmapsForTexture:),
     };
     auto in = [cmd](const std::vector<SEL> &list) { return std::find(list.begin(), list.end(), cmd) != list.end(); };
     if ([self isKindOfClass:[AGXA10FamilyRenderContext class]] && in(render))
@@ -155,6 +183,8 @@ Listing listingOf(id self, SEL cmd)
         return Listing::Stamped;
     if ([self isKindOfClass:[AGXA10FamilyBlitContext class]] && in(blitUnlisted))
         return Listing::Unlisted;
+    if ([self isKindOfClass:[AGXA10FamilyBlitContext class]] && in(blitByRecord))
+        return Listing::ByRecord;
     return Listing::Untraced;
 }
 
@@ -178,6 +208,19 @@ uint64_t Reference(Stream &stream, id self, SEL cmd, id object, Listing listing)
 uint64_t Reference(Stream &stream, id self, SEL cmd, id object)
 {
     return Reference(stream, self, cmd, object, listingOf(self, cmd));
+}
+
+uint64_t EncoderReference(id self, SEL cmd, EncoderState &encoder, id object, bool nilAllowed)
+{
+    if (!object && !nilAllowed)
+        WMLoudMethod(self, cmd, "a nil argument where the command needs an object; Metal leaves it undefined");
+    const Listing listing = listingOf(self, cmd);
+    if (listing != Listing::ByRecord)
+        return Reference(*encoder.stream, self, cmd, object, listing);
+    const uint64_t handle = Reference(*encoder.stream, self, cmd, object, Listing::Unlisted);
+    if (object)
+        encoder.byRecord.push_back(EncoderState::RecordObject{handle, object});
+    return handle;
 }
 
 // The stamps committed command buffers have pending, by kernel resource ----------------------------------------------

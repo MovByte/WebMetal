@@ -159,6 +159,14 @@ ResourceState *TextureState(AGXTexture *texture)
     return &texture->_state;
 }
 
+const agx::TextureGen2 *TextureLayoutOf(id texture)
+{
+    if (![texture isKindOfClass:[AGXTexture class]])
+        return nullptr;
+    AGXTexture *t = static_cast<AGXTexture *>(texture);
+    return t->_hasLayout ? &t->_layout : nullptr;
+}
+
 // What the AGX layout reads besides the descriptor: the page size, and the IOSurface offset alignment that
 // AGX::Texture's constructor keeps in a static local (IOSurfaceAlignProperty(kIOSurfaceOffset, 1)).
 agx::SystemValues LayoutSystemValues()

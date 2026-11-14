@@ -69,7 +69,8 @@ static const char kUntracedUse[] =
     "a command buffer that has not completed names the resource in a use whose listing in the A10X driver's IOGPU resource "
     "list, which decides whether the kernel stamps event 0 (AGXAllocationList2 0xfffffff005bf1914, IOGPUResource's stamp "
     "0xfffffff005bc4e68, kernelcache), is not traced: the draw-time vertex and fragment binds the driver lists by masks of "
-    "the bound pipeline (0x21c96ad3c), which come from its compiler (packages G4 and G5), and the uses not read yet";
+    "the bound pipeline (0x21c96ad3c), which come from its compiler (packages G4 and G5), the blit copies between "
+    "textures by slices and levels (0x21c8ba05c), and the uses not read yet";
 static const char kRacingStamp[] =
     "the kernel stamped the resource for another encoder while the wait was blocked on an earlier stamp: the kernel's "
     "finish takes the event's channel mask once and reads each channel's stamp when it reaches the channel "

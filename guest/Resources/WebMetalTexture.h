@@ -55,6 +55,10 @@ id NewTextureLayout(AGXA10FamilyDevice *device, SEL _cmd, MTLTextureDescriptor *
 // The wire form of a texture descriptor: every field the schema carries, read with the descriptor's own getters.
 wire::TextureDescriptor WireTextureDescriptor(id self, SEL _cmd, MTLTextureDescriptor *descriptor);
 
+// The A10X layout (AGX::TextureGen2, the texture's _impl) of a plugin texture: null for another object and for a texture
+// whose layout is not ported (over an IOSurface, or a texture-buffer texture over a buffer).
+const agx::TextureGen2 *TextureLayoutOf(id texture);
+
 // A buffer's handle, CPU contents and resource state (WebMetalBuffer.mm).
 uint64_t BufferHandle(AGXBuffer *buffer);
 void *BufferContents(AGXBuffer *buffer);

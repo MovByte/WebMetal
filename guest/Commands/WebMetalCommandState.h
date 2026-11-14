@@ -77,6 +77,13 @@ struct EncoderState {
     // A render encoder's: the kernel resource of its pass's visibility result buffer (KernelResourceKey), which the
     // driver lists once the encoder sets a visibility result mode other than Disabled.
     uint64_t visibilityResultKey = 0;
+    // The objects the arguments of the record being written name where the A10X driver's listing depends on the
+    // record's values (Listing::ByRecord): the record's NoteRecordListing decides each and clears the list.
+    struct RecordObject {
+        uint64_t handle;
+        __unsafe_unretained id object;
+    };
+    std::vector<RecordObject> byRecord;
 };
 
 }  // namespace webmetal
@@ -144,18 +151,15 @@ uint64_t Reference(Stream &stream, id self, SEL cmd, id object);
 
 // How the A10X driver lists the resource an argument names in the IOGPU resource list of its encoder's segment, which
 // decides whether the segment's kick stamps event 0 of the kernel resource (WebMetalCommandBuffer.mm): with flags the
-// kick stamps, not at all (or with flags no kick stamps), or in a way that is not traced. Reference without a listing
-// takes the one of `cmd` on encoder `self`.
-enum class Listing : uint8_t { Stamped, Unlisted, Untraced };
+// kick stamps, not at all (or with flags no kick stamps), in a way that is not traced, or as the values of the whole
+// record decide (ByRecord: EncoderReference keeps the object for the record's NoteRecordListing). Reference without a
+// listing takes the one of `cmd` on encoder `self`.
+enum class Listing : uint8_t { Stamped, Unlisted, Untraced, ByRecord };
 uint64_t Reference(Stream &stream, id self, SEL cmd, id object, Listing listing);
 
-// An object an encoder command names, noted in the encoder's stream. nil where the record needs an object is LOUD.
-inline uint64_t EncoderReference(id self, SEL cmd, EncoderState &encoder, id object, bool nilAllowed)
-{
-    if (!object && !nilAllowed)
-        WMLoudMethod(self, cmd, "a nil argument where the command needs an object; Metal leaves it undefined");
-    return Reference(*encoder.stream, self, cmd, object);
-}
+// An object an encoder command names, noted in the encoder's stream with the listing of `cmd` on encoder `self`. nil
+// where the record needs an object is LOUD.
+uint64_t EncoderReference(id self, SEL cmd, EncoderState &encoder, id object, bool nilAllowed);
 
 // A new encoder of `buffer` that records into the buffer's stream, or into `subStream` (a parallel sub-encoder).
 std::shared_ptr<EncoderState> NewEncoderState(AGXA10FamilyCommandBuffer *buffer, Stream *subStream);
@@ -170,6 +174,20 @@ void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::Rend
 void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::ComputeUseResource &record);
 void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::ComputeUseResources &record);
 void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::RenderSetVisibilityResultMode &record);
+// The blit operations whose listing the A10X driver decides from the arguments (WebMetalBlitListing.mm).
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitCopyBufferToBuffer &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitCopyBufferToTexture &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitCopyBufferToTextureOptions &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitCopyTextureToBuffer &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitCopyTextureToBufferOptions &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitCopyTextureToTexture &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitCopyTextureToTextureOptions &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitFillBuffer &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitFillBufferPattern4 &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitFillTextureBytes &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitFillTextureColor &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitFillTextureColorPixelFormat &record);
+void NoteRecordListing(id self, SEL cmd, EncoderState &encoder, const wire::BlitGenerateMipmapsForTexture &record);
 
 // Appends an encoder's record. Fails the call LOUD when the encoder has ended or the record cannot be encoded.
 template <class Record> void EmitEncoderRecord(id self, SEL cmd, EncoderState &encoder, const Record &record)

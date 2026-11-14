@@ -544,6 +544,49 @@ void checkListings(id<MTLDevice> device)
     [staged endEncoding];
     check([computeReason containsString:@"no access flags"] && [renderReason containsString:@"no access flags"],
           "a use the A10X driver lists with no access flags is LOUD");
+
+    // Blit operations list their arguments in blit or render kicks as the values decide (WebMetalBlitListing.mm).
+    id<MTLSharedEvent> blitEvent = [device newSharedEvent];
+    id<MTLBuffer> source = [device newBufferWithLength:256 options:MTLResourceStorageModeShared];
+    id<MTLBuffer> copied = [device newBufferWithLength:256 options:MTLResourceStorageModeShared];
+    id<MTLBuffer> filled = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+    id<MTLBuffer> untouched = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+    MTLTextureDescriptor *md = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                  width:16 height:16 mipmapped:YES];
+    md.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    md.storageMode = MTLStorageModePrivate;
+    id<MTLTexture> mipmapped = [device newTextureWithDescriptor:md];
+    id<MTLTexture> uploaded = [device newTextureWithDescriptor:td];
+    check(blitEvent && source && copied && filled && untouched && mipmapped && uploaded,
+          "the blit listing check's objects are made");
+    id<MTLCommandBuffer> blits = [queue commandBuffer];
+    id<MTLBlitCommandEncoder> blitter = [blits blitCommandEncoder];
+    [blitter copyFromBuffer:source sourceOffset:0 toBuffer:copied destinationOffset:0 size:256];
+    [blitter fillBuffer:filled range:NSMakeRange(0, 64) value:7];
+    [blitter copyFromBuffer:source sourceOffset:0 sourceBytesPerRow:32 sourceBytesPerImage:256
+                 sourceSize:MTLSizeMake(8, 8, 1) toTexture:uploaded destinationSlice:0 destinationLevel:0
+          destinationOrigin:MTLOriginMake(0, 0, 0)];
+    [blitter generateMipmapsForTexture:mipmapped];
+    [blitter copyFromBuffer:source sourceOffset:0 toBuffer:untouched destinationOffset:0 size:0];
+    [blitter endEncoding];
+    [blits encodeWaitForEvent:blitEvent value:1];
+    [blits commit];
+    __block BOOL listedComplete = NO, unlistedComplete = NO;
+    check(quiet(^{
+        unlistedComplete = [(id<SPIResources>)untouched isComplete];
+    }) && unlistedComplete,
+          "a copy of 0 bytes lists nothing");
+    check(quiet(^{
+        for (id resource in @[ source, copied, filled, uploaded, mipmapped ])
+            [(id<SPIResources>)resource waitUntilComplete];
+        listedComplete = [(id<SPIResources>)source isComplete] && [(id<SPIResources>)copied isComplete] &&
+                         [(id<SPIResources>)filled isComplete] && [(id<SPIResources>)uploaded isComplete] &&
+                         [(id<SPIResources>)mipmapped isComplete];
+    }) && listedComplete,
+          "the resources of copies, fills and mipmaps complete with their blit encoder while the command buffer waits");
+    blitEvent.signaledValue = 1;
+    [blits waitUntilCompleted];
+    check(blits.status == MTLCommandBufferStatusCompleted, "the command buffer with the blits completes");
 }
 
 void checkConstants()
