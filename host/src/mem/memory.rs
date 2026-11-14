@@ -1,8 +1,10 @@
 //! [`Memory`]: the executor's memory services on its one WebGPU device.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::future::Future;
 use std::rc::Rc;
+use std::task::{Poll, Waker};
 
 use crate::blit::kernels::Kernels;
 use crate::format::webgpu::{HostFeatures, WebGpuFormat};
@@ -23,6 +25,8 @@ pub struct Memory<A: Api> {
     pub(crate) staging: StagingArena<A>,
     /// The next queue position (see [`super::shadow`]).
     seq: Cell<u64>,
+    /// The readbacks encoded and not yet merged, in queue order.
+    readbacks: Rc<ReadbackOrder>,
     /// Formats whose texel copies were tested on this device (see [`super::proof`]).
     proofs: RefCell<HashMap<WebGpuFormat, Result<(), String>>>,
     /// The masked-write pipeline and its bind group layout, made on first use.
@@ -44,6 +48,7 @@ impl<A: Api> Memory<A> {
             limits: device.limits(),
             staging: StagingArena::default(),
             seq: Cell::new(1),
+            readbacks: Rc::default(),
             proofs: RefCell::new(HashMap::new()),
             masked: RefCell::new(None),
             masked_words: Cell::new(0),
@@ -64,6 +69,13 @@ impl<A: Api> Memory<A> {
         s
     }
 
+    /// The queue position of a readback and its [`Turn`]: a new position, taken as the readback's copies are encoded.
+    pub(crate) fn readback_turn(&self) -> Turn {
+        let seq = self.next_seq();
+        self.readbacks.open.borrow_mut().insert(seq);
+        Turn { order: self.readbacks.clone(), seq }
+    }
+
     /// Words written in part, under a mask, since the services started.
     pub fn masked_words(&self) -> u64 {
         self.masked_words.get()
@@ -77,5 +89,56 @@ impl<A: Api> Memory<A> {
     /// Record the outcome of a texel copy test ([`Memory::prove_texel_copies`]).
     pub fn record_proof(&self, format: WebGpuFormat, outcome: Result<(), String>) {
         self.proofs.borrow_mut().insert(format, outcome);
+    }
+}
+
+/// The readbacks whose copies are encoded and whose bytes have not been merged into guest memory.
+///
+/// A readback's bytes are merged against the shadows as the last merged readback left them ([`super::shadow`]), so
+/// readbacks merge in queue order. Their bytes do not arrive in that order: each is mapped with `mapAsync`, and WebGPU
+/// orders the settlement of `mapAsync` promises of different buffers in no way (WebGPU section 3.2.2, "Promise
+/// Ordering"; under load, Dawn and wgpu-native both settle a later readback's maps before an earlier one's). Merged in
+/// arrival order, the bytes an earlier readback copied before a later command wrote the buffer would replace what that
+/// command wrote.
+#[derive(Default)]
+struct ReadbackOrder {
+    open: RefCell<BTreeSet<u64>>,
+    /// The readbacks whose bytes arrived while an earlier one was open.
+    waiting: RefCell<Vec<Waker>>,
+}
+
+/// A readback's place in queue order, from the encoding of its copies until it is dropped: once its bytes are merged,
+/// or when the readback is abandoned (a failed map, a dropped command buffer). Later readbacks merge only after it.
+pub struct Turn {
+    order: Rc<ReadbackOrder>,
+    seq: u64,
+}
+
+impl Turn {
+    /// The readback's queue position.
+    pub fn seq(&self) -> u64 {
+        self.seq
+    }
+
+    /// Resolves once every readback encoded before this one has been dropped.
+    pub(crate) fn ready(&self) -> impl Future<Output = ()> + '_ {
+        std::future::poll_fn(move |cx| {
+            if self.order.open.borrow().first() == Some(&self.seq) {
+                Poll::Ready(())
+            } else {
+                self.order.waiting.borrow_mut().push(cx.waker().clone());
+                Poll::Pending
+            }
+        })
+    }
+}
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        self.order.open.borrow_mut().remove(&self.seq);
+        let waiting = std::mem::take(&mut *self.order.waiting.borrow_mut());
+        for w in waiting {
+            w.wake();
+        }
     }
 }

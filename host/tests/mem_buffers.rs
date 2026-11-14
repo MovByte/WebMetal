@@ -417,3 +417,42 @@ fn purgeable_empty_discards() {
     assert_eq!(guest.cpu_read(contents, 256), vec![0; 256]);
     g.assert_no_errors();
 }
+
+/// A readback copied before a GPU write whose bytes arrive after those of a readback copied after the write: WebGPU
+/// orders the settlement of `mapAsync` promises of different buffers in no way (section 3.2.2), and Dawn and
+/// wgpu-native both settle them out of queue order under load. The later readback merges only once the earlier one has, so the earlier
+/// one's older bytes do not replace what the GPU wrote in between.
+#[test]
+fn readbacks_merge_in_queue_order() {
+    use std::future::Future as _;
+    let g = Gpu::new(true);
+    let guest = Guest::new(1 << 16, None);
+    let mut ex = Executor::new(&g, &guest);
+    let contents = guest.base + 0x1000;
+    let b = ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(1, 256, 0, contents)).unwrap();
+    // The earlier readback copies the buffer's zeros; the later one follows a fill of every word.
+    ex.submit_readback(&b);
+    ex.commit(&b, 0, 64, Some(0x5a5a_5a5a));
+    let (earlier, _) = ex.in_flight.remove(0);
+    let (later, _) = ex.in_flight.remove(0);
+    assert!(earlier.seq() < later.seq());
+    g.block_on(g.device.queue().on_submitted_work_done());
+    // Only the later readback is mapped: its bytes arrive first, and it waits for the earlier one's turn.
+    let (mem, sink) = (&ex.mem, &guest);
+    let mut later = std::pin::pin!(async move {
+        later.wait().await.unwrap().merge(mem, sink).unwrap();
+    });
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    for _ in 0..200 {
+        assert!(later.as_mut().poll(&mut cx).is_pending(), "{}: a readback merged before an earlier one", g.name());
+        g.gpu.process_events();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    g.block_on(async {
+        earlier.wait().await.unwrap().merge(mem, sink).unwrap();
+    });
+    g.block_on(later);
+    assert_eq!(guest.cpu_read(contents, 256), vec![0x5a; 256], "{}", g.name());
+    assert_eq!(b.shadow_bytes().unwrap(), vec![0x5a; 256]);
+    g.assert_no_errors();
+}

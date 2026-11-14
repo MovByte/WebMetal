@@ -26,7 +26,7 @@
 //! 3. [`Memory::encode_readbacks`] at the end of the command buffer's encoder (or before a shared event signal): the
 //!    copies take their queue position here, so the encoder must reach the queue before any other upload.
 //! 4. [`Readbacks::wait`] and [`Arrived::merge`] once the GPU has run them, before the command buffer is reported
-//!    completed.
+//!    completed. Readbacks merge in queue order whatever order their maps settle in (see [`super::memory::Turn`]).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -46,7 +46,7 @@ use webmetal_wire::{CreateBuffer, CreateBufferNoCopy, CreateBufferWithBytes, Gue
 use super::calls::Calls;
 use super::error::MemError;
 use super::heap::{Heap, HeapAllocation};
-use super::memory::Memory;
+use super::memory::{Memory, Turn};
 use super::options::{ResourceOptions, StorageMode};
 use super::purgeable::Purgeable;
 use super::shadow::{MaskedWord, Shadow, UploadPlan, UploadWrite};
@@ -143,7 +143,7 @@ impl<A: Api> Buffer<A> {
 /// Readback copies encoded into a command encoder, at one queue position.
 pub struct Readbacks<A: Api> {
     entries: Vec<Entry<A>>,
-    seq: u64,
+    turn: Turn,
 }
 
 struct Entry<A: Api> {
@@ -153,10 +153,10 @@ struct Entry<A: Api> {
     size: u64,
 }
 
-/// Readback data, mapped and copied out, to merge into the guest.
+/// Readback data, mapped and copied out, to merge into the guest: its turn has come.
 pub struct Arrived<A: Api> {
     entries: Vec<(Entry<A>, Vec<u8>)>,
-    seq: u64,
+    turn: Turn,
 }
 
 /// The label of a WebGPU object made for a Metal object, so that a WebGPU error names it.
@@ -583,7 +583,8 @@ impl<A: Api> Memory<A> {
         encoder: &A::CommandEncoder,
         buffers: &[Rc<Buffer<A>>],
     ) -> Result<Readbacks<A>, MemError> {
-        let seq = self.next_seq();
+        let turn = self.readback_turn();
+        let seq = turn.seq();
         let mut entries = Vec::new();
         for b in buffers {
             let window = {
@@ -608,7 +609,7 @@ impl<A: Api> Memory<A> {
             b.state.borrow_mut().shadow.as_mut().expect("guest-backed buffers have a shadow").begin_readback(seq);
             entries.push(Entry { buffer: b.clone(), staging, offset, size });
         }
-        Ok(Readbacks { entries, seq })
+        Ok(Readbacks { entries, turn })
     }
 
     /// `setPurgeableState:` of a buffer that is not in a heap (a heap buffer reflects its heap: see
@@ -674,15 +675,17 @@ impl<A: Api> Readbacks<A> {
 
     /// The queue position of the copies.
     pub fn seq(&self) -> u64 {
-        self.seq
+        self.turn.seq()
     }
 
-    /// Map the staging buffers once the GPU has run the copies and take their bytes. The future makes no WebGPU call
-    /// that can raise a device-timeline error.
+    /// Map the staging buffers once the GPU has run the copies and take their bytes, then wait until every readback
+    /// encoded earlier has been merged or abandoned. The future makes no WebGPU call that can raise a device-timeline
+    /// error.
     pub fn wait(self) -> GpuFuture<Result<Arrived<A>, MemError>> {
         Box::pin(async move {
-            let mut out = Vec::with_capacity(self.entries.len());
-            for entry in self.entries {
+            let Readbacks { entries, turn } = self;
+            let mut out = Vec::with_capacity(entries.len());
+            for entry in entries {
                 let size = size64(entry.size, "mapAsync")?;
                 entry
                     .staging
@@ -698,7 +701,8 @@ impl<A: Api> Readbacks<A> {
                 entry.staging.unmap();
                 out.push((entry, data));
             }
-            Ok(Arrived { entries: out, seq: self.seq })
+            turn.ready().await;
+            Ok(Arrived { entries: out, turn })
         })
     }
 }
@@ -706,19 +710,23 @@ impl<A: Api> Readbacks<A> {
 impl<A: Api> Arrived<A> {
     /// The queue position of the readback.
     pub fn seq(&self) -> u64 {
-        self.seq
+        self.turn.seq()
     }
 
     /// Merge into the shadows and write the bytes the GPU changed into the guest. Makes no WebGPU call: a discard
-    /// that waited for this readback zeroes the guest's bytes now and the GPU copy before its next use.
-    pub fn merge(self, mem: &Memory<A>, e: &dyn Embedder) -> Result<(), MemError> {
+    /// that waited for this readback zeroes the guest's bytes now and the GPU copy before its next use. Returns the
+    /// readback's turn: later readbacks merge once it is dropped, so a caller that writes other bytes the same queue
+    /// position read back holds it until those are written too.
+    pub fn merge(self, mem: &Memory<A>, e: &dyn Embedder) -> Result<Turn, MemError> {
+        let Arrived { entries, turn } = self;
+        let seq = turn.seq();
         let mut first_error = None;
-        for (entry, data) in self.entries {
+        for (entry, data) in entries {
             let b = &entry.buffer;
             let (writes, discard) = {
                 let mut st = b.state.borrow_mut();
                 let shadow = st.shadow.as_mut().expect("readbacks are of guest-backed buffers");
-                let writes = shadow.merge_readback(self.seq, entry.offset, &data);
+                let writes = shadow.merge_readback(seq, entry.offset, &data);
                 let idle = shadow.pending().next().is_none();
                 (writes, st.discard_when_idle && idle)
             };
@@ -737,6 +745,6 @@ impl<A: Api> Arrived<A> {
                 }
             }
         }
-        first_error.map_or(Ok(()), Err)
+        first_error.map_or(Ok(turn), Err)
     }
 }

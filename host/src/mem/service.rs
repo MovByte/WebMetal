@@ -780,8 +780,10 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         }
         let (embedder, decoded) = (self.embedder.clone(), self.decoded.clone());
         Ok(Some(Box::pin(async move {
+            // The buffers' readback resolves once every write-back encoded earlier has merged; its turn is held until
+            // this write-back's other readbacks are merged too, so write-backs reach guest memory in queue order.
             let arrived = readbacks.wait().await.map_err(|e| e.failure())?;
-            arrived.merge(&mem, embedder.as_ref()).map_err(|e| e.failure())?;
+            let _turn = arrived.merge(&mem, embedder.as_ref()).map_err(|e| e.failure())?;
             for s in surfaces {
                 let a = s.wait().await.map_err(|e| e.failure())?;
                 a.merge(&mem, embedder.as_ref()).map_err(|e| e.failure())?;

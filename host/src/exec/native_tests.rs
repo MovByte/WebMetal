@@ -12,7 +12,7 @@
 
 use std::any::Any;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -252,6 +252,23 @@ fn buffers(objects: &Table, handles: &[Handle]) -> Vec<(Handle, Rc<dyn Any>)> {
 
 struct Coherent {
     embedder: Rc<TestEmbedder>,
+    /// Write-backs encoded and not yet merged, numbered in encoding (queue) order. Their maps settle in no order
+    /// WebGPU defines (section 3.2.2), so each merges once every earlier one has, or the bytes an earlier one read
+    /// could replace those a later command wrote.
+    open: Rc<RefCell<BTreeSet<u64>>>,
+    next: Cell<u64>,
+}
+
+/// A write-back's place in [`Coherent`]'s order, given up when it is dropped.
+struct Ticket {
+    open: Rc<RefCell<BTreeSet<u64>>>,
+    n: u64,
+}
+
+impl Drop for Ticket {
+    fn drop(&mut self) {
+        self.open.borrow_mut().remove(&self.n);
+    }
 }
 
 impl Coherence<Native, TestEmbedder> for Coherent {
@@ -307,17 +324,35 @@ impl Coherence<Native, TestEmbedder> for Coherent {
         }
         let embedder = self.embedder.clone();
         let task = cx.task();
+        let n = self.next.get();
+        self.next.set(n + 1);
+        self.open.borrow_mut().insert(n);
+        let ticket = Ticket { open: self.open.clone(), n };
         Ok(Some(Box::pin(async move {
+            let mut arrived = Vec::new();
             for (p, staging) in reads {
-                let b = p.downcast_ref::<TestBuffer>().unwrap();
+                let length = p.downcast_ref::<TestBuffer>().unwrap().length;
                 staging
                     .map_async(MapMode::READ, Size64::new(0).unwrap(), None)
                     .await
                     .map_err(|e| failure::invalid(e.to_string()))?;
                 let range = staging.get_mapped_range(Size64::new(0).unwrap(), None).unwrap();
-                let mut new = vec![0; b.length as usize];
+                let mut new = vec![0; length as usize];
                 range.read(0, &mut new).unwrap();
                 staging.unmap();
+                arrived.push((p, new));
+            }
+            // The executor polls every outstanding write-back whenever one completes.
+            std::future::poll_fn(|_| {
+                if ticket.open.borrow().first() == Some(&ticket.n) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            })
+            .await;
+            for (p, new) in arrived {
+                let b = p.downcast_ref::<TestBuffer>().unwrap();
                 let mut shadow = b.shadow.borrow_mut();
                 embedder
                     .write_guest_changed(task, b.contents, &new, &shadow)
@@ -445,7 +480,7 @@ impl Harness {
             render: None,
             compute: Some(Box::new(ExhaustingCompute)),
             blit: if blit { Some(Box::new(Blit)) } else { None },
-            coherence: Some(Box::new(Coherent { embedder: em.clone() })),
+            coherence: Some(Box::new(Coherent { embedder: em.clone(), open: Rc::default(), next: Cell::new(0) })),
         };
         let config = Config { scopes: Policy { granularity: Granularity::PerCall, strict: true } };
         let exec = Executor::new(device.clone(), em.clone(), services, config);
