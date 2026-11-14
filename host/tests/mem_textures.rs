@@ -954,6 +954,26 @@ fn pvrtc_partial_writes_keep_the_other_words() {
     g.assert_no_errors();
 }
 
+/// `replaceRegion:mipmapLevel:withBytes:bytesPerRow:` passes bytesPerImage 0 (IOGPU 0x1fcb2e204), and the A10X steps the
+/// linear pointer by it per depth slice of a 3D region (writeRegion's 3D loop): every slice takes the same image.
+#[test]
+fn replace_3d_with_image_pitch_0_repeats_the_image() {
+    let g = Gpu::new(false);
+    let guest = Guest::new(16 << 20, None);
+    let ctx = Ctx::new(&g, &guest);
+    let t = Rc::new(
+        ctx.mem
+            .create_texture(&ctx.direct, TASK, ctx.handle(), &descriptor(7, 70, (4, 4, 3), 1, 1, SHARED, 1))
+            .unwrap(),
+    );
+    ctx.prove(&t);
+    let image: Vec<u8> = (0..64).map(|i| (i * 3 + 1) as u8).collect();
+    ctx.replace(&t, (0, 0), region((0, 0, 0), (4, 4, 3)), &image, (16, 0)).unwrap();
+    let all = ctx.get(&t, (0, 0), region((0, 0, 0), (4, 4, 3)), (16, 64), 192).unwrap();
+    assert_eq!(all, [&image[..], &image[..], &image[..]].concat());
+    g.assert_no_errors();
+}
+
 /// Error paths: calls Metal does not define are refused as such, and transfers WebGPU cannot do are refused loudly.
 #[test]
 fn texture_error_paths() {
