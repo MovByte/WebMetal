@@ -701,11 +701,14 @@ impl<A: Api> Memory<A> {
             )));
         }
         if t.geometry.kind.is_3d() && (160..=184).contains(&t.format) {
-            // writeRegion's 3D switch (jump table 0x21c9dd59c) sends PVRTC, ETC2 and EAC to the bytes-per-pixel table:
-            // texel (x + i, y + j) goes to the element of block coordinates (x + i, y + j) within a block-sized twiddle.
+            // writeRegion's and readRegion's 3D switches (jump tables 0x21c9dd59c, 0x21c9dd69a) send PVRTC, ETC2 and
+            // EAC to the bytes-per-pixel functions: texel (x + i, y + j) goes to the element of block coordinates
+            // (x + i, y + j), wrapped within the level's twiddled block (mem::agx::region ports them).
             return Err(MemError::unimplemented(format!(
-                "{call} of a 3D PVRTC, ETC2 or EAC texture: the A10X driver addresses its blocks by texel coordinates, \
-                 which the host's texture does not reproduce"
+                "{call} of a 3D PVRTC, ETC2 or EAC texture: the A10X driver copies these levels by texel coordinates \
+                 wrapped within the level's twiddled block of blocks, so texels share blocks, reads take blocks the \
+                 level's padding holds, and 8-byte writes reach the depth slice's next levels; the host stores the \
+                 texture's blocks in WebGPU, not the driver's memory, so it cannot apply these copies to them"
             )));
         }
         t.blocks.ok_or_else(|| {

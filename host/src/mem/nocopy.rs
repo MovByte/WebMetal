@@ -413,7 +413,7 @@ fn read_guest_region(
     if pixel_bytes == 0 {
         return Err(MemError::undefined(call, "the bytes pointer is null (the driver reads through it)"));
     }
-    let extent = region::extent(layout, c).map_err(|e| copy_error(call, e))?.expect("validated");
+    let extent = region::read_extent(layout, c).map_err(|e| copy_error(call, e))?.expect("validated");
     let mut held = vec![0u8; extent.linear as usize];
     e.read_guest(m.task, pixel_bytes, &mut held)?;
     let Some((first, end)) = extent.texture else { return Ok(()) };

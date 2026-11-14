@@ -148,7 +148,7 @@ pub fn copy_from_texture_memory(
         return Ok(Some(refusal.assertion()));
     }
     non_null(CALL, r.memory.0, r.bytes.0.wrapping_add(r.offset))?;
-    let extent = region::extent(&t, &c).map_err(|e| copy_error(CALL, e))?.expect("the region was validated");
+    let extent = region::read_extent(&t, &c).map_err(|e| copy_error(CALL, e))?.expect("the region was validated");
     let (linear_at, linear_len) = guest_range(CALL, r.bytes.0, r.offset, extent.linear)?;
     let mut held = vec![0u8; linear_len];
     e.read_guest(task, linear_at, &mut held)?;

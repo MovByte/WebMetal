@@ -19,6 +19,13 @@
 //!
 //! Twiddled order (`twiddleBlock`): within a block of 2^a by 2^b elements, bit i of y goes to bit i + min(i, a) of the
 //! element index and bit i of x to bit i + min(i + 1, b).
+//!
+//! The 3D levels of the ETC2 and EAC formats go through the bytes-per-pixel functions, which address the region in
+//! texels within a twiddled block sized in blocks: the region can be up to four times wider and taller than the block,
+//! and texels share elements. The functions walk the texel coordinates with masked increments, which wrap within the
+//! block, so an element holds the last texel the copy order writes to it. The 8-byte write (`0x21c98934c`) copies the
+//! region as strips and 4 by 4 quads, each quad written as 16 consecutive elements; the 16-byte write and both reads
+//! copy it in rows.
 
 use super::gen2::{
     TextureGen2, TwiddledBlockInfo, Unported, align_log2_up, at_least_one, ceil_pow2, clz32, depth_stencil_pad_rule,
@@ -110,9 +117,9 @@ pub enum CopyError {
     /// A read whose destination bytes overlap (rows or images closer than they are long): the driver's result depends
     /// on the order of its copy loops, which is not ported.
     OverlappingRead,
-    /// A region wider or taller than the twiddled block it is addressed in (the driver addresses the 3D levels of ETC2
-    /// and EAC formats in texels within a block-sized twiddle): texels share elements, and which one an element holds
-    /// depends on the order of the driver's copy loops, which is not ported.
+    /// A region wider or taller than the twiddled block it is addressed in, through a twiddle function whose copy
+    /// order for shared elements is not ported (every function except the 3D bytes-per-pixel ones of 8 and 16 bytes,
+    /// which the ETC2 and EAC formats use).
     AliasedElements,
 }
 
@@ -309,12 +316,33 @@ fn addressing_extent_in_blocks(t: &TextureGen2, level: u32, width: bool) -> Resu
     Ok(udiv32(block.wrapping_add(e).wrapping_sub(1), block))
 }
 
+/// Which way a copy goes: `writeRegion` (linear bytes to texture memory) or `readRegion`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Direction {
+    Write,
+    Read,
+}
+
+/// How a twiddle function copies a region wider or taller than the twiddled block it is addressed in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shared {
+    /// Not ported: such a region is refused with [`CopyError::AliasedElements`].
+    Refused,
+    /// Rows of elements, each texel coordinate a masked increment that wraps within the block (the 16-byte 3D write
+    /// `0x21c98793c` and the 3D reads `0x21c9a84a0` and `0x21c9a756c`).
+    Rows,
+    /// `0x21c98934c`, the block function of the 8-byte 3D write (`0x21c987574` -> `0x21c988aa0`): strips and 4 by 4
+    /// quads.
+    Quads,
+}
+
 /// The twiddle function `getTwiddleFunc` (0x21c985810, 2D) or writeRegion's 3D switch (0x21c983cec) selects.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Twiddle {
     /// `agxsTwiddleAddressCommon<..., AGXSConverterPassThru<dir, element, ...>>`: elements of this many bytes.
     Common {
         element: u32,
+        shared: Shared,
     },
     /// `agxsTwiddleAddressCompressed<dir, bw, bh, bytes>`: blocks of bw by bh texels.
     Compressed {
@@ -380,11 +408,13 @@ fn twiddle_2d(t: &TextureGen2) -> Result<Twiddle, CopyError> {
     if pb == 2 && t.resolved {
         return Err(Unported("the Z-order twiddle (agxsTwiddleAddressZ) of a texture with this+0x10 set").into());
     }
-    Ok(Twiddle::Common { element: pb * samples })
+    Ok(Twiddle::Common { element: pb * samples, shared: Shared::Refused })
 }
 
-/// writeRegion's 3D switch (0x21c983cec): jump table 0x21c9dd59c, then 0x21c9dd607 on bytesPerPixel - 1.
-fn twiddle_3d(t: &TextureGen2) -> Result<Twiddle, CopyError> {
+/// writeRegion's 3D switch (0x21c983cec): jump table 0x21c9dd59c, then 0x21c9dd607 on bytesPerPixel - 1 (bytes 8
+/// 0x21c987574, 16 0x21c9876d0); readRegion's (0x21c9a53ac): jump table 0x21c9dd69a, then 0x21c9dd770 (bytes 8
+/// 0x21c9a71a4, 16 0x21c9a7300). Both tables send the ETC2 and EAC formats to the bytes-per-pixel functions.
+fn twiddle_3d(t: &TextureGen2, direction: Direction) -> Result<Twiddle, CopyError> {
     let pf = t.pixel_format;
     if let Some((bw, bh, bytes)) = compressed_block_3d(pf) {
         return Ok(Twiddle::Compressed { bw, bh, bytes });
@@ -393,7 +423,12 @@ fn twiddle_3d(t: &TextureGen2) -> Result<Twiddle, CopyError> {
     if !matches!(bpp, 1 | 2 | 4 | 8 | 16) {
         return Err(CopyError::NullFunction("a twiddled 3D level of this element size"));
     }
-    Ok(Twiddle::Common { element: bpp })
+    let shared = match (bpp, direction) {
+        (8, Direction::Write) => Shared::Quads,
+        (8 | 16, _) => Shared::Rows,
+        _ => Shared::Refused,
+    };
+    Ok(Twiddle::Common { element: bpp, shared })
 }
 
 /// One element copy: (texture offset, linear offset, length).
@@ -430,18 +465,199 @@ fn block_twiddle(
     x: u32,
     y: u32,
     element: u32,
+    shared: Shared,
     visit: &mut Visit,
 ) -> Result<(), CopyError> {
     let lw = log2_ceil(bw);
     let lh = log2_ceil(bh);
-    if u64::from(x) + u64::from(w) > 1u64 << lw || u64::from(y) + u64::from(h) > 1u64 << lh {
-        return Err(CopyError::AliasedElements);
+    let fits = u64::from(x) + u64::from(w) <= 1u64 << lw && u64::from(y) + u64::from(h) <= 1u64 << lh;
+    match shared {
+        Shared::Refused if !fits => return Err(CopyError::AliasedElements),
+        Shared::Quads => return quads(tex, lin, lw, lh, w, h, bpr, x, y, visit),
+        _ => {}
     }
+    // Rows of elements; `morton` keeps the low lw and lh bits of the coordinates, as the masked increments wrap.
     let e = element as u64;
     for j in 0..h {
         for i in 0..w {
             let index = morton(x.wrapping_add(i), y.wrapping_add(j), lw, lh);
             visit(tex.wrapping_add(index.wrapping_mul(e)), lin.wrapping_add(j as u64 * bpr + i as u64 * e), e)?;
+        }
+    }
+    Ok(())
+}
+
+/// The element-index bits of x (`for_x`) or y in a twiddled block of 2^lw by 2^lh elements, from coordinate bit
+/// `from` up (the strip and quad functions' mask loops).
+fn index_mask(lw: u32, lh: u32, from: u32, for_x: bool) -> u64 {
+    let (bits, at): (u32, fn(u32, u32, u32) -> u32) =
+        if for_x { (lw, |i, _, lh| i + (i + 1).min(lh)) } else { (lh, |i, lw, _| i + i.min(lw)) };
+    (from..bits).fold(0, |m, i| m | 1u64 << at(i, lw, lh))
+}
+
+/// The element-index bits of coordinate `v`: its low lw (x) or lh (y) bits placed at the mask's positions.
+fn deposit(v: u32, lw: u32, lh: u32, for_x: bool) -> u64 {
+    let n = if for_x { lw } else { lh };
+    let mask = index_mask(lw, lh, 0, for_x);
+    let mut out = 0u64;
+    let mut bit = 0;
+    for p in 0..64 {
+        if mask >> p & 1 != 0 {
+            out |= u64::from(v >> bit & 1) << p;
+            bit += 1;
+            if bit == n {
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// `0x21c98934c`, the 8-byte write's block function: the region of the block at (x, y) as strips above and below
+/// the rows of quads (4-row aligned), strips left and right of them (4-column aligned), then the quads; all of it as
+/// one strip when the block is under 4 elements high or 1 element wide. Strips go through `0x21c9895d8` (linear
+/// pointer and pitch 8-byte aligned) or `0x21c989848`, quads through `0x21c989ab8` or `0x21c989d74`; each pair is
+/// the same code.
+#[allow(clippy::too_many_arguments)]
+fn quads(
+    tex: u64,
+    lin: u64,
+    lw: u32,
+    lh: u32,
+    w: u32,
+    h: u32,
+    bpr: u64,
+    x: u32,
+    y: u32,
+    visit: &mut Visit,
+) -> Result<(), CopyError> {
+    let strip =
+        |xo: u32, yo: u32, sw: u32, sh: u32, v: &mut Visit| strip_8(tex, lin, lw, lh, x, y, bpr, xo, yo, sw, sh, v);
+    if lh < 2 || lw == 0 {
+        return strip(0, 0, w, h, visit);
+    }
+    let lead = |v: u32| if v & 3 != 0 { 4 - (v & 3) } else { 0 };
+    let (mut left, mut right) = (lead(x), x.wrapping_add(w) & 3);
+    let (mut top, mut bottom) = (lead(y), y.wrapping_add(h) & 3);
+    if left + right > w {
+        (left, right) = (w, 0);
+    }
+    if top + bottom > h {
+        (top, bottom) = (h, 0);
+    }
+    let (mut mid_w, mut mid_h) = (w, h);
+    if top != 0 {
+        strip(0, 0, w, top, visit)?;
+        mid_h -= top;
+    }
+    if bottom != 0 {
+        mid_h -= bottom;
+        strip(0, mid_h + top, w, bottom, visit)?;
+    }
+    if mid_h == 0 {
+        return Ok(());
+    }
+    if left != 0 {
+        strip(0, top, left, mid_h, visit)?;
+        mid_w -= left;
+    }
+    if right != 0 {
+        mid_w -= right;
+        strip(mid_w + left, top, right, mid_h, visit)?;
+    }
+    if mid_w != 0 {
+        quads_8(tex, lin, lw, lh, x, y, bpr, left, top, mid_w, mid_h, visit)?;
+    }
+    Ok(())
+}
+
+/// The strip function (`0x21c9895d8`): the w by h elements at (xo, yo) of the region, row by row, each coordinate a
+/// masked increment of the element index from (x + xo, y + yo).
+#[allow(clippy::too_many_arguments)]
+fn strip_8(
+    tex: u64,
+    lin: u64,
+    lw: u32,
+    lh: u32,
+    x: u32,
+    y: u32,
+    bpr: u64,
+    xo: u32,
+    yo: u32,
+    w: u32,
+    h: u32,
+    visit: &mut Visit,
+) -> Result<(), CopyError> {
+    let (xm, ym) = (index_mask(lw, lh, 0, true), index_mask(lw, lh, 0, false));
+    let x0 = deposit(xo.wrapping_add(x), lw, lh, true);
+    let mut yi = deposit(yo.wrapping_add(y), lw, lh, false);
+    if w == 0 || h == 0 {
+        return Ok(());
+    }
+    let mut row = lin.wrapping_add(u64::from(yo).wrapping_mul(bpr));
+    for _ in 0..h {
+        let mut xi = x0;
+        let mut p = row.wrapping_add(u64::from(xo) * 8);
+        for _ in 0..w {
+            visit(tex.wrapping_add(xi.wrapping_add(yi) << 3), p, 8)?;
+            p = p.wrapping_add(8);
+            xi = xi.wrapping_sub(xm) & xm;
+        }
+        yi = yi.wrapping_sub(ym) & ym;
+        row = row.wrapping_add(bpr);
+    }
+    Ok(())
+}
+
+/// The quad function (`0x21c989ab8`): the w by h elements at (xo, yo) of the region (a multiple of 4 each, from a
+/// coordinate that is one) as 4 by 4 quads, rows of quads in turn. A quad is 16 consecutive elements from the index of its corner, in the order
+/// y0 x0 y1 x1 of its texels; the corner's index steps over x and y bits 2 and up, so in a block 2 elements wide the
+/// quad's columns 2 and 3 land on the elements of the rows 4 further down.
+#[allow(clippy::too_many_arguments)]
+fn quads_8(
+    tex: u64,
+    lin: u64,
+    lw: u32,
+    lh: u32,
+    x: u32,
+    y: u32,
+    bpr: u64,
+    xo: u32,
+    yo: u32,
+    w: u32,
+    h: u32,
+    visit: &mut Visit,
+) -> Result<(), CopyError> {
+    let (xm, ym) = (index_mask(lw, lh, 2, true), index_mask(lw, lh, 2, false));
+    let x0 = deposit(xo.wrapping_add(x), lw, lh, true);
+    let mut yi = deposit(yo.wrapping_add(y), lw, lh, false);
+    if w == 0 || h == 0 {
+        return Ok(());
+    }
+    let mut row = lin.wrapping_add(u64::from(yo).wrapping_mul(bpr));
+    let mut j = 0u32;
+    loop {
+        let mut xi = x0;
+        let mut p = row.wrapping_add(u64::from(xo) * 8);
+        let mut i = 0u32;
+        loop {
+            let corner = tex.wrapping_add(xi.wrapping_add(yi) << 3);
+            for k in 0..16u64 {
+                let (qx, qy) = ((k >> 1 & 1) | (k >> 3 & 1) << 1, (k & 1) | (k >> 2 & 1) << 1);
+                visit(corner.wrapping_add(k * 8), p.wrapping_add(qy.wrapping_mul(bpr)).wrapping_add(qx * 8), 8)?;
+            }
+            xi = xi.wrapping_sub(xm) & xm;
+            p = p.wrapping_add(32);
+            i = i.wrapping_add(4);
+            if i >= w {
+                break;
+            }
+        }
+        yi = yi.wrapping_sub(ym) & ym;
+        row = row.wrapping_add(bpr.wrapping_mul(4));
+        j = j.wrapping_add(4);
+        if j >= h {
+            break;
         }
     }
     Ok(())
@@ -463,10 +679,11 @@ fn twiddle_common(
     bpr: u64,
     info: Option<&TwiddledBlockInfo>,
     element: u32,
+    shared: Shared,
     visit: &mut Visit,
 ) -> Result<(), CopyError> {
     let Some(info) = info else {
-        return block_twiddle(tex, lin, pot_w, pot_h, w, h, bpr, x, y, element, visit);
+        return block_twiddle(tex, lin, pot_w, pot_h, w, h, bpr, x, y, element, shared, visit);
     };
     if info.sparse != 0 {
         return Err(Unported("the sparse twiddle (agxCalcSparseInputs), block info +0x14 set").into());
@@ -522,6 +739,7 @@ fn twiddle_common(
                 left - (c << tw),
                 top - (r << th),
                 element,
+                shared,
                 visit,
             )?;
         }
@@ -545,8 +763,8 @@ fn twiddle_level(
     visit: &mut Visit,
 ) -> Result<(), CopyError> {
     match f {
-        Twiddle::Common { element } => twiddle_common(
-            tex, lin, level_w, level_h, pot_w, pot_h, r.x, r.y, r.width, r.height, bpr, info, element, visit,
+        Twiddle::Common { element, shared } => twiddle_common(
+            tex, lin, level_w, level_h, pot_w, pot_h, r.x, r.y, r.width, r.height, bpr, info, element, shared, visit,
         ),
         Twiddle::Compressed { bw, bh, bytes } => {
             // agxsTwiddleAddressCompressed: the level, the origin and the size in blocks (32-bit sums).
@@ -565,6 +783,7 @@ fn twiddle_level(
                 bpr,
                 info,
                 bytes,
+                Shared::Refused,
                 visit,
             )
         }
@@ -581,13 +800,14 @@ fn twiddle_level(
     }
 }
 
-/// The copies of `writeRegion` and `readRegion` after validation (which the caller has made), in the driver's order:
-/// `visit(texture offset, linear offset, length)` for each element (or run).
+/// The copies of `writeRegion` after validation (which the caller has made), in the driver's order:
+/// `visit(texture offset, linear offset, length)` for each element (or run). `readRegion` copies the same elements,
+/// except in the 8-byte 3D levels whose texels share elements.
 pub fn visit(t: &TextureGen2, c: &RegionCopy, visit: &mut Visit) -> Result<(), CopyError> {
-    plan(t, c, visit)
+    plan(t, c, Direction::Write, visit)
 }
 
-fn plan(t: &TextureGen2, c: &RegionCopy, visit: &mut Visit) -> Result<(), CopyError> {
+fn plan(t: &TextureGen2, c: &RegionCopy, direction: Direction, visit: &mut Visit) -> Result<(), CopyError> {
     if t.sparse_params {
         return Err(Unported("sparse region copies (agxCalcSparseInputs), this+0xe8 set").into());
     }
@@ -633,7 +853,7 @@ fn plan(t: &TextureGen2, c: &RegionCopy, visit: &mut Visit) -> Result<(), CopyEr
             let level_h = at_least_one(lsr32(t.height, level));
             let pot_w = ceil_pow2(addressing_extent_in_blocks(t, level, true)?);
             let pot_h = ceil_pow2(addressing_extent_in_blocks(t, level, false)?);
-            let func = twiddle_3d(t)?;
+            let func = twiddle_3d(t, direction)?;
             let tex = cpu_offset(t, 0, level, 0)?;
             let stride = get_mipmap_size1(t, 0)?;
             // agxsTwiddle3DAddressCommon / agxsTwiddle3DAddressCompressed: depth slice z at z * stride, the linear
@@ -686,7 +906,7 @@ pub fn write_region(
     }
     check(0, probe_extent(t, c)?, linear.len(), true)?;
     let size = memory.len();
-    plan(t, c, &mut |tex, lin, len| {
+    plan(t, c, Direction::Write, &mut |tex, lin, len| {
         let to = check(tex.wrapping_sub(memory_offset), len, size, false)?;
         let from = check(lin, len, linear.len(), true)?;
         memory[to].copy_from_slice(&linear[from]);
@@ -711,7 +931,7 @@ pub fn read_region(
     check(0, probe_extent(t, c)?, linear.len(), true)?;
     // Every element's destination is written once only when rows and images do not overlap.
     let mut spans: Vec<(u64, u64)> = Vec::new();
-    plan(t, c, &mut |_, lin, len| {
+    plan(t, c, Direction::Read, &mut |_, lin, len| {
         spans.push((lin, len));
         Ok(())
     })?;
@@ -720,7 +940,7 @@ pub fn read_region(
         return Err(CopyError::OverlappingRead);
     }
     let size = linear.len();
-    plan(t, c, &mut |tex, lin, len| {
+    plan(t, c, Direction::Read, &mut |tex, lin, len| {
         let from = check(tex.wrapping_sub(memory_offset), len, memory.len(), false)?;
         let to = check(lin, len, size, true)?;
         linear[to].copy_from_slice(&memory[from]);
@@ -739,14 +959,23 @@ pub struct Extent {
     pub texture: Option<(u64, u64)>,
 }
 
-/// The bytes a copy touches; `None` when `validateRegion` refuses it.
+/// The bytes a write ([`write_region`]) touches; `None` when `validateRegion` refuses it.
 pub fn extent(t: &TextureGen2, c: &RegionCopy) -> Result<Option<Extent>, CopyError> {
+    extent_of(t, c, Direction::Write)
+}
+
+/// The bytes a read ([`read_region`]) touches; `None` when `validateRegion` refuses it.
+pub fn read_extent(t: &TextureGen2, c: &RegionCopy) -> Result<Option<Extent>, CopyError> {
+    extent_of(t, c, Direction::Read)
+}
+
+fn extent_of(t: &TextureGen2, c: &RegionCopy, direction: Direction) -> Result<Option<Extent>, CopyError> {
     if validate_region(t, c)?.is_some() {
         return Ok(None);
     }
     let mut linear = probe_extent(t, c)?;
     let mut texture: Option<(u64, u64)> = None;
-    plan(t, c, &mut |tex, lin, len| {
+    plan(t, c, direction, &mut |tex, lin, len| {
         linear = linear.max(lin.saturating_add(len));
         let end = tex.saturating_add(len);
         texture = Some(match texture {
@@ -897,6 +1126,73 @@ mod tests {
         // Block-compressed: ETC2 RGB8 (4x4 blocks of 8 bytes) and ASTC 5x5 (16 bytes).
         round_trip(&layout(&descriptor(2, 180, (100, 37, 1), 7), false), 8);
         round_trip(&layout(&descriptor(2, 206, (64, 64, 1), 7), false), 16);
+    }
+
+    /// The 3D levels of ETC2 and EAC formats are addressed in texels within a twiddled block of blocks: an 8 by 16
+    /// level is 2 by 4 blocks, onto whose 8 elements every texel wraps. The 8-byte write copies the level as 4 by 4
+    /// quads of 16 consecutive elements from the same corner, so the last quad covers the level and the 8 elements
+    /// after it (the depth slice's next levels); the 16-byte write copies rows, so an element holds the last texel
+    /// that wraps onto it. The elements and texels are those AGXMetalA10 produced under gex.
+    #[test]
+    fn etc2_3d_texels_share_elements() {
+        let texels = |bpp: usize| -> Vec<u8> {
+            let mut v = Vec::new();
+            for z in 0..2u8 {
+                for y in 0..16u8 {
+                    for x in 0..8u8 {
+                        v.extend([x, y, z]);
+                        v.resize(v.len() + bpp - 3, 0xa5);
+                    }
+                }
+            }
+            v
+        };
+        let texel = |bpp: usize, x: u8, y: u8, z: u8| -> Vec<u8> {
+            let mut v = vec![x, y, z];
+            v.resize(bpp, 0xa5);
+            v
+        };
+        let level = |bpp: u64| RegionCopy {
+            region: Region { x: 0, y: 0, z: 0, width: 8, height: 16, depth: 2 },
+            slice: 0,
+            level: 0,
+            linear: Linear { bytes_per_row: 8 * bpp, bytes_per_image: 128 * bpp },
+        };
+        // ETC2 RGB8 (8-byte blocks), heap-backed: element e of depth slice z holds the last quad's texel.
+        let t = layout(&descriptor(7, 180, (8, 16, 2), 5), true);
+        let mut memory = vec![0u8; t.size as usize];
+        assert_eq!(write_region(&t, &level(8), &mut memory, 0, &texels(8)), Ok(Outcome::Copied));
+        for z in 0..2u8 {
+            for e in 0..16usize {
+                let (qx, qy) = ((e >> 1 & 1) | (e >> 3 & 1) << 1, (e & 1) | (e >> 2 & 1) << 1);
+                let at = (z as usize * 16 + e) * 8;
+                assert_eq!(memory[at..at + 8], texel(8, 4 + qx as u8, 12 + qy as u8, z)[..], "slice {z} element {e}");
+            }
+        }
+        // Reading the level back gives each texel the element it wraps onto.
+        let mut back = vec![0u8; 2048];
+        assert_eq!(read_region(&t, &level(8), &memory, 0, &mut back), Ok(Outcome::Copied));
+        for (k, got) in back.chunks(8).enumerate() {
+            let (x, y, z) = (k % 8, k / 8 % 16, k / 128);
+            let e = morton(x as u32, y as u32, 1, 2) as usize;
+            let at = (z * 16 + e) * 8;
+            assert_eq!(got, &memory[at..at + 8], "texel ({x}, {y}, {z})");
+        }
+        // EAC RG11 (16-byte blocks): rows, the last texel of each element's residue class; the next levels untouched.
+        let t = layout(&descriptor(7, 174, (8, 16, 2), 5), false);
+        let mut memory = vec![0u8; t.size as usize];
+        assert_eq!(write_region(&t, &level(16), &mut memory, 0, &texels(16)), Ok(Outcome::Copied));
+        for z in 0..2u8 {
+            for e in 0..16usize {
+                let at = (z as usize * 16 + e) * 16;
+                let want = if e < 8 {
+                    texel(16, 6 + (e >> 1 & 1) as u8, 12 + ((e & 1) | (e >> 2 & 1) << 1) as u8, z)
+                } else {
+                    vec![0; 16]
+                };
+                assert_eq!(memory[at..at + 16], want[..], "slice {z} element {e}");
+            }
+        }
     }
 
     /// validateRegion's refusals copy nothing.
