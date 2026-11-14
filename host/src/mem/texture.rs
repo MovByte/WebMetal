@@ -24,10 +24,11 @@
 //! - GPU writes of the stored texture ([`Memory::note_texture_write`]) leave the twin stale;
 //! - reads (`getBytes`, blits to a buffer) use the twin when it is current, else the stored texture.
 //!
-//! A PVRTC texture also keeps each level's words on the CPU as the A10X stores them, in reflected Morton order, while
-//! no GPU work has written them since: the driver's `replaceRegion` replaces only the first words of a level (as many
-//! as the region's blocks fill), and the level's other words keep their values, which the host writes back with the
-//! new ones as a whole level.
+//! A PVRTC texture also keeps each level's words on the CPU as the A10X stores them, in reflected Morton order: the
+//! driver's `replaceRegion` replaces only the first words of a level (as many as the region's blocks fill), and the
+//! level's other words keep their values, which the host writes back with the new ones as a whole level. GPU work that
+//! writes a level drops its copy, and the end of that work's command buffer reads the level's words back into it
+//! ([`Memory::read_back_pvrtc_words`]), so a later write keeps the GPU's words.
 //!
 //! Moving bytes between the CPU or a buffer and a stored texture of a format whose copies are not bit-exact needs the
 //! host's texel copies of that format to be proven exact first ([`super::proof`]); without that the transfer is
@@ -149,9 +150,13 @@ struct State {
     /// whether GPU work wrote it since its last write-back.
     surface_version: u64,
     backing_written: bool,
-    /// For a PVRTC texture, per subresource: the level's words in reflected Morton order as the CPU last wrote them, or
-    /// `None` once GPU work may have written the subresource. Empty for other formats.
+    /// For a PVRTC texture, per subresource: the level's words in reflected Morton order as the CPU last wrote them or
+    /// the GPU's work left them, or `None` from GPU work that may write the subresource until its words are read back.
+    /// Empty for other formats.
     pvrtc_words: Vec<Option<Vec<u8>>>,
+    /// Per PVRTC subresource, how many times its words have been dropped or replaced since the texture was made: a read
+    /// back of the words is kept only while this is the count it was encoded at.
+    pvrtc_writes: Vec<u64>,
 }
 
 impl State {
@@ -159,6 +164,7 @@ impl State {
     fn gpu_wrote(&mut self, i: usize) {
         if let Some(words) = self.pvrtc_words.get_mut(i) {
             *words = None;
+            self.pvrtc_writes[i] += 1;
         }
     }
 }
@@ -629,6 +635,7 @@ impl<A: Api> Memory<A> {
             surface_version: 0,
             backing_written: false,
             pvrtc_words: pvrtc_zero_words(&geometry, blocks, per_level),
+            pvrtc_writes: vec![0; if blocks.is_some_and(|b| b.pvrtc.is_some()) { subs } else { 0 }],
         };
         let label = desc.label.clone();
         Ok(Rc::new(Texture {
@@ -1087,8 +1094,9 @@ impl<A: Api> Memory<A> {
         let i = t.sub(level, t.layer_of(slice));
         let Some(mut words) = t.state.borrow().pvrtc_words[i].clone() else {
             return Err(MemError::unimplemented(format!(
-                "{call}: a PVRTC write of {} bytes of a level GPU work has written since the CPU last did: the A10X \
-                 driver replaces only those words, and the host has not read the level's other words back",
+                "{call}: a PVRTC write of {} bytes of a level that GPU work not yet completed writes: the A10X driver \
+                 replaces only those words and keeps the GPU's others, which the host reads back when that work's \
+                 command buffer completes",
                 l.span
             )));
         };
@@ -1379,6 +1387,7 @@ impl<A: Api> Memory<A> {
             a.fill(false);
         }
         st.pvrtc_words = pvrtc_zero_words(&t.geometry, t.blocks, t.per_level());
+        st.pvrtc_writes.iter_mut().for_each(|n| *n += 1);
         Ok(())
     }
 
@@ -1722,6 +1731,35 @@ impl<A: Api> Memory<A> {
         Ok(reads)
     }
 
+    /// At the end of a command buffer that names a PVRTC texture: encode the read of the words of each subresource whose
+    /// CPU copy its GPU work dropped, in reflected Morton order, to keep once they arrive ([`PvrtcWords::keep`]).
+    pub fn read_back_pvrtc_words(
+        &self,
+        g: &impl Calls<A>,
+        encoder: &A::CommandEncoder,
+        t: &Rc<Texture<A>>,
+    ) -> Result<Vec<PvrtcReadback<A>>, MemError> {
+        let Some(b) = t.blocks.filter(|b| b.pvrtc.is_some()) else { return Ok(Vec::new()) };
+        let dropped: Vec<(usize, u64)> = {
+            let st = t.state.borrow();
+            st.pvrtc_words
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| w.is_none())
+                .map(|(i, _)| (i, st.pvrtc_writes[i]))
+                .collect()
+        };
+        let mut reads = Vec::new();
+        for (index, writes) in dropped {
+            let level = index as u32 / t.per_level();
+            let layer = index as u32 % t.per_level();
+            let l = full_level(t, b, level)?;
+            let read = self.encode_read(g, "PVRTC words", encoder, t, &l, (level, layer))?;
+            reads.push(PvrtcReadback { texture: t.clone(), index, writes, read });
+        }
+        Ok(reads)
+    }
+
     /// Finish [`Memory::refresh_decoded`] with the blocks read back: decode and upload them.
     pub fn finish_refresh(&self, g: &impl Calls<A>, t: &Texture<A>, blocks: TextureBytes<A>) -> Result<(), MemError> {
         let (level, layer) = blocks.refresh.expect("a refresh read");
@@ -1732,6 +1770,42 @@ impl<A: Api> Memory<A> {
         self.staging.give_back(blocks.staging);
         t.state.borrow_mut().stored[t.sub(level, layer)] = true;
         Ok(())
+    }
+}
+
+/// A read back of a PVRTC subresource's words after GPU work wrote it ([`Memory::read_back_pvrtc_words`]).
+pub struct PvrtcReadback<A: Api> {
+    texture: Rc<Texture<A>>,
+    index: usize,
+    writes: u64,
+    read: TextureRead<A>,
+}
+
+/// The words a [`PvrtcReadback`] read, to keep with [`PvrtcWords::keep`].
+pub struct PvrtcWords<A: Api> {
+    texture: Rc<Texture<A>>,
+    index: usize,
+    writes: u64,
+    bytes: TextureBytes<A>,
+}
+
+impl<A: Api> PvrtcReadback<A> {
+    pub fn wait(self) -> GpuFuture<Result<PvrtcWords<A>, MemError>> {
+        Box::pin(async move {
+            let bytes = self.read.wait().await?;
+            Ok(PvrtcWords { texture: self.texture, index: self.index, writes: self.writes, bytes })
+        })
+    }
+}
+
+impl<A: Api> PvrtcWords<A> {
+    /// Keep the words as the subresource's, unless they were dropped or replaced again since the read was encoded.
+    pub fn keep(self, mem: &Memory<A>) {
+        let words = self.bytes.release(mem);
+        let mut st = self.texture.state.borrow_mut();
+        if st.pvrtc_writes[self.index] == self.writes && st.pvrtc_words[self.index].is_none() {
+            st.pvrtc_words[self.index] = Some(words);
+        }
     }
 }
 

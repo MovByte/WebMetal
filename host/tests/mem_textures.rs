@@ -893,8 +893,9 @@ fn decoded_textures_refresh_after_blits() {
 
 /// A PVRTC `replaceRegion` replaces only the level's first words, as many as the region's blocks fill (the A10X
 /// driver's `agxsTwiddleAddressPVRTC4` and `agxsTwiddleAddressPVRTC2`), and the level's other words keep their values:
-/// a whole mip chain uploads, levels below two words by two included. Once GPU work has written a level, the host no
-/// longer holds its words, and a write of part of it is LOUD.
+/// a whole mip chain uploads, levels below two words by two included. GPU work that writes a level drops the host's
+/// copy of its words until they are read back at the end of that work, and a write of part of the level keeps the GPU's
+/// other words; a write while the read back is still owed is LOUD.
 #[test]
 fn pvrtc_partial_writes_keep_the_other_words() {
     let g = Gpu::new(false);
@@ -943,9 +944,21 @@ fn pvrtc_partial_writes_keep_the_other_words() {
         let encoder = g.device.create_command_encoder(&CommandEncoderDescriptor::new());
         let r = TextureRegion { level: 0, slice: 0, layout };
         ctx.mem.encode_buffer_to_texture(&ctx.direct, &encoder, (&src, 0), &t, &r).unwrap();
-        ctx.finish(encoder, &[]);
+        let reads = ctx.mem.read_back_pvrtc_words(&ctx.direct, &encoder, &t).unwrap();
+        assert_eq!(reads.len(), 1);
         let r = ctx.replace(&t, (0, 0), region((0, 0, 0), (8, 8, 1)), &[1; 32], (0, 0));
         assert!(matches!(r, Err(MemError::Unimplemented { .. })), "{r:?}");
+        ctx.finish(encoder, &[]);
+        for read in reads {
+            g.block_on(read.wait()).unwrap().keep(&ctx.mem);
+        }
+        // An 8x8 region writes the level's first words; the rest are the GPU's.
+        let (whole, first) = (pvrtc::data_len(bpp, lw, lh), pvrtc_copy_len(b, 8, 8));
+        ctx.replace(&t, (0, 0), region((0, 0, 0), (8, 8, 1)), &vec![1; first], (0, 0)).unwrap();
+        let mut want = vec![9u8; whole];
+        want[..first].fill(1);
+        let all = region((0, 0, 0), (u64::from(lw), u64::from(lh), 1));
+        assert_eq!(ctx.get(&t, (0, 0), all, (0, 0), whole).unwrap(), want, "format {format}");
         // The other levels keep the CPU's words.
         let (l2w, l2h, _) = t.geometry.level_extent(2);
         let n2 = pvrtc_copy_len(b, l2w, l2h);

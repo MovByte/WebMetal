@@ -67,8 +67,8 @@ use super::nocopy::{self, GuestReadback};
 use super::purgeable::Purgeable;
 use super::surface::SurfaceReadback;
 use super::texture::{
-    GET_BYTES_CALL, GET_BYTES_SLICE_CALL, REPLACE_REGION_CALL, REPLACE_REGION_SLICE_CALL, Texture, TextureBytes,
-    TextureRead, get_bytes_image_pitch,
+    GET_BYTES_CALL, GET_BYTES_SLICE_CALL, PvrtcReadback, REPLACE_REGION_CALL, REPLACE_REGION_SLICE_CALL, Texture,
+    TextureBytes, TextureRead, get_bytes_image_pitch,
 };
 use super::view::{Parent, TextureView, ViewArgs};
 
@@ -700,6 +700,7 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         let mut surfaces: Vec<SurfaceReadback<A>> = Vec::new();
         let mut guests: Vec<GuestReadback<A>> = Vec::new();
         let mut decodes: Vec<(Rc<Texture<A>>, TextureRead<A>)> = Vec::new();
+        let mut words: Vec<PvrtcReadback<A>> = Vec::new();
         // A texture named directly and through views of it is written back once.
         let mut textures: Vec<Rc<Texture<A>>> = Vec::new();
         for &h in &info.resources {
@@ -726,6 +727,7 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
                     decodes.push((t.clone(), read));
                 }
             }
+            words.extend(mem.read_back_pvrtc_words(g, &encoder, t).map_err(|e| e.failure())?);
         }
         for &h in &info.resources {
             if let Some(b) = payload::<Buffer<A>>(objects, h) {
@@ -743,7 +745,7 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
             }
         }
         let readbacks: Readbacks<A> = mem.encode_readbacks(g, &encoder, &unique).map_err(|e| e.failure())?;
-        if readbacks.is_empty() && surfaces.is_empty() && guests.is_empty() && decodes.is_empty() {
+        if readbacks.is_empty() && surfaces.is_empty() && guests.is_empty() && decodes.is_empty() && words.is_empty() {
             return Ok(None);
         }
         let (embedder, decoded) = (self.embedder.clone(), self.decoded.clone());
@@ -761,6 +763,9 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
             for (t, read) in decodes {
                 let blocks = read.wait().await.map_err(|e| e.failure())?;
                 decoded.borrow_mut().push((t, blocks));
+            }
+            for r in words {
+                r.wait().await.map_err(|e| e.failure())?.keep(&mem);
             }
             Ok(())
         })))
