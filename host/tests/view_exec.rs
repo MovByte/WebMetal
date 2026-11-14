@@ -816,8 +816,8 @@ fn alias_coherence() {
     assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
     assert!(f.message.contains("through two pixel formats"), "{f:?}");
 
-    // Mipmaps generated through a BGRA8Unorm view of an RGBA8Unorm texture: the levels are made in the alias and read
-    // through the texture.
+    // Mipmaps generated through a BGRA8Unorm view of an RGBA8Unorm texture: the A10X makes the view's levels with its
+    // texture unit's fixed-function filtering, which is refused.
     let md = texture_descriptor(
         T2D,
         fmt("RGBA8Unorm"),
@@ -832,12 +832,12 @@ fn alias_coherence() {
     let (src, _) = h.buffer_with(&[0x10, 0x80, 0xf0, 0xff].repeat(16));
     h.blit(vec![copy_to_texture(src, 16, (4, 4), mipped, 0, 0)]);
     let bgra = view(&h, mipped, fmt("BGRA8Unorm"), T2D, (0, 3), (0, 1)).unwrap();
-    h.blit(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(bgra) })]);
-    for level in 1..3 {
-        let w = mip(4, level);
-        let got = h.read_texture(mipped, &md, level, 0, w * 4);
-        assert_eq!(got, [0x10, 0x80, 0xf0, 0xff].repeat((w * w) as usize), "{}: level {level}", h.name());
-    }
+    let f = h.blit_failure(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture {
+        texture: Some(bgra),
+    })]);
+    assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+    assert!(f.message.contains("fixed-function filtering"), "{f:?}");
+    assert_eq!(h.read_texture(mipped, &md, 0, 0, 16), [0x10, 0x80, 0xf0, 0xff].repeat(16), "{}", h.name());
     h.assert_no_errors();
 }
 
@@ -1273,29 +1273,28 @@ fn blits_through_views() {
         assert!(f.message.contains("behavior Metal does not define"), "{f:?}");
     }
 
-    // Mipmaps of a view's levels [1, 4) of an RGBA8Unorm texture: levels 2 and 3 are made from level 1; levels 0 and 1
-    // keep their contents. Each level is one color, which the filter keeps.
+    // Mipmaps of a view's levels [1, 4) of an RGBA8Unorm texture and of its sRGB view: the A10X makes them with its
+    // texture unit's fixed-function filtering, which is refused; every level keeps its contents.
     let md = texture_descriptor(T2D, fmt("RGBA8Unorm"), (8, 8, 1), 1, 4, PRIVATE, SHADER_READ, 1);
     let mipped = h.texture(md.clone());
-    for (level, value) in [(0u64, 0x10u8), (1, 0x80), (2, 0x33), (3, 0x33)] {
+    let levels = [(0u64, 0x10u8), (1, 0x80), (2, 0x33), (3, 0x33)];
+    for (level, value) in levels {
         let w = mip(8, level);
         let (src, _) = h.buffer_with(&vec![value; (w * w * 4) as usize]);
         h.blit(vec![copy_to_texture(src, w * 4, (w, w), mipped, 0, level)]);
     }
     let lower = view(&h, mipped, fmt("RGBA8Unorm"), T2D, (1, 3), (0, 1)).unwrap();
-    h.blit(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(lower) })]);
-    for (level, value) in [(0u64, 0x10u8), (1, 0x80), (2, 0x80), (3, 0x80)] {
+    let srgb = view(&h, mipped, fmt("RGBA8Unorm_sRGB"), T2D, (0, 4), (0, 1)).unwrap();
+    for v in [lower, srgb] {
+        let f = h.blit_failure(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture {
+            texture: Some(v),
+        })]);
+        assert_eq!(f.status, status::UNIMPLEMENTED, "{f:?}");
+        assert!(f.message.contains("fixed-function filtering"), "{f:?}");
+    }
+    for (level, value) in levels {
         let w = mip(8, level);
         assert_eq!(h.read_texture(mipped, &md, level, 0, w * 4), vec![value; (w * w * 4) as usize], "level {level}");
-    }
-    // Through an sRGB view the levels are filtered in linear space, which keeps a single color's code to within the
-    // conversions' rounding.
-    let srgb = view(&h, mipped, fmt("RGBA8Unorm_sRGB"), T2D, (0, 4), (0, 1)).unwrap();
-    h.blit(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(srgb) })]);
-    for level in 1..4 {
-        let w = mip(8, level);
-        let got = h.read_texture(mipped, &md, level, 0, w * 4);
-        assert!(got.iter().all(|&c| c.abs_diff(0x10) <= 1), "level {level}: {got:x?}");
     }
 
     // A copy between an sRGB view and a texture of the linear format: Metal requires the same pixel format.

@@ -9,7 +9,6 @@
 //!   BGR10A2 bytes and the `rgb10a2unorm` texels that hold them ([`crate::format::packed::swap_red_blue_10`]).
 //! - `encode_depth_write`: writes depth values into a depth aspect through a render pass, the only way WebGPU writes
 //!   `depth32float` (its depth aspect is not a copy destination, WebGPU section 26.1.2).
-//! - `encode_mip_level`: renders one mipmap level from the level above it with a linear filter.
 //!
 //! The pipelines are made on first use and kept in [`Kernels`], which the memory module holds for its device.
 
@@ -19,10 +18,9 @@ use crate::gpu::idl::{
     AutoLayoutMode, BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, BufferDescriptor, BufferUsage,
     ColorTargetState, CompareFunction, ComputePassDescriptor, ComputePipelineDescriptor, DepthStencilState, Extent3D,
     Extent3DDict, FragmentState, LoadOp, Origin3D, Origin3DDict, PipelineLayoutOrAuto, ProgrammableStage,
-    RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
-    SamplerDescriptor, ShaderModuleDescriptor, StoreOp, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureAspect,
-    TextureDescriptor, TextureFormat, TextureOrView, TextureUsage, TextureViewDescriptor, TextureViewDimension,
-    VertexState,
+    RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor, ShaderModuleDescriptor, StoreOp,
+    TexelCopyBufferLayout, TexelCopyTextureInfo, TextureAspect, TextureDescriptor, TextureFormat, TextureOrView,
+    TextureUsage, TextureViewDescriptor, TextureViewDimension, VertexState,
 };
 use crate::gpu::num::Float32;
 use crate::gpu::{
@@ -156,52 +154,14 @@ fn fs(@builtin(position) position: vec4f) -> @builtin(frag_depth) f32 {
 }
 ";
 
-/// The fragment of a mipmap level of a 2D slice: the source level sampled with a linear filter at the centre of the
-/// destination texel.
-const MIP_2D: &str = "
-@group(0) @binding(0) var source: texture_2d<f32>;
-@group(0) @binding(1) var linear: sampler;
-
-@fragment
-fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let size = vec2f(textureDimensions(source)) * 0.5;
-    let extent = max(floor(size), vec2f(1.0));
-    return textureSampleLevel(source, linear, position.xy / extent, 0.0);
-}
-";
-
-/// The fragment of a mipmap level of one depth slice of a 3D texture.
-const MIP_3D: &str = "
-struct Params {
-    slice: f32,
-    depth: f32,
-    pad0: f32,
-    pad1: f32,
-}
-@group(0) @binding(0) var source: texture_3d<f32>;
-@group(0) @binding(1) var linear: sampler;
-@group(0) @binding(2) var<uniform> p: Params;
-
-@fragment
-fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let size = vec2f(textureDimensions(source).xy) * 0.5;
-    let extent = max(floor(size), vec2f(1.0));
-    let w = (p.slice + 0.5) / p.depth;
-    return textureSampleLevel(source, linear, vec3f(position.xy / extent, w), 0.0);
-}
-";
-
 type Compute<A> = (<A as Api>::ComputePipeline, <A as Api>::BindGroupLayout);
 type Render<A> = (<A as Api>::RenderPipeline, <A as Api>::BindGroupLayout);
-/// A mipmap pipeline by (view format, 3D) with its sampler.
-type Mip<A> = ((TextureFormat, bool), Render<A>, <A as Api>::Sampler);
 
 /// The blit passes' pipelines on one device.
 pub struct Kernels<A: Api> {
     repack: RefCell<Option<Compute<A>>>,
     swap10: RefCell<Option<Compute<A>>>,
     depth: RefCell<Vec<(TextureFormat, Render<A>)>>,
-    mips: RefCell<Vec<Mip<A>>>,
     /// A 4-byte buffer bound as the source of a fill, which reads no source.
     dummy: RefCell<Option<A::Buffer>>,
 }
@@ -212,7 +172,6 @@ impl<A: Api> Default for Kernels<A> {
             repack: RefCell::new(None),
             swap10: RefCell::new(None),
             depth: RefCell::new(Vec::new()),
-            mips: RefCell::new(Vec::new()),
             dummy: RefCell::new(None),
         }
     }
@@ -733,98 +692,6 @@ pub(crate) fn encode_depth_write<A: Api>(
         pass.set_viewport(f(x), f(y), f(width), f(height), Float32::new_const(0.0), Float32::new_const(1.0))
     });
     g.call("GPURenderPassEncoder.setScissorRect", LABEL, |_| pass.set_scissor_rect(x, y, width, height));
-    g.call("GPURenderPassEncoder.setPipeline", LABEL, |_| pass.set_pipeline(pipeline));
-    g.call("GPURenderPassEncoder.setBindGroup", LABEL, |_| pass.set_bind_group(0, Some(&group), &[]));
-    g.call("GPURenderPassEncoder.draw", LABEL, |_| pass.draw(3, 1, 0, 0));
-    g.call("GPURenderPassEncoder.end", LABEL, |_| pass.end());
-    Ok(())
-}
-
-/// One mipmap level of one slice to generate.
-pub(crate) struct MipLevel<'a, A: Api> {
-    pub texture: &'a A::Texture,
-    /// The format the levels are viewed in (the sRGB format of an sRGB texture, so that filtering is in linear space).
-    pub format: TextureFormat,
-    /// The level to write; it is made from `level - 1`.
-    pub level: u32,
-    /// The array layer, or for a 3D texture the depth slice of `level`.
-    pub layer: u32,
-    pub three_d: bool,
-    /// The extent of `level`.
-    pub size: (u32, u32, u32),
-}
-
-/// Encode the render pass that makes one slice of a mipmap level from the level above it.
-pub(crate) fn encode_mip_level<A: Api>(
-    mem: &Memory<A>,
-    g: &impl Calls<A>,
-    encoder: &A::CommandEncoder,
-    m: &MipLevel<'_, A>,
-) -> Result<(), MemError> {
-    const LABEL: &str = "webmetal mipmap generation";
-    let k = &mem.kernels;
-    let key = (m.format, m.three_d);
-    if !k.mips.borrow().iter().any(|(kk, _, _)| *kk == key) {
-        let p = render_pipeline(g, LABEL, if m.three_d { MIP_3D } else { MIP_2D }, None, Some(m.format))?;
-        let mut sd = SamplerDescriptor::new();
-        sd.label = LABEL.into();
-        sd.mag_filter = crate::gpu::idl::FilterMode::Linear;
-        sd.min_filter = crate::gpu::idl::FilterMode::Linear;
-        let sampler = g.call("GPUDevice.createSampler", LABEL, |d| d.create_sampler(&sd));
-        k.mips.borrow_mut().push((key, p, sampler));
-    }
-    let mips = k.mips.borrow();
-    let (_, (pipeline, bgl), sampler) = mips.iter().find(|(kk, _, _)| *kk == key).expect("made above");
-    // Each view takes the one usage it is bound with: a view in the texture's sRGB sibling format may lack a usage of
-    // the texture's, such as storage (WebGPU section 6.2.1).
-    let mut sv = TextureViewDescriptor::new();
-    sv.format = Some(m.format);
-    sv.usage = crate::gpu::idl::TextureUsage::TEXTURE_BINDING;
-    sv.dimension = Some(if m.three_d { TextureViewDimension::D3 } else { TextureViewDimension::D2 });
-    sv.base_mip_level = m.level - 1;
-    sv.mip_level_count = Some(1);
-    if !m.three_d {
-        sv.base_array_layer = m.layer;
-        sv.array_layer_count = Some(1);
-    }
-    let source = g
-        .call("GPUTexture.createView", LABEL, |_| m.texture.create_view(&sv))
-        .map_err(gpu_err("GPUTexture.createView"))?;
-    let mut entries = vec![
-        BindGroupEntry::new(0, BindingResource::TextureView(&source)),
-        BindGroupEntry::new(1, BindingResource::Sampler(sampler)),
-    ];
-    let params;
-    if m.three_d {
-        params = uniforms(g, LABEL, &[(m.layer as f32).to_bits(), (m.size.2 as f32).to_bits(), 0, 0])?;
-        entries.push(BindGroupEntry::new(2, BindingResource::Buffer(&params)));
-    }
-    let group =
-        g.call("GPUDevice.createBindGroup", LABEL, |d| d.create_bind_group(&BindGroupDescriptor::new(bgl, entries)));
-    let mut tv = TextureViewDescriptor::new();
-    tv.format = Some(m.format);
-    tv.usage = crate::gpu::idl::TextureUsage::RENDER_ATTACHMENT;
-    tv.base_mip_level = m.level;
-    tv.mip_level_count = Some(1);
-    if m.three_d {
-        tv.dimension = Some(TextureViewDimension::D3);
-    } else {
-        tv.dimension = Some(TextureViewDimension::D2);
-        tv.base_array_layer = m.layer;
-        tv.array_layer_count = Some(1);
-    }
-    let target = g
-        .call("GPUTexture.createView", LABEL, |_| m.texture.create_view(&tv))
-        .map_err(gpu_err("GPUTexture.createView"))?;
-    let mut ca = RenderPassColorAttachment::new(TextureOrView::TextureView(&target), LoadOp::Load, StoreOp::Store);
-    if m.three_d {
-        ca.depth_slice = Some(m.layer);
-    }
-    let mut rp = RenderPassDescriptor::new(vec![Some(ca)]);
-    rp.label = LABEL.into();
-    let pass = g
-        .call("GPUCommandEncoder.beginRenderPass", LABEL, |_| encoder.begin_render_pass(&rp))
-        .map_err(gpu_err("GPUCommandEncoder.beginRenderPass"))?;
     g.call("GPURenderPassEncoder.setPipeline", LABEL, |_| pass.set_pipeline(pipeline));
     g.call("GPURenderPassEncoder.setBindGroup", LABEL, |_| pass.set_bind_group(0, Some(&group), &[]));
     g.call("GPURenderPassEncoder.draw", LABEL, |_| pass.draw(3, 1, 0, 0));

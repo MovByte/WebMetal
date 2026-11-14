@@ -7,7 +7,7 @@
 //! | `fillBuffer:range:value:` | `clearBuffer` for zero over whole words; else the GPU's byte fill (`clearBuffer` writes zeros only, `tables/limits.toml` question `6.6-clear-buffer`). |
 //! | `copyFromBuffer:...toTexture:`, `copyFromTexture:...toBuffer:`, with and without `options:` | The memory module's transfers ([`Memory::encode_buffer_to_texture`], [`Memory::encode_texture_to_buffer`]), which keep the twins and the readback windows right; depth and stencil aspects through [`depth`]. Regions and layouts follow [`region`]. |
 //! | `copyFromTexture:...toTexture:` (region, slices and levels, whole texture) | [`texture::copy_region`]. |
-//! | `generateMipmapsForTexture:` | [`texture::generate_mipmaps`]. |
+//! | `generateMipmapsForTexture:` | Nothing where the A10X driver makes no level; refused where it makes them, by its texture unit's fixed-function filtering (`BlitService::generate_mipmaps`). |
 //! | `optimizeContentsForGPUAccess:` / `ForCPUAccess:` (and the slice and level forms) | Hints with no effect on contents (`blit.optimize-contents`); the arguments are checked. |
 //! | `synchronizeResource:`, `synchronizeTexture:slice:level:` | `API_UNAVAILABLE(ios)`: undefined. |
 //! | `sampleCountersInBuffer:atSampleIndex:withBarrier:` | The A10X does not support `MTLCounterSamplingPointAtBlitBoundary` (device profile): "this method is not available and will generate an error if called" (`MTLBlitCommandEncoder.h`): undefined. |
@@ -598,33 +598,37 @@ impl<A: Api> BlitService<A> {
         }
     }
 
+    /// `generateMipmapsForTexture:`: nothing for a texture whose levels the A10X driver does not make
+    /// ([`makes_levels`]). Every other texture's levels the driver makes in blit kicks (0x21c8b9ccc, 0x21c8b9d14 to
+    /// 0x21c8c1bb8) whose filter flag selects a sampler with linear minification and magnification filters
+    /// (0x21c8c2080 to 0x21c8c20b4, built by 0x21c97f538, whose second word's bits 16 to 19 are the two filters):
+    /// the fragment program, compiled at run time from an `AGX::BlitFragmentProgramKey` (0x21c8c1edc to 0x21c8c1f2c),
+    /// samples the level above at each texel's centre ((x + 0.5) / width, 0x21c8c2214), and a 2D texture whose next
+    /// level has even extents gets two levels from one kick (0x21c8b9b18 to 0x21c8b9b58). The reduction is the texture
+    /// unit's fixed-function filtering, which no code the driver ships defines: refused.
     fn generate_mipmaps<E: Embedder>(&self, cx: &mut EncodeCx<'_, A, E>, h: Option<Handle>) -> Result<(), MemError> {
         const CALL: &str = "-[MTLBlitCommandEncoder generateMipmapsForTexture:]";
-        let mem = &*self.memory;
-        let encoder = cx.encoder().clone();
-        let (g, objects) = (cx.gpu(), cx.objects());
+        let objects = cx.objects();
         // A texture over a buffer, a texture buffer included, has one level (`Memory::linear`).
         if let Some(handle) = h
             && payload::<LinearTexture<A>>(objects, handle).is_some()
         {
             return Ok(());
         }
-        let tex = texture(objects, h, CALL, "the texture")?;
+        let tex = texture::<A>(objects, h, CALL, "the texture")?;
         if !makes_levels(&tex) {
             return Ok(());
         }
         check_blit_texture(CALL, &tex)?;
-        tex.prepare(mem, g, &encoder)?;
-        let (levels, slices) = tex.root_window();
-        let w = texture::MipWindow {
-            format: tex.format(),
-            resolution: tex.resolution(),
-            levels,
-            slices,
-            alias: tex.alias().cloned(),
-        };
-        texture::generate_mipmaps(mem, g, &encoder, tex.texture(), &w)?;
-        tex.written(mem, g, &encoder)
+        Err(MemError::unimplemented(format!(
+            "{CALL}: the A10X makes the levels of pixel format {} in blit kicks whose fragment program samples each \
+             level above through the texture unit with linear minification and magnification filters (sampler \
+             0x21c97f538 from the kick's filter flag, 0x21c8c2080), so each texel is the texture unit's \
+             fixed-function filtering of the level above, whose arithmetic and rounding, and its result for integer \
+             formats, no code the driver ships defines (the program is compiled at run time from an \
+             AGX::BlitFragmentProgramKey, 0x21c8c1f2c)",
+            tex.format()
+        )))
     }
 
     /// `optimizeContentsForGPUAccess:` and `optimizeContentsForCPUAccess:`, whole or one slice and level: performance

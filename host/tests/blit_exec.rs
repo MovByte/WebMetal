@@ -709,42 +709,22 @@ fn compressed_block_blits() {
     h.assert_no_errors();
 }
 
-/// texture.generate-mipmaps: level 0 unchanged (exact); the other levels are the implementation's filter (`none` in
-/// the reference), checked here to be the average of the four texels each covers, to within one code of rounding.
+/// `generateMipmapsForTexture:` of a texture whose levels the A10X driver makes is refused, for float and integer
+/// formats alike: the driver's levels are its texture unit's fixed-function filtering of the level above (blit kick
+/// 0x21c8c1bb8 with a linear sampler), which no code it ships defines. (texture.generate-mipmaps records Apple M4's
+/// filter, not the A10X's.)
 #[test]
 fn mipmap_generation() {
     let h = Harness::new();
-    let mut t = Tally::new(&h);
-    let g = Golden::load("texture.generate-mipmaps");
-    let d = texture_descriptor(T2D, fmt("RGBA8Unorm"), (8, 8, 1), 1, 4, PRIVATE, SHADER_READ | RENDER_TARGET, 1);
-    let tex = h.texture(d.clone());
-    assert_eq!(g.value_u64("mipmap-level-count"), Some(4));
-    let base = pattern(256, 73);
-    let (src, _) = h.buffer_with(&base);
-    h.blit(vec![copy_b2t(src, 0, 32, 0, size(8, 8, 1), tex, 0, 0, origin(0, 0, 0))]);
-    h.blit(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(tex) })]);
-    let mut above = h.read_texture(tex, &d, 0, 0, 32);
-    t.data(&g, "level0", &above);
-    for level in 1..4u64 {
-        let w = 8usize >> level;
-        let got = h.read_texture(tex, &d, level, 0, w as u64 * 4);
-        let wa = w * 2;
-        for y in 0..w {
-            for x in 0..w {
-                for c in 0..4 {
-                    let at = |xx: usize, yy: usize| f64::from(above[(yy * wa + xx) * 4 + c]);
-                    let avg =
-                        (at(2 * x, 2 * y) + at(2 * x + 1, 2 * y) + at(2 * x, 2 * y + 1) + at(2 * x + 1, 2 * y + 1))
-                            / 4.0;
-                    let v = f64::from(got[(y * w + x) * 4 + c]);
-                    assert!((v - avg).abs() <= 1.0, "{}: level {level} ({x}, {y}) channel {c}: {v} vs {avg}", h.name());
-                }
-            }
-        }
-        above = got;
+    for format in ["RGBA8Unorm", "RGBA16Float", "RGBA8Uint"] {
+        let d = texture_descriptor(T2D, fmt(format), (8, 8, 1), 1, 4, PRIVATE, SHADER_READ | RENDER_TARGET, 1);
+        let tex = h.texture(d);
+        let f = h.blit_failure(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture {
+            texture: Some(tex),
+        })]);
+        assert_eq!(f.status, status::UNIMPLEMENTED, "{format}: {f:?}");
+        assert!(f.message.contains("fixed-function filtering"), "{format}: {f:?}");
     }
-    t.note(&g.case, "levels 1-3 are within one code of the 2x2 average");
-    t.print();
     h.assert_no_errors();
 }
 
@@ -778,26 +758,24 @@ fn mipmaps_the_driver_does_not_make() {
 }
 
 /// A blit from a buffer into part of a level a GPU pass wrote: an RGBA16Float texture keeps its bytes in a twin, which
-/// the mipmap pass leaves stale; the blit brings the twin up to date before writing its region, so the level keeps the
-/// pass's texels around the region.
+/// a render pass that clears the level leaves stale; the blit brings the twin up to date before writing its region, so
+/// the level keeps the pass's texels around the region.
 #[test]
 fn partial_blit_after_a_gpu_write() {
     let h = Harness::new();
-    let d = texture_descriptor(T2D, fmt("RGBA16Float"), (4, 4, 1), 1, 2, PRIVATE, SHADER_READ | RENDER_TARGET, 1);
+    let d = texture_descriptor(T2D, fmt("RGBA16Float"), (4, 4, 1), 1, 1, PRIVATE, SHADER_READ | RENDER_TARGET, 1);
     let tex = h.texture(d.clone());
-    // binary16 1.0 in every channel of level 0; level 1 made from it by the mipmap pass.
-    let one = 0x3c00u16.to_le_bytes();
-    let texel: Vec<u8> = one.repeat(4);
-    let (src, _) = h.buffer_with(&texel.repeat(16));
-    h.blit(vec![copy_b2t(src, 0, 32, 0, size(4, 4, 1), tex, 0, 0, origin(0, 0, 0))]);
-    h.blit(vec![Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(tex) })]);
-    // binary16 2.0 into texel (1, 0) of level 1.
+    // The level cleared by a render pass to binary16 1.0 in red and 0 in the other channels.
+    let pass = clear_pass(tex, 1.0);
+    h.encode(Command::BeginRenderPass(BeginRenderPass { encoder: h.handle(), render_pass_descriptor: pass }), vec![]);
+    let texel: Vec<u8> = [0x3c00u16, 0, 0, 0].iter().flat_map(|c| c.to_le_bytes()).collect();
+    // binary16 2.0 into texel (1, 0).
     let two: Vec<u8> = 0x4000u16.to_le_bytes().repeat(4);
     let (src, _) = h.buffer_with(&two);
-    h.blit(vec![copy_b2t(src, 0, 8, 0, size(1, 1, 1), tex, 0, 1, origin(1, 0, 0))]);
-    let mut expect = texel.repeat(4);
+    h.blit(vec![copy_b2t(src, 0, 8, 0, size(1, 1, 1), tex, 0, 0, origin(1, 0, 0))]);
+    let mut expect = texel.repeat(16);
     expect[8..16].copy_from_slice(&two);
-    assert_eq!(h.read_texture(tex, &d, 1, 0, 16), expect, "{}", h.name());
+    assert_eq!(h.read_texture(tex, &d, 0, 0, 32), expect, "{}", h.name());
     h.assert_no_errors();
 }
 

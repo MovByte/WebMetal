@@ -627,14 +627,12 @@ void checkListings(id<MTLDevice> device)
     id<MTLBuffer> filled = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
     id<MTLBuffer> untouched = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
     MTLTextureDescriptor *md = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                                                                  width:16 height:16 mipmapped:YES];
+                                                                                  width:16 height:16 mipmapped:NO];
     md.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     md.storageMode = MTLStorageModePrivate;
-    id<MTLTexture> mipmapped = [device newTextureWithDescriptor:md];
-    md.mipmapLevelCount = 1;
     id<MTLTexture> oneLevel = [device newTextureWithDescriptor:md];
     id<MTLTexture> uploaded = [device newTextureWithDescriptor:td];
-    check(blitEvent && source && copied && filled && untouched && mipmapped && oneLevel && uploaded,
+    check(blitEvent && source && copied && filled && untouched && oneLevel && uploaded,
           "the blit listing check's objects are made");
     id<MTLCommandBuffer> blits = [queue commandBuffer];
     id<MTLBlitCommandEncoder> blitter = [blits blitCommandEncoder];
@@ -643,8 +641,8 @@ void checkListings(id<MTLDevice> device)
     [blitter copyFromBuffer:source sourceOffset:0 sourceBytesPerRow:32 sourceBytesPerImage:256
                  sourceSize:MTLSizeMake(8, 8, 1) toTexture:uploaded destinationSlice:0 destinationLevel:0
           destinationOrigin:MTLOriginMake(0, 0, 0)];
-    [blitter generateMipmapsForTexture:mipmapped];
-    // A single level: the driver returns before its first kick (0x21c8b9a90).
+    // A single level: the driver returns before its first kick (0x21c8b9a90). (The levels it makes of a mipmapped
+    // texture are its texture unit's filtering, which the host refuses.)
     [blitter generateMipmapsForTexture:oneLevel];
     [blitter copyFromBuffer:source sourceOffset:0 toBuffer:untouched destinationOffset:0 size:0];
     // -resolveCounters:... with no counter sample buffer: nothing for an empty range, the driver's log otherwise.
@@ -665,13 +663,12 @@ void checkListings(id<MTLDevice> device)
     }) && unlistedComplete,
           "a copy of 0 bytes and the mipmaps of a single level list nothing");
     check(quiet(^{
-        for (id resource in @[ source, copied, filled, uploaded, mipmapped ])
+        for (id resource in @[ source, copied, filled, uploaded ])
             [(id<SPIResources>)resource waitUntilComplete];
         listedComplete = [(id<SPIResources>)source isComplete] && [(id<SPIResources>)copied isComplete] &&
-                         [(id<SPIResources>)filled isComplete] && [(id<SPIResources>)uploaded isComplete] &&
-                         [(id<SPIResources>)mipmapped isComplete];
+                         [(id<SPIResources>)filled isComplete] && [(id<SPIResources>)uploaded isComplete];
     }) && listedComplete,
-          "the resources of copies, fills and mipmaps complete with their blit encoder while the command buffer waits");
+          "the resources of copies and fills complete with their blit encoder while the command buffer waits");
     blitEvent.signaledValue = 1;
     [blits waitUntilCompleted];
     check(blits.status == MTLCommandBufferStatusCompleted, "the command buffer with the blits completes");

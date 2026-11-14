@@ -1,4 +1,4 @@
-//! Copies between textures and mipmap generation.
+//! Copies between textures.
 //!
 //! A texture's bytes may live in two copies (the stored texture and its twin, see [`crate::mem::texture`]). A copy
 //! between textures brings both textures' stored copies up to date ([`Memory::prepare_texture`]) and copies the stored
@@ -15,15 +15,13 @@
 use std::rc::Rc;
 
 use crate::format::handling::{Emulation, Resolution, Upload};
-use crate::format::webgpu::{Cond, SampleType};
 use crate::gpu::idl::{Extent3D, Extent3DDict, Origin3D, Origin3DDict, TexelCopyTextureInfo, TextureAspect};
-use crate::gpu::{Api, CommandEncoder as _, Texture as _};
+use crate::gpu::{Api, CommandEncoder as _};
 use crate::mem::calls::Calls;
-use crate::mem::layout::TextureType;
-use crate::mem::texture::{Alias, Prepare, Texture, idl_format};
+use crate::mem::texture::{Prepare, Texture};
 use crate::mem::{MemError, Memory};
 
-use super::kernels::{MipLevel, encode_mip_level, encode_texture_copy_staged};
+use super::kernels::encode_texture_copy_staged;
 use super::region::{Region, Unit, tight_layout};
 
 fn gpu_err(op: &'static str) -> impl Fn(crate::gpu::Exception) -> MemError {
@@ -234,97 +232,5 @@ pub fn copy_region<A: Api>(
         )?;
     }
     dst.set_current(dr.level, dst_layer, true, twins_current);
-    Ok(())
-}
-
-/// The part of a texture `generateMipmapsForTexture:` makes: a texture's, or a view's levels and slices of its root,
-/// in the view's format.
-pub struct MipWindow<A: Api> {
-    /// `MTLPixelFormat` of the texture or view.
-    pub format: u32,
-    pub resolution: Resolution,
-    /// The root's levels: the first is the source of the rest.
-    pub levels: std::ops::Range<u32>,
-    /// The root's array slices (ignored for a 3D texture, whose levels are made whole).
-    pub slices: std::ops::Range<u32>,
-    /// The root's alias that holds a `Copy` view's texels, which the levels are then made in.
-    pub alias: Option<Rc<Alias<A>>>,
-}
-
-/// `generateMipmapsForTexture:` for a texture whose levels the A10X driver makes (the blit service's `makes_levels`:
-/// more than one level, a format entry with mipmap generation, no IOSurface): every level from the one above it.
-/// Metal states that "The image filtering that GPU drivers use to generate the mipmaps may vary by the feature
-/// families" (`generateMipmaps(for:)`): the filter is the implementation's (plan section 9, row 10). Here each texel
-/// of a level is the source level sampled with a linear filter at the texel's centre: the average of the 2×2 (3D:
-/// 2×2×2) texels it covers when the source dimensions are even, a weighted average otherwise; in linear space for sRGB
-/// formats, whose views decode and encode. Through a view, the levels and slices are the view's, and the format.
-pub fn generate_mipmaps<A: Api>(
-    mem: &Memory<A>,
-    g: &impl Calls<A>,
-    encoder: &A::CommandEncoder,
-    t: &Texture<A>,
-    w: &MipWindow<A>,
-) -> Result<(), MemError> {
-    const CALL: &str = "-[MTLBlitCommandEncoder generateMipmapsForTexture:]";
-    debug_assert!(w.levels.len() > 1, "the driver makes no level of a texture with one");
-    let f = match w.resolution {
-        Resolution::Native(f) => f,
-        Resolution::Emulated(_) => {
-            return Err(MemError::unimplemented(format!(
-                "{CALL}: a texture of pixel format {} stored through an emulation",
-                w.format
-            )));
-        }
-        Resolution::StencilAspect => return Err(MemError::undefined(CALL, "a stencil format")),
-    };
-    let caps = f.caps();
-    let features = mem.features();
-    let filterable = match caps.sample {
-        SampleType::Float => true,
-        SampleType::FloatIf(feature) => features.has(feature),
-        _ => false,
-    };
-    if !caps.aspects.is_empty() || f.is_compressed() || matches!(caps.sample, SampleType::Uint | SampleType::Sint) {
-        return Err(MemError::unimplemented(format!(
-            "{CALL}: the A10X makes the levels of pixel format {} (its format entry's +0x3c & 0x3 is set) in blit \
-             kicks (0x21c8c1bb8) whose reduction of integer, depth, stencil or compressed texels is not established",
-            w.format
-        )));
-    }
-    let renders = match caps.render {
-        Cond::Always => true,
-        Cond::Never => false,
-        Cond::Feature(feature) => features.has(feature),
-    };
-    let gpu = w.alias.as_ref().map_or(t.gpu(), |a| a.gpu());
-    if !filterable || !renders || gpu.usage() & crate::gpu::idl::TextureUsage::RENDER_ATTACHMENT == 0 {
-        return Err(MemError::host(format!(
-            "{CALL}: {} textures cannot be filtered and rendered on this host",
-            caps.name
-        )));
-    }
-    match &w.alias {
-        Some(a) => mem.prepare_alias(g, encoder, t, a, (w.levels.clone(), w.slices.clone()))?,
-        None => {
-            if mem.prepare_texture(g, encoder, t)? == Prepare::Decode {
-                unreachable!("native formats are not decoded");
-            }
-        }
-    }
-    let format = idl_format(f);
-    let three_d = t.geometry.kind == TextureType::D3;
-    for level in w.levels.start + 1..w.levels.end {
-        let size = t.geometry.level_extent(level);
-        let layers = if three_d { 0..size.2 } else { w.slices.clone() };
-        for layer in layers {
-            let m = MipLevel { texture: gpu, format, level, layer, three_d, size };
-            encode_mip_level(mem, g, encoder, &m)?;
-        }
-    }
-    let (levels, slices) = (w.levels.start + 1..w.levels.end, w.slices.clone());
-    match &w.alias {
-        Some(a) => mem.note_alias_write(t, a, levels, slices),
-        None => mem.note_texture_write(t, levels, slices),
-    }
     Ok(())
 }

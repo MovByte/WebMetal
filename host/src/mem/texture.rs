@@ -566,11 +566,9 @@ impl<A: Api> Memory<A> {
         if storage != StorageMode::Memoryless {
             gpu_usage |= TextureUsage::COPY_SRC | TextureUsage::COPY_DST;
         }
-        // Metal blits write every texture that is not memoryless and generate the mipmaps of any mipmapped
-        // color-renderable texture, whatever its usage (`generateMipmaps(for:)`); WebGPU writes a depth aspect that is
-        // not a copy destination, and makes mipmap levels, only through render passes.
-        let blit_renders = storage != StorageMode::Memoryless
-            && (caps.aspects.iter().any(|a| !a.copy_dst) || (geometry.mip_levels > 1 && caps.aspects.is_empty()));
+        // Metal blits write every texture that is not memoryless, whatever its usage; WebGPU writes a depth aspect
+        // that is not a copy destination only through render passes.
+        let blit_renders = storage != StorageMode::Memoryless && caps.aspects.iter().any(|a| !a.copy_dst);
         if (wants(usage::RENDER_TARGET) || storage == StorageMode::Memoryless || blit_renders) && can_render {
             gpu_usage |= TextureUsage::RENDER_ATTACHMENT;
         }
@@ -881,7 +879,7 @@ impl<A: Api> Memory<A> {
                 })
             );
         let mut gpu_usage = TextureUsage::TEXTURE_BINDING | TextureUsage::COPY_SRC | TextureUsage::COPY_DST;
-        if (wants(usage::RENDER_TARGET) || t.geometry.mip_levels > 1) && can_render {
+        if wants(usage::RENDER_TARGET) && can_render {
             gpu_usage |= TextureUsage::RENDER_ATTACHMENT;
         }
         if wants(usage::SHADER_WRITE) && self.features.allows(caps.storage_wo) {
