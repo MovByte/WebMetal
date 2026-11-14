@@ -637,7 +637,8 @@ void checkListings(id<MTLDevice> device)
     md.storageMode = MTLStorageModePrivate;
     id<MTLTexture> oneLevel = [device newTextureWithDescriptor:md];
     id<MTLTexture> uploaded = [device newTextureWithDescriptor:td];
-    check(blitEvent && source && copied && filled && untouched && oneLevel && uploaded,
+    id<MTLTexture> copiedInto = [device newTextureWithDescriptor:td];
+    check(blitEvent && source && copied && filled && untouched && oneLevel && uploaded && copiedInto,
           "the blit listing check's objects are made");
     id<MTLCommandBuffer> blits = [queue commandBuffer];
     id<MTLBlitCommandEncoder> blitter = [blits blitCommandEncoder];
@@ -646,6 +647,9 @@ void checkListings(id<MTLDevice> device)
     [blitter copyFromBuffer:source sourceOffset:0 sourceBytesPerRow:32 sourceBytesPerImage:256
                  sourceSize:MTLSizeMake(8, 8, 1) toTexture:uploaded destinationSlice:0 destinationLevel:0
           destinationOrigin:MTLOriginMake(0, 0, 0)];
+    // The whole-texture copy is the slices-and-levels copy of every level and slice (IOGPU 0x1fcb317cc), which kicks
+    // between distinct kernel resources (0x21c8ba05c).
+    [blitter copyFromTexture:uploaded toTexture:copiedInto];
     // A single level: the driver returns before its first kick (0x21c8b9a90). (The levels it makes of a mipmapped
     // texture are its texture unit's filtering, which the host refuses.)
     [blitter generateMipmapsForTexture:oneLevel];
@@ -668,10 +672,11 @@ void checkListings(id<MTLDevice> device)
     }) && unlistedComplete,
           "a copy of 0 bytes and the mipmaps of a single level list nothing");
     check(quiet(^{
-        for (id resource in @[ source, copied, filled, uploaded ])
+        for (id resource in @[ source, copied, filled, uploaded, copiedInto ])
             [(id<SPIResources>)resource waitUntilComplete];
         listedComplete = [(id<SPIResources>)source isComplete] && [(id<SPIResources>)copied isComplete] &&
-                         [(id<SPIResources>)filled isComplete] && [(id<SPIResources>)uploaded isComplete];
+                         [(id<SPIResources>)filled isComplete] && [(id<SPIResources>)uploaded isComplete] &&
+                         [(id<SPIResources>)copiedInto isComplete];
     }) && listedComplete,
           "the resources of copies and fills complete with their blit encoder while the command buffer waits");
     blitEvent.signaledValue = 1;

@@ -19,6 +19,8 @@
 #import "WebMetalCommandState.h"
 #import "../Resources/WebMetalTexture.h"
 
+#include <algorithm>
+
 namespace webmetal {
 
 namespace {
@@ -67,13 +69,49 @@ uint64_t normalizedDepth(MTLTextureType type, uint64_t depth)
     return type == MTLTextureType3D ? depth : 1;
 }
 
+MTLOrigin origin(const wire::Origin &o)
+{
+    return MTLOriginMake(o.x, o.y, o.z);
+}
+
+MTLSize size(const wire::Size &s)
+{
+    return MTLSizeMake(s.width, s.height, s.depth);
+}
+
 // The address of a buffer's memory in its kernel resource: a heap buffer's lies at its offset in the heap's resource
 // (-[IOGPUMetalBuffer initWithHeap:resource:offset:length:] adds it to _res's GPU address, IOGPU 0x1fcb2d8c4); every
-// other buffer has a kernel resource of its own.
-uint64_t bufferBase(id buffer)
+// other buffer has a kernel resource of its own. A texture over a buffer lies at its offset in the buffer's memory.
+uint64_t bufferBase(id object)
 {
-    const ResourceState *state = StateOf(buffer);
+    if ([object isKindOfClass:[AGXTexture class]]) {
+        id<MTLTexture> texture = (id<MTLTexture>)object;
+        return texture.buffer ? bufferBase(texture.buffer) + texture.bufferOffset : 0;
+    }
+    const ResourceState *state = StateOf(object);
     return state && state->heap ? state->heapOffset : 0;
+}
+
+// The bytes of one element of a texture's plane in a copy: the plane's bytes per block (+0x58) times the sample count
+// (+0x68), the plane being the one MTLBlitOptionStencilFromDepthStencil chooses when the entry has two planes and +0x50
+// is set (0x21c8bee1c to 0x21c8bee5c, 0x21c8bf6c8 to 0x21c8bf708).
+uint64_t elementBytes(const agx::TextureGen2 &layout, uint64_t options)
+{
+    const agx::FormatInfo *format = layout.format;
+    const uint32_t plane = format->planes >= 2 && format->planesWithoutSurface ? (options >> 1) & 1 : 0;
+    return uint64_t(format->planeBytes[plane]) * layout.samples;
+}
+
+// A copy of memory between two resources (0x21c8bb208): no kick for 0 bytes, nor when both GPU addresses are equal
+// (0x21c8bb2ac, the ranges then overlapping); any other begins a kick.
+Decision copyMemory(id destination, uint64_t destinationOffset, id source, uint64_t sourceOffset, uint64_t size)
+{
+    if (size == 0)
+        return Decision::Unlisted;
+    if (KernelResourceKey(source) == KernelResourceKey(destination) &&
+        bufferBase(source) + sourceOffset == bufferBase(destination) + destinationOffset)
+        return Decision::Unlisted;
+    return Decision::Stamped;
 }
 
 // -[AGXA10FamilyBlitContext copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:] (0x21c8b9860, 0x21c8bb208)
@@ -86,12 +124,7 @@ Decision copyBuffers(id source, uint64_t sourceOffset, id destination, uint64_t 
 {
     if (!source || !destination)
         return Decision::Untraced;
-    if (size == 0)
-        return Decision::Unlisted;
-    if (KernelResourceKey(source) == KernelResourceKey(destination) &&
-        bufferBase(source) + sourceOffset == bufferBase(destination) + destinationOffset)
-        return Decision::Unlisted;
-    return Decision::Stamped;
+    return copyMemory(destination, destinationOffset, source, sourceOffset, size);
 }
 
 // -fillBuffer:range:value: and -fillBuffer:range:pattern4: (0x21c8b9d78, 0x21c8b9f84, both 0x21c8c07b0): the vertex
@@ -102,70 +135,131 @@ Decision fillBuffer(id buffer, uint64_t length)
     return length ? Decision::Stamped : Decision::Unlisted;
 }
 
-// The bytes of one element of a buffer copy's texture: the plane's bytes per block (+0x58, the plane the
-// MTLBlitOptionStencilFromDepthStencil option chooses when the entry has two planes and +0x50 is set) times the sample
-// count (+0x68) (0x21c8bee1c to 0x21c8bee5c, 0x21c8bf6c8 to 0x21c8bf708). Elements of 32, 64 and 128 bytes take a path
-// that begins one kick for all of the depth (`w17` clear: 0x21c8bf274, 0x21c8bfaa8); the others begin one per slice
-// of the normalized depth (0x21c8bf0f8, 0x21c8bf9c0) or, for the levels the framebuffer cannot address
-// (0x21c9c0a2c), copy one element per slice as buffer memory (0x21c8bf494, 0x21c8bfd10).
-bool singleKickElement(const agx::TextureGen2 &layout, uint64_t options)
-{
-    const agx::FormatInfo *format = layout.format;
-    if (!format)
-        return true;
-    const uint32_t plane = format->planes >= 2 && format->planesWithoutSurface ? (options >> 1) & 1 : 0;
-    const uint64_t bytes = uint64_t(format->planeBytes[plane]) * layout.samples;
-    return bytes == 32 || bytes == 64 || bytes == 128;
-}
-
-// The copies between a buffer and a texture (0x21c8bedc4 from buffer to texture, 0x21c8bf66c from texture to buffer):
-// a texture-buffer texture takes a copy of buffer memory (0x21c8bf564, 0x21c8bfe0c); a texture whose kernel resource is
-// the buffer's may make that copy's addresses equal, which is not traced.
-Decision copyBufferTexture(id buffer, id texture, uint64_t depth, uint64_t options)
+// The copies between a buffer and a texture (0x21c8bedc4 from buffer to texture, 0x21c8bf66c from texture to buffer).
+// A texture-buffer texture takes a copy of memory between the buffer at its offset and the texture's memory at the
+// origin's x elements, the width's elements long (0x21c8bf50c to 0x21c8bf564, 0x21c8bfdbc to 0x21c8bfe0c). Any other
+// texture first passes the level check (0x21c9c0a2c, true for every format of 1 by 1 blocks): where it fails, one
+// element is copied per slice of the normalized depth as memory between distinct resources (0x21c8bf494,
+// 0x21c8bfd10). Then elements of 32, 64 and 128 bytes (the element-size table 0x21c9dc5be leaves `w17` clear for
+// them, 0x21c8bf638, 0x21c8bf650, 0x21c8beec0) take a path that begins one framebuffer kick whatever the depth
+// (0x21c8bf274 to 0x21c8bf5fc, 0x21c8bfaa8), and the others one per slice of the normalized depth (0x21c8bf0f8,
+// 0x21c8bf9c0). The kicks list both resources whether or not they share a kernel resource; a texture of 1 by 1 blocks
+// over the buffer's memory takes those paths too.
+Decision copyBufferTexture(id buffer, uint64_t bufferOffset, id texture, uint64_t originX, uint64_t width,
+                           uint64_t depth, uint64_t options)
 {
     if (!buffer || !texture)
         return Decision::Untraced;
+    const agx::TextureGen2 *layout = TextureLayoutOf(texture);
     const MTLTextureType type = textureType(texture);
-    if (type == MTLTextureTypeTextureBuffer || KernelResourceKey(buffer) == KernelResourceKey(texture))
-        return Decision::Untraced;
+    if (type == MTLTextureTypeTextureBuffer) {
+        if (!layout || !layout->format)
+            return Decision::Untraced;
+        const uint64_t element = elementBytes(*layout, options);
+        return copyMemory(texture, originX * element, buffer, bufferOffset, width * element);
+    }
     if (normalizedDepth(type, depth))
         return Decision::Stamped;
-    const agx::TextureGen2 *layout = TextureLayoutOf(texture);
-    if (!layout || singleKickElement(*layout, options))
+    if (!layout || !layout->format)
         return Decision::Untraced;
-    return Decision::Unlisted;
+    const uint64_t element = elementBytes(*layout, options);
+    const bool unitBlocks = layout->format->blockWidth == 1 && layout->format->blockHeight == 1;
+    return unitBlocks && (element == 32 || element == 64 || element == 128) ? Decision::Stamped : Decision::Unlisted;
 }
 
 // -copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:
 // destinationOrigin: (0x21c8b9648, and the options form through it, 0x21c8b9f1c) copies each plane both formats have
-// (0x21c8b96e4 to 0x21c8b96f8) with 0x21c8be838, which normalizes the size by both types and begins a framebuffer copy
-// per slice of the depth (0x21c8beb98), or copies one element per slice as texture memory where the framebuffer cannot
-// address a level (0x21c8bec8c). Textures that share a kernel resource may make that copy's addresses equal, which is
-// not traced; a texture-buffer texture takes the buffer copies.
-Decision copyTextures(id source, id destination, uint64_t depth)
+// (0x21c8b96e4 to 0x21c8b96f8) with 0x21c8be838. A texture-buffer source makes it the copy from a buffer to the
+// destination, the source's memory at its origin's x elements standing for the buffer (0x21c8becb8 to 0x21c8bed1c); a
+// texture-buffer destination the copy from the source to a buffer (0x21c8bed24 to 0x21c8bed84). Otherwise it
+// normalizes the size by both types and begins a framebuffer copy per slice of the depth (0x21c8beb98), or, where the
+// level check fails for either texture (0x21c9c0a2c, never for formats of 1 by 1 blocks), copies one element per slice
+// as memory (0x21c8bec8c), whose addresses textures that share a kernel resource may make equal, which is not traced.
+Decision copyTextures(id source, MTLOrigin sourceOrigin, id destination, MTLOrigin destinationOrigin, MTLSize size)
 {
     if (!source || !destination)
         return Decision::Untraced;
     const MTLTextureType sourceType = textureType(source), destinationType = textureType(destination);
-    if (sourceType == MTLTextureTypeTextureBuffer || destinationType == MTLTextureTypeTextureBuffer ||
-        KernelResourceKey(source) == KernelResourceKey(destination))
+    const agx::TextureGen2 *sourceLayout = TextureLayoutOf(source), *destinationLayout = TextureLayoutOf(destination);
+    if (!sourceLayout || !sourceLayout->format || !destinationLayout || !destinationLayout->format)
         return Decision::Untraced;
-    const uint64_t slices = sourceType == MTLTextureType3D && destinationType == MTLTextureType3D ? depth : 1;
-    return slices ? Decision::Stamped : Decision::Unlisted;
+    if (sourceType == MTLTextureTypeTextureBuffer)
+        return copyBufferTexture(source, sourceOrigin.x * elementBytes(*sourceLayout, 0), destination,
+                                 destinationOrigin.x, size.width, size.depth, 0);
+    if (destinationType == MTLTextureTypeTextureBuffer)
+        return copyBufferTexture(destination, destinationOrigin.x * elementBytes(*destinationLayout, 0), source,
+                                 sourceOrigin.x, size.width, size.depth, 0);
+    const uint64_t slices = sourceType == MTLTextureType3D && destinationType == MTLTextureType3D ? size.depth : 1;
+    if (!slices)
+        return Decision::Unlisted;
+    if (KernelResourceKey(source) != KernelResourceKey(destination))
+        return Decision::Stamped;
+    auto unitBlocks = [](const agx::TextureGen2 *layout) {
+        return layout->format->blockWidth == 1 && layout->format->blockHeight == 1;
+    };
+    return unitBlocks(sourceLayout) && unitBlocks(destinationLayout) ? Decision::Stamped : Decision::Untraced;
+}
+
+// -copyFromTexture:sourceSlice:sourceLevel:toTexture:destinationSlice:destinationLevel:sliceCount:levelCount:
+// (0x21c8ba05c) copies, for each plane both formats have, each level and slice of the counts (the loops at 0x21c8ba1a8,
+// 0x21c8ba2f0, 0x21c8ba3f8 and 0x21c8ba660). For a sparse texture or layouts of different kinds every copy is a region
+// copy (0x21c8bbe98 to 0x21c8be838). Otherwise it collects the source's memory ranges, each depth slice of each level
+// (0x21c8bc014, sorted by 0x21c8bc280 and joined), and copies each depth slice of each destination level as memory
+// (0x21c8bcde8 to 0x21c8be14c) when the destination's range, the source level's size long, overlaps one of them (the
+// binary search 0x21c8bfe4c), else as a region copy (0x21c8bd058 to 0x21c8be838). Between distinct kernel resources
+// the ranges never overlap and every copy is a region copy, which kicks. Textures of one root overlap only where a
+// copy names the same subresource on both sides, a copy of memory onto itself that begins no kick (0x21c8bb2ac), and
+// are disjoint elsewhere. Textures over a buffer, the plane pairs of 260 and 261, and distinct textures of one heap,
+// whose memory may alias, are not traced here.
+Decision copySurfaces(id source, uint64_t sourceSlice, uint64_t sourceLevel, id destination, uint64_t destinationSlice,
+                      uint64_t destinationLevel, uint64_t slices, uint64_t levels)
+{
+    if (!source || !destination)
+        return Decision::Untraced;
+    const agx::TextureGen2 *sourceLayout = TextureLayoutOf(source), *destinationLayout = TextureLayoutOf(destination);
+    if (!sourceLayout || !sourceLayout->format || !destinationLayout || !destinationLayout->format)
+        return Decision::Untraced;
+    const uint32_t planes = std::min(sourceLayout->format->planes, destinationLayout->format->planes);
+    if (!slices || !levels || !planes)
+        return Decision::Unlisted;
+    if (KernelResourceKey(source) != KernelResourceKey(destination))
+        return Decision::Stamped;
+    if (((id<MTLTexture>)source).buffer || ((id<MTLTexture>)destination).buffer ||
+        sourceLayout->pixelFormat != destinationLayout->pixelFormat)
+        return Decision::Untraced;
+    // The root, and the root's level and slice of a view's first level and slice.
+    auto root = [](id<MTLTexture> texture, uint64_t &level, uint64_t &slice) {
+        for (; texture.parentTexture; texture = texture.parentTexture) {
+            level += texture.parentRelativeLevel;
+            slice += texture.parentRelativeSlice;
+        }
+        return texture;
+    };
+    // Distinct roots in one heap may alias each other's memory.
+    if (root(source, sourceLevel, sourceSlice) != root(destination, destinationLevel, destinationSlice))
+        return Decision::Untraced;
+    return sourceLevel == destinationLevel && sourceSlice == destinationSlice ? Decision::Unlisted : Decision::Stamped;
 }
 
 // -fillTexture:level:slice:region:bytes:length: (0x21c8b9fe8, 0x21c8c036c), which IOGPU's color forms reach through
 // MTLPackColor with a stack buffer (0x1fcb315a0): one framebuffer fill per slice of the normalized depth (0x21c8c06ec).
 // Before it, a pattern shorter than an element is repeated modulo its length (0x21c8c05b4): with a length of 0 the
-// driver reads the caller's bytes past their end, which is not traced. A texture-buffer texture takes the buffer fill
-// (0x21c8c07a8).
-Decision fillTexture(id texture, uint64_t depth, bool callerBytes, uint64_t length)
+// driver reads the caller's bytes past their end, which is not traced. A texture-buffer texture takes the buffer fill of
+// its memory from the origin's x elements, the width's elements long (0x21c8c074c to 0x21c8c07a8, plane 0's bytes per
+// block times the sample count per element).
+Decision fillTexture(id texture, uint64_t width, uint64_t depth, bool callerBytes, uint64_t length)
 {
     if (!texture)
         return Decision::Untraced;
     const MTLTextureType type = textureType(texture);
-    if (type == MTLTextureTypeTextureBuffer || (callerBytes && length == 0))
+    if (callerBytes && length == 0)
         return Decision::Untraced;
+    if (type == MTLTextureTypeTextureBuffer) {
+        const agx::TextureGen2 *layout = TextureLayoutOf(texture);
+        if (!layout || !layout->format)
+            return Decision::Untraced;
+        return fillBuffer(texture, width * elementBytes(*layout, 0));
+    }
     return normalizedDepth(type, depth) ? Decision::Stamped : Decision::Unlisted;
 }
 
@@ -203,48 +297,57 @@ void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyBuffe
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyBufferToTexture &r)
 {
     apply(encoder,
-          copyBufferTexture(recordObject(encoder, r.sourceBuffer), recordObject(encoder, r.destinationTexture),
-                            r.sourceSize.depth, 0),
+          copyBufferTexture(recordObject(encoder, r.sourceBuffer), r.sourceOffset, recordObject(encoder, r.destinationTexture),
+                            r.destinationOrigin.x, r.sourceSize.width, r.sourceSize.depth, 0),
           {r.sourceBuffer, r.destinationTexture});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyBufferToTextureOptions &r)
 {
     apply(encoder,
-          copyBufferTexture(recordObject(encoder, r.sourceBuffer), recordObject(encoder, r.destinationTexture),
-                            r.sourceSize.depth, r.options),
+          copyBufferTexture(recordObject(encoder, r.sourceBuffer), r.sourceOffset, recordObject(encoder, r.destinationTexture),
+                            r.destinationOrigin.x, r.sourceSize.width, r.sourceSize.depth, r.options),
           {r.sourceBuffer, r.destinationTexture});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyTextureToBuffer &r)
 {
     apply(encoder,
-          copyBufferTexture(recordObject(encoder, r.destinationBuffer), recordObject(encoder, r.sourceTexture),
-                            r.sourceSize.depth, 0),
+          copyBufferTexture(recordObject(encoder, r.destinationBuffer), r.destinationOffset, recordObject(encoder, r.sourceTexture),
+                            r.sourceOrigin.x, r.sourceSize.width, r.sourceSize.depth, 0),
           {r.sourceTexture, r.destinationBuffer});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyTextureToBufferOptions &r)
 {
     apply(encoder,
-          copyBufferTexture(recordObject(encoder, r.destinationBuffer), recordObject(encoder, r.sourceTexture),
-                            r.sourceSize.depth, r.options),
+          copyBufferTexture(recordObject(encoder, r.destinationBuffer), r.destinationOffset, recordObject(encoder, r.sourceTexture),
+                            r.sourceOrigin.x, r.sourceSize.width, r.sourceSize.depth, r.options),
           {r.sourceTexture, r.destinationBuffer});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyTextureToTexture &r)
 {
     apply(encoder,
-          copyTextures(recordObject(encoder, r.sourceTexture), recordObject(encoder, r.destinationTexture),
-                       r.sourceSize.depth),
+          copyTextures(recordObject(encoder, r.sourceTexture), origin(r.sourceOrigin),
+                       recordObject(encoder, r.destinationTexture), origin(r.destinationOrigin), size(r.sourceSize)),
           {r.sourceTexture, r.destinationTexture});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyTextureToTextureOptions &r)
 {
     apply(encoder,
-          copyTextures(recordObject(encoder, r.sourceTexture), recordObject(encoder, r.destinationTexture),
-                       r.sourceSize.depth),
+          copyTextures(recordObject(encoder, r.sourceTexture), origin(r.sourceOrigin),
+                       recordObject(encoder, r.destinationTexture), origin(r.destinationOrigin), size(r.sourceSize)),
+          {r.sourceTexture, r.destinationTexture});
+}
+
+void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitCopyTextureToTextureSlicesLevels &r)
+{
+    apply(encoder,
+          copySurfaces(recordObject(encoder, r.sourceTexture), r.sourceSlice, r.sourceLevel,
+                       recordObject(encoder, r.destinationTexture), r.destinationSlice, r.destinationLevel,
+                       r.sliceCount, r.levelCount),
           {r.sourceTexture, r.destinationTexture});
 }
 
@@ -260,17 +363,17 @@ void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitFillBuffe
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitFillTextureBytes &r)
 {
-    apply(encoder, fillTexture(recordObject(encoder, r.texture), r.region.size.depth, true, r.length), {r.texture});
+    apply(encoder, fillTexture(recordObject(encoder, r.texture), r.region.size.width, r.region.size.depth, true, r.length), {r.texture});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitFillTextureColor &r)
 {
-    apply(encoder, fillTexture(recordObject(encoder, r.texture), r.region.size.depth, false, 0), {r.texture});
+    apply(encoder, fillTexture(recordObject(encoder, r.texture), r.region.size.width, r.region.size.depth, false, 0), {r.texture});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitFillTextureColorPixelFormat &r)
 {
-    apply(encoder, fillTexture(recordObject(encoder, r.texture), r.region.size.depth, false, 0), {r.texture});
+    apply(encoder, fillTexture(recordObject(encoder, r.texture), r.region.size.width, r.region.size.depth, false, 0), {r.texture});
 }
 
 void NoteRecordListing(id, SEL, EncoderState &encoder, const wire::BlitGenerateMipmapsForTexture &r)

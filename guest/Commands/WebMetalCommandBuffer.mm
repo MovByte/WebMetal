@@ -113,13 +113,12 @@ void PendingRelease::bound(const std::vector<uint64_t> &handles, Connection *con
 // level forms return at once (0x21c8b9954 to 0x21c8b9968), as do -getTextureAccessCounters:... (0x21c8bab54) and
 // -resetTextureAccessCounters:... (0x21c8bab70); the copies between buffers and textures, the buffer and texture fills
 // and -generateMipmapsForTexture: run as blit or render kicks that list their arguments as their values decide
-// (WebMetalBlitListing.mm). Every other use is untraced: the binds the driver lists at draw and dispatch time by masks
-// of the bound pipeline's compiled program (render 0x21c96ad3c, compute 0x21c90f2c4), which come from its compiler
-// (packages G4 and G5); the indirect dispatch's buffer, listed only while the threadgroup fits the pipeline
-// (0x21c90b8a0 to 0x21c90b8ac); and the copies between textures by slices and levels
+// (WebMetalBlitListing.mm), the copies between textures by slices and levels among them
 // (-copyFromTexture:sourceSlice:sourceLevel:toTexture:destinationSlice:destinationLevel:sliceCount:levelCount:,
-// 0x21c8ba05c, which -copyFromTexture:toTexture: reaches through IOGPU 0x1fcb317cc), whose region lists are not read
-// yet.
+// 0x21c8ba05c, which -copyFromTexture:toTexture: reaches through IOGPU 0x1fcb317cc). Every other use is untraced: the
+// binds the driver lists at draw and dispatch time by masks of the bound pipeline's compiled program (render
+// 0x21c96ad3c, compute 0x21c90f2c4), which come from its compiler (packages G4 and G5); and the indirect dispatch's
+// buffer, listed only while the threadgroup fits the pipeline (0x21c90b8a0 to 0x21c90b8ac).
 Listing listingOf(id self, SEL cmd)
 {
     static const std::vector<SEL> render = {
@@ -169,6 +168,8 @@ Listing listingOf(id self, SEL cmd)
                       destinationLevel:destinationOrigin:),
         @selector(copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:
                       destinationLevel:destinationOrigin:options:),
+        @selector(copyFromTexture:sourceSlice:sourceLevel:toTexture:destinationSlice:destinationLevel:sliceCount:
+                      levelCount:),
         @selector(fillBuffer:range:value:),
         @selector(fillBuffer:range:pattern4:),
         @selector(fillTexture:level:slice:region:bytes:length:),
