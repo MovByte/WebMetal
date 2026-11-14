@@ -39,13 +39,14 @@ value_depth_limit = 32
 
 # The accelerator service and its user client. Metal.framework (343.21 on 21H461) matches services in category
 # IOAcceleratorES and loads the bundle named by MetalPluginName from /System/Library/Extensions, instantiating
-# MetalPluginClassName. The selectors below are this protocol's, numbered from 0 in list order;
-# every call passes and returns 64-bit scalars only.
+# MetalPluginClassName. The plugin carries the A10X driver's names, which the A10X's accelerator publishes on 21H461:
+# AGXMetalA10 from its personality, AGXA10XDevice set by the AGX kext. The selectors below are this protocol's, numbered
+# from 0 in list order; every call passes and returns 64-bit scalars only.
 [transport]
 service_class = "WebMetalAccelerator"
 match_category = "IOAcceleratorES"
-metal_plugin_name = "WebMetal"
-metal_plugin_class_name = "WebMetalDevice"
+metal_plugin_name = "AGXMetalA10"
+metal_plugin_class_name = "AGXA10XDevice"
 user_client_type = 0
 selectors = [
   "control: in [request_addr, request_length, reply_addr, reply_capacity] out [reply_length]; runs one control request read from the calling task and writes its reply; when reply_length > reply_capacity nothing is written and the reply stays pending",

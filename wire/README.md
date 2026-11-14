@@ -1,7 +1,7 @@
 # WebMetal wire protocol
 
-The records the guest Metal plugin (`WebMetal.bundle`) and the host executor exchange, and the accelerator service
-that carries them.
+The records the guest Metal plugin (`AGXMetalA10.bundle`, which carries the names of the A10X driver it replaces)
+and the host executor exchange, and the accelerator service that carries them.
 
 | Path | What it is |
 | --- | --- |
@@ -100,14 +100,15 @@ request on a connection, carries the guest's hash; the host refuses the connecti
 
 The accelerator service takes the place of the GPU's own accelerator. Metal.framework matches services of category
 `IOAcceleratorES`, reads `MetalPluginName` and `MetalPluginClassName` from the service, and loads that bundle from
-`/System/Library/Extensions`, as Metal.framework 343.21 does on 21H461.
+`/System/Library/Extensions`, as Metal.framework 343.21 does on 21H461. The values are the ones the A10X's accelerator
+publishes there: `AGXMetalA10` from its personality, and `AGXA10XDevice`, which the AGX kext sets.
 
 | Item | Value |
 | --- | --- |
 | Service class | `WebMetalAccelerator` |
 | `IOMatchCategory` | `IOAcceleratorES` |
-| `MetalPluginName` | `WebMetal` |
-| `MetalPluginClassName` | `WebMetalDevice` |
+| `MetalPluginName` | `AGXMetalA10` |
+| `MetalPluginClassName` | `AGXA10XDevice` |
 | User client type | 0 |
 
 User client selectors, all taking and returning 64-bit scalars:
