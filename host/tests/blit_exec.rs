@@ -748,6 +748,35 @@ fn mipmap_generation() {
     h.assert_no_errors();
 }
 
+/// `generateMipmapsForTexture:` of textures whose levels the A10X driver does not make
+/// (-[AGXA10FamilyBlitContext generateMipmapsForTexture:], 0x21c8b996c): a single level (0x21c8b9a90) and a format
+/// entry without mipmap generation (ETC2 RGB8, 0x21c8b9a14). The blits complete and the textures keep their bytes.
+#[test]
+fn mipmaps_the_driver_does_not_make() {
+    let h = Harness::new();
+    let mip = |t| Command::BlitGenerateMipmapsForTexture(BlitGenerateMipmapsForTexture { texture: Some(t) });
+    let d = texture_descriptor(T2D, fmt("RGBA8Unorm"), (4, 4, 1), 1, 1, PRIVATE, SHADER_READ | RENDER_TARGET, 1);
+    let one = h.texture(d.clone());
+    let base = pattern(64, 41);
+    let (src, _) = h.buffer_with(&base);
+    h.blit(vec![copy_b2t(src, 0, 16, 0, size(4, 4, 1), one, 0, 0, origin(0, 0, 0)), mip(one)]);
+    assert_eq!(h.read_texture(one, &d, 0, 0, 16), base, "{}", h.name());
+    // ETC2 RGB8, 8x8 with two levels: 2x2 blocks of 8 bytes, then one.
+    let e = texture_descriptor(T2D, fmt("ETC2_RGB8"), (8, 8, 1), 1, 2, PRIVATE, SHADER_READ, 1);
+    let etc = h.texture(e.clone());
+    let (l0, l1) = (pattern(32, 42), pattern(8, 43));
+    let (s0, _) = h.buffer_with(&l0);
+    let (s1, _) = h.buffer_with(&l1);
+    h.blit(vec![
+        copy_b2t(s0, 0, 16, 0, size(8, 8, 1), etc, 0, 0, origin(0, 0, 0)),
+        copy_b2t(s1, 0, 8, 0, size(4, 4, 1), etc, 0, 1, origin(0, 0, 0)),
+        mip(etc),
+    ]);
+    assert_eq!(h.read_texture(etc, &e, 0, 0, 16)[..32], l0[..], "{}", h.name());
+    assert_eq!(h.read_texture(etc, &e, 1, 0, 8)[..8], l1[..], "{}", h.name());
+    h.assert_no_errors();
+}
+
 /// A blit from a buffer into part of a level a GPU pass wrote: an RGBA16Float texture keeps its bytes in a twin, which
 /// the mipmap pass leaves stale; the blit brings the twin up to date before writing its region, so the level keeps the
 /// pass's texels around the region.

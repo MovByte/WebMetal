@@ -596,8 +596,10 @@ void checkListings(id<MTLDevice> device)
     md.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     md.storageMode = MTLStorageModePrivate;
     id<MTLTexture> mipmapped = [device newTextureWithDescriptor:md];
+    md.mipmapLevelCount = 1;
+    id<MTLTexture> oneLevel = [device newTextureWithDescriptor:md];
     id<MTLTexture> uploaded = [device newTextureWithDescriptor:td];
-    check(blitEvent && source && copied && filled && untouched && mipmapped && uploaded,
+    check(blitEvent && source && copied && filled && untouched && mipmapped && oneLevel && uploaded,
           "the blit listing check's objects are made");
     id<MTLCommandBuffer> blits = [queue commandBuffer];
     id<MTLBlitCommandEncoder> blitter = [blits blitCommandEncoder];
@@ -607,6 +609,8 @@ void checkListings(id<MTLDevice> device)
                  sourceSize:MTLSizeMake(8, 8, 1) toTexture:uploaded destinationSlice:0 destinationLevel:0
           destinationOrigin:MTLOriginMake(0, 0, 0)];
     [blitter generateMipmapsForTexture:mipmapped];
+    // A single level: the driver returns before its first kick (0x21c8b9a90).
+    [blitter generateMipmapsForTexture:oneLevel];
     [blitter copyFromBuffer:source sourceOffset:0 toBuffer:untouched destinationOffset:0 size:0];
     // -resolveCounters:... with no counter sample buffer: nothing for an empty range, the driver's log otherwise.
     __block BOOL noLocation = NO;
@@ -622,9 +626,9 @@ void checkListings(id<MTLDevice> device)
     [blits commit];
     __block BOOL listedComplete = NO, unlistedComplete = NO;
     check(quiet(^{
-        unlistedComplete = [(id<SPIResources>)untouched isComplete];
+        unlistedComplete = [(id<SPIResources>)untouched isComplete] && [(id<SPIResources>)oneLevel isComplete];
     }) && unlistedComplete,
-          "a copy of 0 bytes lists nothing");
+          "a copy of 0 bytes and the mipmaps of a single level list nothing");
     check(quiet(^{
         for (id resource in @[ source, copied, filled, uploaded, mipmapped ])
             [(id<SPIResources>)resource waitUntilComplete];

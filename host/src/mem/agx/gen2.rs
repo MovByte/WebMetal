@@ -43,6 +43,9 @@ pub struct FormatInfo {
     pub planes_without_surface: u32,
     /// +0x58, +0x59
     pub plane_bytes: [u8; 2],
+    /// (+0x3c & 0x3) != 0: `-[AGXA10FamilyBlitContext generateMipmapsForTexture:]` makes the levels of the format
+    /// (0x21c8b9a0c to 0x21c8b9a18).
+    pub mipmap_generation: bool,
 }
 
 /// `AGX::G9::TextureFormatTable::chooseTextureFormatOBJC` (0x21c9c1318). Never fails; unsupported formats return the

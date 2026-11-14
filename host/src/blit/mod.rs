@@ -603,7 +603,16 @@ impl<A: Api> BlitService<A> {
         let mem = &*self.memory;
         let encoder = cx.encoder().clone();
         let (g, objects) = (cx.gpu(), cx.objects());
+        // A texture over a buffer, a texture buffer included, has one level (`Memory::linear`).
+        if let Some(handle) = h
+            && payload::<LinearTexture<A>>(objects, handle).is_some()
+        {
+            return Ok(());
+        }
         let tex = texture(objects, h, CALL, "the texture")?;
+        if !makes_levels(&tex) {
+            return Ok(());
+        }
         check_blit_texture(CALL, &tex)?;
         tex.prepare(mem, g, &encoder)?;
         let (levels, slices) = tex.root_window();
@@ -824,6 +833,20 @@ enum Fill {
 
 /// A texture a blit reads or writes must have contents: not memoryless; and blits move single-sample textures between
 /// buffers. A view's bytes must be its root's.
+/// Whether `-[AGXA10FamilyBlitContext generateMipmapsForTexture:]` (0x21c8b996c) makes any level of the texture. It
+/// returns before its first kick for a texture over an IOSurface, a view of one included (+0xa0, 0x21c8b99ec), the
+/// pixel formats 624 to 627 and 550 and 551 (0x21c8b99f4 to 0x21c8b9a08), a format entry whose +0x3c & 0x3 is clear
+/// (0x21c8b9a0c to 0x21c8b9a18) and a single level (+0x64 - 1 is 0, 0x21c8b9a3c to 0x21c8b9a90). The pixel format, its
+/// entry and the level count are a view's own.
+fn makes_levels<A: Api>(tex: &Tex<A>) -> bool {
+    let format = tex.format();
+    tex.texture().surface.is_none()
+        && !(624..628).contains(&format)
+        && !(550..552).contains(&format)
+        && crate::mem::agx::gen2::choose_texture_format(u64::from(format)).mipmap_generation
+        && tex.root_window().0.len() > 1
+}
+
 fn check_blit_texture<A: Api>(call: &'static str, tex: &Tex<A>) -> Result<(), MemError> {
     if tex.texture().storage == crate::mem::options::StorageMode::Memoryless {
         return Err(MemError::undefined(call, "a memoryless texture has no contents"));

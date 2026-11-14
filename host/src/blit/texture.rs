@@ -251,12 +251,12 @@ pub struct MipWindow<A: Api> {
     pub alias: Option<Rc<Alias<A>>>,
 }
 
-/// `generateMipmapsForTexture:`: every level from the one above it. Metal requires "A `mipmapLevelCount` property
-/// that's greater than `1`" and "A `pixelFormat` that's color-renderable and color-filterable"
-/// (`generateMipmaps(for:)`), and states that "The image filtering that GPU drivers use to generate the mipmaps may
-/// vary by the feature families": the filter is the implementation's (plan section 9, row 10). Here each texel of a
-/// level is the source level sampled with a linear filter at the texel's centre: the average of the 2×2 (3D: 2×2×2)
-/// texels it covers when the source dimensions are even, a weighted average otherwise; in linear space for sRGB
+/// `generateMipmapsForTexture:` for a texture whose levels the A10X driver makes (the blit service's `makes_levels`:
+/// more than one level, a format entry with mipmap generation, no IOSurface): every level from the one above it.
+/// Metal states that "The image filtering that GPU drivers use to generate the mipmaps may vary by the feature
+/// families" (`generateMipmaps(for:)`): the filter is the implementation's (plan section 9, row 10). Here each texel
+/// of a level is the source level sampled with a linear filter at the texel's centre: the average of the 2×2 (3D:
+/// 2×2×2) texels it covers when the source dimensions are even, a weighted average otherwise; in linear space for sRGB
 /// formats, whose views decode and encode. Through a view, the levels and slices are the view's, and the format.
 pub fn generate_mipmaps<A: Api>(
     mem: &Memory<A>,
@@ -266,9 +266,7 @@ pub fn generate_mipmaps<A: Api>(
     w: &MipWindow<A>,
 ) -> Result<(), MemError> {
     const CALL: &str = "-[MTLBlitCommandEncoder generateMipmapsForTexture:]";
-    if w.levels.end - w.levels.start < 2 {
-        return Err(MemError::undefined(CALL, "a texture with one mipmap level"));
-    }
+    debug_assert!(w.levels.len() > 1, "the driver makes no level of a texture with one");
     let f = match w.resolution {
         Resolution::Native(f) => f,
         Resolution::Emulated(_) => {
@@ -287,10 +285,11 @@ pub fn generate_mipmaps<A: Api>(
         _ => false,
     };
     if !caps.aspects.is_empty() || f.is_compressed() || matches!(caps.sample, SampleType::Uint | SampleType::Sint) {
-        return Err(MemError::undefined(
-            CALL,
-            format!("pixel format {} is not color-renderable and filterable", w.format),
-        ));
+        return Err(MemError::unimplemented(format!(
+            "{CALL}: the A10X makes the levels of pixel format {} (its format entry's +0x3c & 0x3 is set) in blit \
+             kicks (0x21c8c1bb8) whose reduction of integer, depth, stencil or compressed texels is not established",
+            w.format
+        )));
     }
     let renders = match caps.render {
         Cond::Always => true,
