@@ -457,7 +457,7 @@ void checkNoCopy(id<MTLDevice> device)
     check(released == bytes && releasedLength == layout.size, "the deallocator receives the memory and its length");
     check(device.currentAllocatedSize == allocatedBefore, "a released no-copy texture leaves the device's total");
     // A buffer over caller memory (-[AGXBuffer initWithDevice:bytes:length:...]): its kernel resource holds the pages
-    // under the length from the pointer's offset in its page. (The host takes memory in 4096-byte units.)
+    // under the length from the pointer's offset in its page, whatever the pointer's and the length's alignment.
     void *pagesForBuffer = nullptr;
     check(posix_memalign(&pagesForBuffer, 0x4000, 0x8000) == 0, "memory for a no-copy buffer");
     @autoreleasepool {
@@ -469,9 +469,39 @@ void checkNoCopy(id<MTLDevice> device)
         check(size(start) == 0x4000 && start.allocatedSize == 0x4000 && size(across) == 0x8000 &&
                   across.allocatedSize == 0x8000,
               "a no-copy buffer's kernel resource holds the caller's pages under its length");
+        char *odd = static_cast<char *>(pagesForBuffer) + 0x4010;
+        for (int i = 0; i < 100; i++)
+            odd[i] = static_cast<char>(i * 7 + 3);
+        id<MTLBuffer> unaligned = [device newBufferWithBytesNoCopy:odd length:100
+                                                           options:MTLResourceStorageModeShared deallocator:nil];
+        id<MTLBuffer> copied = [device newBufferWithLength:100 options:MTLResourceStorageModeShared];
+        id<MTLCommandQueue> queue = [device newCommandQueue];
+        id<MTLCommandBuffer> commands = [queue commandBuffer];
+        id<MTLBlitCommandEncoder> blit = [commands blitCommandEncoder];
+        [blit copyFromBuffer:unaligned sourceOffset:0 toBuffer:copied destinationOffset:0 size:100];
+        [blit endEncoding];
+        [commands commit];
+        [commands waitUntilCompleted];
+        check(unaligned.contents == odd && unaligned.length == 100 && unaligned.allocatedSize == 0x4000 &&
+                  commands.status == MTLCommandBufferStatusCompleted && memcmp(copied.contents, odd, 100) == 0,
+              "a no-copy buffer at any pointer and length is the caller's bytes, for the CPU and the GPU");
     }
-    // A length above three quarters of the shared memory size (the shim's 0xAAAAC000: 0x80000000) is refused by the
-    // kernel before any memory is mapped.
+    // A null pointer makes an ordinary buffer (type 0, its memory the kernel's), and the deallocator receives the null
+    // pointer; a length above three quarters of the shared memory size (the shim's 0xAAAAC000: 0x80000000) is refused
+    // by the kernel before any memory is mapped.
+    __block void *nullReleased = pagesForBuffer;
+    __block NSUInteger nullLength = 0;
+    void *noPointer = nullptr;  // the SDK declares the pointer nonnull; the driver takes null
+    @autoreleasepool {
+        id<MTLBuffer> own = [device newBufferWithBytesNoCopy:noPointer length:100 options:MTLResourceStorageModeShared
+                                                 deallocator:^(void *pointer, NSUInteger length) {
+                                                     nullReleased = pointer;
+                                                     nullLength = length;
+                                                 }];
+        check(own && own.contents && own.length == 100 && own.allocatedSize == 0x4000,
+              "a no-copy buffer of a null pointer is an ordinary buffer of the length");
+    }
+    check(nullReleased == nullptr && nullLength == 100, "its deallocator receives the null pointer and the length");
     check(![device newBufferWithBytesNoCopy:pagesForBuffer length:0x80000001 options:MTLResourceStorageModeShared
                                 deallocator:nil],
           "the kernel refuses a resource above three quarters of the shared memory size");

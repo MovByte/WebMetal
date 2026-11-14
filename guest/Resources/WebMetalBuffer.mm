@@ -92,6 +92,7 @@ void reportInitFailures(MTLResourceOptions options, bool callerMemory)
     NSUInteger _length;
     void *_contents;
     vm_size_t _ownedSize;  // guest memory the buffer allocated for its contents
+    void *_pointer;        // the caller's pointer of a no-copy buffer (IOGPUMetalBuffer._pointer), which may be null
     int64_t _accounted;    // what the buffer adds to the device's currentAllocatedSize
     bool _suballocated;    // the driver sub-allocates it: its allocated size is its length
     void (^_deallocator)(void *pointer, NSUInteger length);
@@ -131,42 +132,25 @@ static AGXA10FamilyBuffer *finishCreation(AGXA10FamilyBuffer *buffer)
     return buffer;
 }
 
-// AGXBuffer(Internal) -initWithDevice:length:alignment:options:isSuballocDisabled:resourceInArgs:pinnedGPULocation:
-// (AGXMetalA10 0x21c8a4900) with alignment 1 and no pinned location, as -[AGXA10FamilyDevice newBufferWithLength:options:]
-// (0x21c8d5e48) and -newBufferWithBytes:length:options: (0x21c8d5f0c) call it. The size requested from the kernel is the
-// length rounded up to the page size; a length whose rounding overflows fails. A length below the page size is
-// sub-allocated unless the preference disables it or the sub-allocator refuses it; otherwise the buffer is a dedicated
-// kernel resource. IOGPUMetalSuballocatorAllocate refuses a zero length, and the kernel a zero size and one above its
-// limit (KernelRefusesResourceSize): nil, as Metal answers. Neither AGXMetalA10 nor IOGPU compares the length with
-// maxBufferLength.
-AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length, MTLResourceOptions options,
-                                    const void *bytes)
+// The steps of a buffer whose memory the kernel provides once the driver's checks pass: the resource state, the CPU
+// copy of a shared buffer's memory (allocated here, `size` bytes) and the host's buffer, with the initial bytes when
+// given. A memoryless buffer has no kernel resource (-[IOGPUMetalResource initWithDevice:options:args:argsSize:]).
+static AGXA10FamilyBuffer *newOwnedBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length,
+                                          MTLResourceOptions options, const void *bytes, uint64_t residentSize,
+                                          uint64_t size)
 {
-    const uint64_t page = PageSize();
-    const uint64_t sysMemSize = (static_cast<uint64_t>(length) + page - 1) & ~(page - 1);
-    if (sysMemSize < length)
-        return nil;
-    const bool suballocated = length < page && !SuballocationDisabled() && SuballocatorServes(length, options);
-    if (!suballocated)
-        reportInitFailures(options, false);
     const uint64_t storage = (options & kStorageModeMask) >> kStorageModeShift;
-    // A memoryless resource has no kernel resource (-[IOGPUMetalResource initWithDevice:options:args:argsSize:]).
-    const bool memoryless = storage == MTLStorageModeMemoryless;
-    if (!memoryless && (length == 0 || (!suballocated && KernelRefusesResourceSize(device, _cmd, sysMemSize))))
-        return nil;
     AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
     InitResourceState(buffer->_state, device, options);
     buffer->_length = length;
-    buffer->_suballocated = suballocated;
-    buffer->_state.residentSize = suballocated ? kSuballocatedResourceSize : sysMemSize;
+    buffer->_state.residentSize = residentSize;
     Connection *connection = DeviceConnection(device);
     buffer->_state.handle = connection->NewHandle();
-    if (memoryless)
-        return finishCreation(buffer);
+    if (storage == MTLStorageModeMemoryless)
+        return buffer;
     if (storage != MTLStorageModePrivate) {
         vm_address_t address = 0;
-        const vm_size_t size = static_cast<vm_size_t>(sysMemSize ? sysMemSize : page);
-        if (vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE) != KERN_SUCCESS)
+        if (vm_allocate(mach_task_self(), &address, static_cast<vm_size_t>(size), VM_FLAGS_ANYWHERE) != KERN_SUCCESS)
             return nil;
         buffer->_contents = reinterpret_cast<void *>(address);
         buffer->_ownedSize = size;
@@ -194,26 +178,73 @@ AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInt
     }
     if (!ok)
         WMLoudMethod(device, _cmd, "the host answered with a Metal error, which the A10X driver does not return here");
+    return buffer;
+}
+
+// AGXBuffer(Internal) -initWithDevice:length:alignment:options:isSuballocDisabled:resourceInArgs:pinnedGPULocation:
+// (AGXMetalA10 0x21c8a4900) with alignment 1 and no pinned location, as -[AGXA10FamilyDevice newBufferWithLength:options:]
+// (0x21c8d5e48) and -newBufferWithBytes:length:options: (0x21c8d5f0c) call it. The size requested from the kernel is the
+// length rounded up to the page size; a length whose rounding overflows fails. A length below the page size is
+// sub-allocated unless the preference disables it or the sub-allocator refuses it; otherwise the buffer is a dedicated
+// kernel resource. IOGPUMetalSuballocatorAllocate refuses a zero length, and the kernel a zero size and one above its
+// limit (KernelRefusesResourceSize): nil, as Metal answers. Neither AGXMetalA10 nor IOGPU compares the length with
+// maxBufferLength.
+AGXA10FamilyBuffer *NewDeviceBuffer(AGXA10FamilyDevice *device, SEL _cmd, NSUInteger length, MTLResourceOptions options,
+                                    const void *bytes)
+{
+    const uint64_t page = PageSize();
+    const uint64_t sysMemSize = (static_cast<uint64_t>(length) + page - 1) & ~(page - 1);
+    if (sysMemSize < length)
+        return nil;
+    const bool suballocated = length < page && !SuballocationDisabled() && SuballocatorServes(length, options);
+    if (!suballocated)
+        reportInitFailures(options, false);
+    const bool memoryless = ((options & kStorageModeMask) >> kStorageModeShift) == MTLStorageModeMemoryless;
+    if (!memoryless && (length == 0 || (!suballocated && KernelRefusesResourceSize(device, _cmd, sysMemSize))))
+        return nil;
+    const uint64_t residentSize = suballocated ? kSuballocatedResourceSize : sysMemSize;
+    AGXA10FamilyBuffer *buffer =
+        newOwnedBuffer(device, _cmd, length, options, bytes, residentSize, sysMemSize ? sysMemSize : page);
+    if (!buffer)
+        return nil;
+    buffer->_suballocated = suballocated;
     return finishCreation(buffer);
 }
 
 // -[AGXA10FamilyDevice newBufferWithBytesNoCopy:length:options:deallocator:] (AGXMetalA10 0x21c8d5ffc):
 // -[AGXBuffer initWithDevice:bytes:length:alignment:options:deallocator:pinnedGPUAddress:] (0x21c8a45f4) with alignment
-// 1, which asks IOGPU for a kernel resource over the caller's memory with the length as its system memory size, and
-// keeps the deallocator, run when the buffer is deallocated. The kernel resource's resident size is the caller's pages
-// under the length (ClientMemoryResidentSize). The kernel refuses a length above its limit (KernelRefusesResourceSize).
+// 1 and the length as the system memory size, through -[IOGPUMetalBuffer initWithDevice:pointer:length:alignment:options:
+// sysMemSize:gpuAddress:args:argsSize:deallocator:] (IOGPU 0x1fcb2b3c8), which keeps the deallocator, run with the
+// pointer and the length when the buffer is deallocated. For a pointer, IOGPU reports a private or memoryless storage
+// mode and goes on (0x1fcb2b41c) and asks for a kernel resource of type 0x80 over the caller's memory, which the kernel
+// maps whatever the pointer's and the length's alignment (IOGPUResource::newResourceWithClientBuffer, kernelcache
+// 0xfffffff005bc3ab8); its resident size is the caller's pages under the length (ClientMemoryResidentSize). For a null
+// pointer the resource is an ordinary one of type 0 (0x1fcb2b478) whose memory the kernel allocates, rounding the size
+// up to its page (0xfffffff005bc3f94), and IOGPU takes the contents from it (0x1fcb2bd08). The kernel refuses a zero
+// length (0xfffffff005bc3ad8, 0xfffffff005bc3eb4) and one above its limit (KernelRefusesResourceSize).
 AGXA10FamilyBuffer *NewNoCopyBuffer(AGXA10FamilyDevice *device, SEL _cmd, void *pointer, NSUInteger length,
                                     MTLResourceOptions options, void (^deallocator)(void *pointer, NSUInteger length))
 {
-    reportInitFailures(options, true);
+    reportInitFailures(options, pointer != nullptr);
     const uint64_t storage = (options & kStorageModeMask) >> kStorageModeShift;
     const bool memoryless = storage == MTLStorageModeMemoryless;
     if (!memoryless && (length == 0 || KernelRefusesResourceSize(device, _cmd, length)))
         return nil;
+    if (!pointer) {
+        const uint64_t page = PageSize();
+        const uint64_t size = (static_cast<uint64_t>(length) + kKernelPageSize - 1) & ~(kKernelPageSize - 1);
+        AGXA10FamilyBuffer *buffer = newOwnedBuffer(device, _cmd, length, options, nullptr, memoryless ? length : size,
+                                                    (static_cast<uint64_t>(length) + page - 1) & ~(page - 1));
+        if (!buffer)
+            return nil;
+        buffer->_deallocator = [deallocator copy];
+        return finishCreation(buffer);
+    }
     AGXA10FamilyBuffer *buffer = [AGXA10FamilyBuffer new];
     InitResourceState(buffer->_state, device, options);
     buffer->_length = length;
     buffer->_contents = pointer;
+    buffer->_pointer = pointer;
     buffer->_state.residentSize = memoryless ? length : ClientMemoryResidentSize(device, _cmd, pointer, length);
     buffer->_deallocator = [deallocator copy];
     Connection *connection = DeviceConnection(device);
@@ -285,7 +316,7 @@ AGXA10FamilyBuffer *NewHeapBuffer(AGXA10FamilyHeap *heap, SEL _cmd, NSUInteger l
     }
     ReleaseObject(_state, "-[AGXA10FamilyBuffer dealloc]");
     if (_deallocator) {
-        _deallocator(_contents, _length);
+        _deallocator(_pointer, _length);
         _deallocator = nil;
     }
     if (_ownedSize)

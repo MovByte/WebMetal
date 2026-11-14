@@ -357,13 +357,24 @@ fn creation_forms() {
     guest.cpu_write(pre, &[9; 64]);
     let c = ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(4, 64, 0, pre)).unwrap();
     assert_eq!(c.shadow_bytes().unwrap(), vec![9; 64]);
-    // No-copy buffers need minBufferNoCopyAlignmentBytes alignment.
+    // No-copy buffers: the A10X takes any pointer and length (the kernel maps the pages the range covers), and a
+    // private storage mode over caller memory as well (IOGPU reports it and goes on).
     let aligned = guest.base + 0x4000;
     assert!(ex.mem.create_buffer_no_copy(&ex.direct, &guest, TASK, &no_copy(5, aligned, 4096)).is_ok());
-    assert!(matches!(
-        ex.mem.create_buffer_no_copy(&ex.direct, &guest, TASK, &no_copy(6, aligned + 16, 4096)),
-        Err(MemError::Undefined { .. })
-    ));
+    let odd: Vec<u8> = (0..23u8).map(|i| i.wrapping_mul(13).wrapping_add(5)).collect();
+    guest.cpu_write(aligned + 0x1003, &odd);
+    let u = ex.mem.create_buffer_no_copy(&ex.direct, &guest, TASK, &no_copy(6, aligned + 0x1003, 23)).unwrap();
+    ex.submit_readback(&u);
+    ex.wait_all();
+    assert_eq!(u.shadow_bytes().unwrap(), odd);
+    let mut private = no_copy(11, aligned + 0x2000, 64);
+    private.options = 0x20;
+    assert!(ex.mem.create_buffer_no_copy(&ex.direct, &guest, TASK, &private).unwrap().shadow_bytes().is_some());
+    for (h, pointer, length, options) in [(12, 0, 64, 0), (13, aligned, 0, 0), (14, aligned, 64, 0x30)] {
+        let mut r = no_copy(h, pointer, length);
+        r.options = options;
+        assert!(matches!(ex.mem.create_buffer_no_copy(&ex.direct, &guest, TASK, &r), Err(MemError::Invalid { .. })));
+    }
     assert!(matches!(
         ex.mem.create_buffer(&ex.direct, &guest, TASK, &create(7, 0, 0, contents)),
         Err(MemError::Undefined { .. })

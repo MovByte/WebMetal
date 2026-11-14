@@ -51,10 +51,6 @@ use super::options::{ResourceOptions, StorageMode};
 use super::purgeable::Purgeable;
 use super::shadow::{MaskedWord, Shadow, UploadPlan, UploadWrite};
 
-/// `minBufferNoCopyAlignmentBytes` of the A10X (`[getters]` of the device profile, both methods agreeing): the
-/// alignment of a no-copy buffer's pointer and length.
-pub const MIN_BUFFER_NO_COPY_ALIGNMENT: u64 = 4096;
-
 /// Every usage a Metal buffer can need: copies, vertex, index, uniform, storage and indirect use, and counter
 /// resolution.
 pub const BUFFER_USAGE: u32 = BufferUsage::COPY_SRC
@@ -483,9 +479,18 @@ impl<A: Api> Memory<A> {
         Ok(b)
     }
 
-    /// `newBufferWithBytesNoCopy:length:options:deallocator:` (CreateBufferNoCopy). The documentation requires a
-    /// page-aligned pointer and a length that makes a page-aligned region; the A10X states its page alignment as
-    /// `minBufferNoCopyAlignmentBytes` (4096).
+    /// `newBufferWithBytesNoCopy:length:options:deallocator:` (CreateBufferNoCopy), for a non-null pointer: the
+    /// buffer is the caller's memory from the pointer on. The A10X driver accepts any pointer and length: AGXBuffer
+    /// asks IOGPU for a kernel resource over the memory with the length as its system memory size and alignment 1
+    /// (-[AGXBuffer initWithDevice:bytes:length:alignment:options:deallocator:pinnedGPUAddress:], AGXMetalA10
+    /// 0x21c8a45f4); IOGPU checks only that size against the length and reports a private or memoryless storage mode
+    /// through MTLReportFailure and goes on (-[IOGPUMetalBuffer initWithDevice:pointer:length:alignment:options:
+    /// sysMemSize:gpuAddress:args:argsSize:deallocator:], IOGPU 0x1fcb2b3c8); and the kernel maps the pages the range
+    /// covers, keeping the pointer's offset in its first page, whatever the storage mode
+    /// (IOGPUResource::newResourceWithClientBuffer, kernelcache 0xfffffff005bc3ab8 to 0xfffffff005bc3bbc), so the CPU
+    /// and the GPU both reach the caller's bytes. A length of 0 makes no kernel resource (0xfffffff005bc3ad8) and a
+    /// memoryless buffer none at all (-[IOGPUMetalResource initWithDevice:options:args:argsSize:], 0x1fcb2bbe8): the
+    /// guest answers both without the host, as it does a null pointer, for which IOGPU makes an ordinary buffer.
     pub fn create_buffer_no_copy(
         &self,
         g: &impl Calls<A>,
@@ -496,21 +501,12 @@ impl<A: Api> Memory<A> {
         const CALL: &str = "-[MTLDevice newBufferWithBytesNoCopy:length:options:deallocator:]";
         let (pointer, length) = (r.pointer.0, r.length);
         let options = ResourceOptions::decode(r.options, CALL)?;
-        if length == 0 {
-            return Err(MemError::undefined(CALL, "a buffer of length 0"));
-        }
-        if !pointer.is_multiple_of(MIN_BUFFER_NO_COPY_ALIGNMENT) || !length.is_multiple_of(MIN_BUFFER_NO_COPY_ALIGNMENT)
-        {
-            return Err(MemError::undefined(
-                CALL,
-                format!(
-                    "pointer {pointer:#x} and length {length:#x} must be multiples of minBufferNoCopyAlignmentBytes \
-                     ({MIN_BUFFER_NO_COPY_ALIGNMENT}); the documentation does not define other input"
-                ),
-            ));
-        }
-        if options.storage != StorageMode::Shared {
-            return Err(MemError::undefined(CALL, "a no-copy buffer whose storage mode is not shared"));
+        if pointer == 0 || length == 0 || options.storage == StorageMode::Memoryless {
+            return Err(MemError::invalid(format!(
+                "{CALL}: pointer {pointer:#x}, length {length:#x} and storage mode {}: the A10X makes no kernel \
+                 resource over caller memory for a null pointer, a length of 0 or a memoryless buffer",
+                options.storage.value()
+            )));
         }
         let backing = Backing::Guest { task, addr: pointer };
         let shadow = Some(Shadow::new(length, None));
