@@ -1,7 +1,8 @@
 # WebMetal wire protocol
 
-The records the guest Metal plugin (`AGXMetalA10.bundle`, which carries the names of the A10X driver it replaces)
-and the host executor exchange, and the accelerator service that carries them.
+The records the guest Metal plugin (`AGXMetalA10.bundle`, which carries the names of the A10X driver it replaces;
+its executable is `WebMetal`, since the system's shared cache holds the driver's own executable path) and the host
+executor exchange, and the accelerator service that carries them.
 
 | Path | What it is |
 | --- | --- |
