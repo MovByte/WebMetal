@@ -92,22 +92,25 @@ void pushEncoderDebugGroup(id self, SEL cmd, EncoderState &encoder, NSString *st
     EmitEncoderRecord(self, cmd, encoder, record);
 }
 
-// Each render segment lists the pass's attachment textures with flags 12, except memoryless ones, and a resolve texture
-// with 12 when its attachment has a texture: AGX::Framebuffer's listing (0x21c919170, called with mask 0x3f from the
-// segment's begin at 0x21c96e300) skips the attachments its exclusion mask fb+3100 holds, which are the memoryless ones
-// (0x21c914848 to 0x21c914860, 0x21c915150, 0x21c915240), and lists colour resolve textures by fb+2440, which holds the
-// attachments with both a texture and a resolve texture (0x21c91490c). Whether a depth or stencil resolve texture
-// without its attachment's texture is listed is not read.
+// Each render segment lists the pass's attachment textures with flags 12, except memoryless ones, and their resolve
+// textures with 12: AGX::Framebuffer's listing (0x21c919170, called with mask 0x3f from the segment's begin at
+// 0x21c96e300) skips the attachments its exclusion mask fb+3100 holds, which are the memoryless ones (0x21c914848 to
+// 0x21c914860, 0x21c915150, 0x21c915240), and lists colour resolve textures by fb+2440, which holds the attachments with
+// both a texture and a resolve texture (0x21c91490c): the framebuffer configuration skips a colour attachment without a
+// texture, its resolve texture with it (0x21c9147d0). It keeps a depth or stencil resolve texture whether or not the
+// attachment has a texture (0x21c914d54, 0x21c914eec), and the framebuffer lists it from fb+3248 or fb+3256 (set at
+// 0x21c918670 to 0x21c9186d0; listing bits 3 and 5). What the listing names after the depth and stencil textures, fb+8
+// and fb+128, are buffers the framebuffer makes for those attachments (0x21c916d1c, 0x21c916f48), not resolve textures.
 template <class Attachment> void attachmentCommon(id self, SEL cmd, Stream &stream, Attachment &out,
-                                                  MTLRenderPassAttachmentDescriptor *in)
+                                                  MTLRenderPassAttachmentDescriptor *in, bool depthOrStencil)
 {
     const bool memoryless = in.texture && in.texture.storageMode == MTLStorageModeMemoryless;
     out.texture = Reference(stream, self, cmd, in.texture, memoryless ? Listing::Unlisted : Listing::Stamped);
     out.level = in.level;
     out.slice = in.slice;
     out.depthPlane = in.depthPlane;
-    out.resolveTexture =
-        Reference(stream, self, cmd, in.resolveTexture, in.texture ? Listing::Stamped : Listing::Untraced);
+    out.resolveTexture = Reference(stream, self, cmd, in.resolveTexture,
+                                   in.texture || depthOrStencil ? Listing::Stamped : Listing::Unlisted);
     out.resolveLevel = in.resolveLevel;
     out.resolveSlice = in.resolveSlice;
     out.resolveDepthPlane = in.resolveDepthPlane;
@@ -134,20 +137,20 @@ void renderPass(id self, SEL cmd, Stream &stream, id<MTLDevice> device, MTLRende
     out.colors.resize(colorCount);
     for (NSUInteger i = 0; i < colorCount; i++) {
         MTLRenderPassColorAttachmentDescriptor *color = in.colorAttachments[i];
-        attachmentCommon(self, cmd, stream, out.colors[i], color);
+        attachmentCommon(self, cmd, stream, out.colors[i], color, false);
         const MTLClearColor c = color.clearColor;
         out.colors[i].clearColor = {c.red, c.green, c.blue, c.alpha};
     }
     d.colorAttachments = {out.colors.data(), out.colors.size()};
     if (MTLRenderPassDepthAttachmentDescriptor *depth = in.depthAttachment) {
         d.depthAttachment.present = true;
-        attachmentCommon(self, cmd, stream, d.depthAttachment.value, depth);
+        attachmentCommon(self, cmd, stream, d.depthAttachment.value, depth, true);
         d.depthAttachment.value.clearDepth = depth.clearDepth;
         d.depthAttachment.value.depthResolveFilter = depth.depthResolveFilter;
     }
     if (MTLRenderPassStencilAttachmentDescriptor *stencil = in.stencilAttachment) {
         d.stencilAttachment.present = true;
-        attachmentCommon(self, cmd, stream, d.stencilAttachment.value, stencil);
+        attachmentCommon(self, cmd, stream, d.stencilAttachment.value, stencil, true);
         d.stencilAttachment.value.clearStencil = stencil.clearStencil;
         d.stencilAttachment.value.stencilResolveFilter = stencil.stencilResolveFilter;
     }
@@ -204,8 +207,12 @@ namespace {
 
 const char kNoAccessFlags[] =
     "the A10X driver lists the resource with no access flags, which the kernel's parse of the segment's resource list "
-    "refuses (AGXAllocationList2, kernelcache 0xfffffff005bf1af8 to 0xfffffff005bf1b04); what the kernel does with the "
-    "command buffer then is not implemented";
+    "refuses (AGXAllocationList2, kernelcache 0xfffffff005bf1af8 to 0xfffffff005bf1b04). IOGPUCommandQueue::"
+    "processCommandBuffer then sets the queue's error to 9 after the command buffer's earlier segments went to the GPU "
+    "(0xfffffff005bd851c, 0xfffffff005bd8728), and the command buffer and every later one of the queue complete with "
+    "MTLCommandBufferErrorInvalidResource (\"Invalid Resource (00000009:kIOGPUCommandBufferCallbackErrorInvalidResource)"
+    "\", -[NSError initWithIOGPUError:], IOGPU 0x1fcb3661c); running part of a command buffer and failing its queue is "
+    "not implemented";
 
 bool anyNamed(const wire::Span<uint64_t> &handles)
 {
