@@ -156,7 +156,7 @@ pub(crate) struct Recording<A: Api> {
     pub(crate) debug: Vec<String>,
     /// Submissions made so far.
     pub(crate) submits: u64,
-    /// Checks of the command buffer's results, run once its work has completed ([`EncodeCx::check`]).
+    /// Checks of the current encoder's results ([`EncodeCx::check`]).
     pub(crate) checks: Vec<GpuFuture<Result<(), Failure>>>,
 }
 
@@ -252,8 +252,8 @@ impl<'a, A: Api, E: Embedder> EncodeCx<'a, A, E> {
         self.objects
     }
 
-    /// A check of what the recorded work produced, polled once the command buffer's work has been submitted: an
-    /// error fails the command buffer with it, as a failed write-back does.
+    /// A check of what the recorded work produced, polled once the encoder's work has been submitted: an error fails
+    /// the command buffer with it, as a failed write-back does, at the encoder's place in the stream.
     pub fn check(&mut self, check: GpuFuture<Result<(), Failure>>) {
         self.recording.checks.push(check);
     }

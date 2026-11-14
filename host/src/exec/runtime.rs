@@ -146,6 +146,10 @@ struct Run<A: Api, E: Embedder> {
     events: HashMap<Handle, EventRef<E>>,
     /// The failure the command buffer completes with, and the stream offset of the record that failed.
     failure: Option<(Failure, u64)>,
+    /// Where the failure stands in the stream ([`Run::fail`]).
+    failure_at: u64,
+    /// CommandBufferScheduled carried the failure: it is the command buffer's error from then on.
+    failure_final: bool,
     recording: Recording<A>,
     started: bool,
     kernel_start: u64,
@@ -166,9 +170,34 @@ struct Run<A: Api, E: Embedder> {
 }
 
 impl<A: Api, E: Embedder> Run<A, E> {
+    /// A failure found while the stream is replayed, at the point where the run has started `next_job` jobs: after
+    /// the work of every job started so far.
     fn fail(&mut self, failure: Failure, offset: u64) {
-        if self.failure.is_none() {
+        let at = 2 * self.next_job;
+        self.fail_at(failure, offset, at);
+    }
+
+    /// The failure of job `seq`, which follows the work replayed before the job was started: after a failure
+    /// [`Run::fail`] finds while `next_job` is `seq`, before one it finds later.
+    fn fail_job(&mut self, failure: Failure, seq: u64) {
+        self.fail_at(failure, NO_RECORD, 2 * seq + 1);
+    }
+
+    /// The command buffer reports the failure earliest in its stream. A Metal command buffer has one error, and the
+    /// encoder error states of MTLCommandBuffer.h describe work that stops at the first fault in stream order: the
+    /// encoder that "caused an error", those after it "affected by an error" or that "never started execution" (the
+    /// reference harness records no command buffer with two faults). Jobs settle in no order the stream defines
+    /// (WebGPU section 3.2.2 orders the settlement of popErrorScope and mapAsync promises in no way), so a job's
+    /// failure replaces a later one found first. A failure CommandBufferScheduled carried stays: IOGPU passes the
+    /// processing error to didScheduleWithStartTime:endTime:error: and the completion carries it again.
+    fn fail_at(&mut self, failure: Failure, offset: u64, at: u64) {
+        let replace = match self.failure {
+            None => true,
+            Some(_) => !self.failure_final && at < self.failure_at,
+        };
+        if replace {
             self.failure = Some((failure, offset));
+            self.failure_at = at;
         }
     }
 }
@@ -714,6 +743,8 @@ impl<A: Api, E: Embedder> Core<A, E> {
             cursor: 0,
             events,
             failure,
+            failure_at: 0,
+            failure_final: false,
             recording: Recording::new(label),
             started: false,
             kernel_start: 0,
@@ -883,6 +914,11 @@ impl<A: Api, E: Embedder> Core<A, E> {
                     }
                     let after = run.next_job;
                     run.actions.push_back(Action { after, kind: ActionKind::EncoderComplete(segment.encoder) });
+                    // The services' checks of the encoder's results (EncodeCx::check), now that its work is
+                    // submitted: a check's failure takes the encoder's place in the stream.
+                    for f in std::mem::take(&mut run.recording.checks) {
+                        add_job(&mut self.jobs, run, id, written_back(f));
+                    }
                 }
                 Step::Wait { event, value, timeout, offset } => {
                     let shared = match run.events.get(&event).expect("event") {
@@ -1075,6 +1111,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
         }
         run.kernel_end = self.embedder.now().0;
         run.scheduled = true;
+        run.failure_final = run.failure.is_some();
         self.embedder.post(
             run.task,
             Some(run.queue),
@@ -1093,7 +1130,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
             if let Some(f) = wb {
                 add_job(&mut self.jobs, run, id, written_back(f));
             }
-            // The services' checks of the results (EncodeCx::check), now that all the work is submitted.
+            // Checks of an encoder whose recording failed (EncodeCx::check), now that all the work is submitted.
             for f in std::mem::take(&mut run.recording.checks) {
                 add_job(&mut self.jobs, run, id, written_back(f));
             }
@@ -1114,14 +1151,16 @@ impl<A: Api, E: Embedder> Core<A, E> {
             while run.actions.front().is_some_and(|a| a.after <= first_outstanding) {
                 let action = run.actions.pop_front().expect("action");
                 changed = true;
+                let after = action.after;
                 match action.kind {
                     ActionKind::SignalShared(event, value, offset) => {
-                        // A command buffer that failed stops at the failure; its later signals do not happen.
+                        // A command buffer that failed stops at the failure; its later signals do not happen. A
+                        // signal that fails stands after the jobs started before it.
                         if run.failure.is_none()
                             && self.lost.is_none()
                             && let Err(e) = self.embedder.shared_event_signal(event.id, value)
                         {
-                            run.fail(failure::invalid(format!("EncodeSignalEvent: {e}")), offset);
+                            run.fail_at(failure::invalid(format!("EncodeSignalEvent: {e}")), offset, 2 * after);
                         }
                     }
                     ActionKind::EncoderComplete(encoder) => {
@@ -1235,10 +1274,10 @@ impl<A: Api, E: Embedder> Core<A, E> {
             JobOut::Done => {}
             JobOut::Settled(captured) => {
                 if let Some(cause) = GpuCause::worst(&captured) {
-                    run.fail(cause.command_buffer_failure(), NO_RECORD);
+                    run.fail_job(cause.command_buffer_failure(), seq);
                 }
             }
-            JobOut::WrittenBack(Err(f)) => run.fail(f, NO_RECORD),
+            JobOut::WrittenBack(Err(f)) => run.fail_job(f, seq),
             JobOut::WrittenBack(Ok(())) => {}
         }
     }

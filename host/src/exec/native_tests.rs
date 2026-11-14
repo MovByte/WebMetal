@@ -12,8 +12,9 @@
 
 use std::any::Any;
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::rc::Rc;
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
 use webmetal_wire::*;
@@ -344,11 +345,7 @@ impl Coherence<Native, TestEmbedder> for Coherent {
             }
             // The executor polls every outstanding write-back whenever one completes.
             std::future::poll_fn(|_| {
-                if ticket.open.borrow().first() == Some(&ticket.n) {
-                    std::task::Poll::Ready(())
-                } else {
-                    std::task::Poll::Pending
-                }
+                if ticket.open.borrow().first() == Some(&ticket.n) { Poll::Ready(()) } else { Poll::Pending }
             })
             .await;
             for (p, new) in arrived {
@@ -453,6 +450,51 @@ impl EncoderService<Native, TestEmbedder> for ExhaustingCompute {
     }
 }
 
+/// What an encoder of [`ScriptedCompute`] does.
+enum Script {
+    /// Registers a check that fails naming the encoder, settling only once the flag is set.
+    LateCheck(Rc<Cell<bool>>),
+    /// Registers a check that fails naming the encoder at once and sets the flag.
+    CheckSetting(Rc<Cell<bool>>),
+    /// Registers a check that fails naming the encoder once the queue's work submitted so far is done.
+    CheckAfterWork,
+    /// Hits out-of-memory.
+    Exhaust,
+}
+
+/// A compute stand-in whose encoders do what the script says, in the order the executor encodes them.
+struct ScriptedCompute {
+    script: VecDeque<Script>,
+    encoded: usize,
+}
+
+impl EncoderService<Native, TestEmbedder> for ScriptedCompute {
+    fn encode(&mut self, cx: &mut EncodeCx<'_, Native, TestEmbedder>, _: &Segment) -> Result<(), RecordFailure> {
+        let what = format!("scripted encoder {}", self.encoded);
+        self.encoded += 1;
+        let fail = move || Err(failure::invalid(what.clone()));
+        match self.script.pop_front().expect("a scripted encoder") {
+            Script::LateCheck(flag) => cx.check(Box::pin(async move {
+                std::future::poll_fn(|_| if flag.get() { Poll::Ready(()) } else { Poll::Pending }).await;
+                fail()
+            })),
+            Script::CheckSetting(flag) => cx.check(Box::pin(async move {
+                flag.set(true);
+                fail()
+            })),
+            Script::CheckAfterWork => {
+                let done = cx.gpu().queue().on_submitted_work_done();
+                cx.check(Box::pin(async move {
+                    done.await;
+                    fail()
+                }))
+            }
+            Script::Exhaust => exhaust_memory(cx.gpu()),
+        }
+        Ok(())
+    }
+}
+
 // The harness ---------------------------------------------------------------------------------------------------------
 
 struct Harness {
@@ -472,13 +514,17 @@ impl Harness {
     }
 
     fn with(blit: bool) -> Harness {
+        Harness::with_compute(blit, Box::new(ExhaustingCompute))
+    }
+
+    fn with_compute(blit: bool, compute: Box<dyn EncoderService<Native, TestEmbedder>>) -> Harness {
         let gpu = NativeGpu::new();
         let device = test_device(&gpu);
         let em = Rc::new(TestEmbedder::new());
         let services = Services {
             control: vec![Box::new(Memory { embedder: em.clone() }) as Box<dyn ControlService<_, _>>],
             render: None,
-            compute: Some(Box::new(ExhaustingCompute)),
+            compute: Some(compute),
             blit: if blit { Some(Box::new(Blit)) } else { None },
             coherence: Some(Box::new(Coherent { embedder: em.clone(), open: Rc::default(), next: Cell::new(0) })),
         };
@@ -1704,6 +1750,35 @@ fn unimplemented_records_fail_loudly() {
     assert!(r.message.contains("newTextureWithDescriptor:"), "{}", r.message);
     let reports = x.exec.take_reports();
     assert_eq!(reports.len(), 3, "{reports:?}");
+}
+
+/// Failures settle in no order WebGPU defines; the command buffer reports the one earliest in its stream, as Metal
+/// reports the first fault of work that runs in stream order. Here the first encoder's check settles after the second
+/// encoder's failure: once the second's check has failed, and once the second's out-of-memory error has been captured.
+#[test]
+fn failures_are_reported_in_stream_order() {
+    let compute = |encoder: Handle| {
+        vec![Command::BeginCompute(BeginCompute { encoder }), Command::EncoderEndEncoding(EncoderEndEncoding {})]
+    };
+    let flag = Rc::new(Cell::new(false));
+    let scripts = [
+        vec![Script::LateCheck(flag.clone()), Script::CheckSetting(flag)],
+        vec![Script::CheckAfterWork, Script::Exhaust],
+    ];
+    for script in scripts {
+        let x = Harness::with_compute(false, Box::new(ScriptedCompute { script: script.into(), encoded: 0 }));
+        x.open(T1);
+        let q = x.queue(T1);
+        let records = [compute(x.handle()), compute(x.handle())].concat();
+        let cb = x.commit(T1, q, &records, &[]);
+        x.idle();
+        let posted = x.em.take_posted();
+        let c = completion(&posted, cb);
+        assert_eq!(c.status, command_buffer_status::ERROR);
+        assert_eq!(c.failure.status, status::INVALID, "{:?}", c.failure);
+        assert_eq!(c.failure.message, "scripted encoder 0");
+        assert_eq!(c.failed_offset, NO_RECORD);
+    }
 }
 
 // Device loss and out-of-memory --------------------------------------------------------------------------------------
