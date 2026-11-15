@@ -403,19 +403,6 @@ impl<A: Api> Texture<A> {
         self.usage == usage::UNKNOWN || self.usage & (usage::SHADER_WRITE | usage::SHADER_ATOMIC) != 0
     }
 
-    /// Work that could have written the texture over guest memory or an IOSurface plane, and whose writes no readback
-    /// read, was dropped (its command buffer faulted before the write-back at queue position `seq`): the texture is
-    /// written whole from its backing before its next use.
-    pub(crate) fn drop_backed_writes(&self, seq: u64) {
-        if let Some(m) = &self.guest {
-            m.unload();
-        }
-        if self.surface.is_some() {
-            self.set_surface_state(u64::MAX, false);
-        }
-        self.note_dropped(seq);
-    }
-
     /// Whether a dropped write-back left the GPU copy to be written whole from its backing before its next use.
     pub(crate) fn was_dropped(&self) -> bool {
         self.state.borrow().dropped_at.is_some()

@@ -511,6 +511,15 @@ fn bind_groups<A: Api>(
                     }
                     Source::Uniforms(UniformBlock { size: block.size, fields })
                 }
+                // A resource reached through an argument buffer. AirWgsl refuses argument-buffer resource members
+                // today; the memory module counts what a dispatch writes from its argument-table bindings alone (its
+                // coherence service's write-back), so such a binding is refused rather than bound with its writes
+                // untracked.
+                BindingSource::ArgumentBufferMember { .. } => {
+                    return Err(what(
+                        "a resource member of an argument buffer, whose writes the memory module does not track",
+                    ));
+                }
                 other => return Err(what(&format!("the source {other:?}"))),
             };
             entries.push(Binding { binding: e.binding, resource, source });

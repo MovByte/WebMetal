@@ -40,7 +40,6 @@ use std::rc::{Rc, Weak};
 
 use crate::embed::{Embedder, TaskId};
 use crate::exec::schema::command_handles;
-use crate::exec::writes::{TextureWrite, texture_writes};
 use crate::exec::{
     Admit, Coherence, CommitInfo, ControlService, EncodeCx, Entry, Gate, Segment, Served, ServiceCx, Table, Verdict,
 };
@@ -811,7 +810,6 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         &mut self,
         cx: &mut EncodeCx<'_, A, E>,
         info: &CommitInfo,
-        work: &[usize],
         gate: Gate,
     ) -> Result<Option<GpuFuture<Result<(), Failure>>>, Failure> {
         let mem = self.memory.clone();
@@ -834,54 +832,22 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
                 textures.push(t);
             }
         }
-        // What the work reaches through argument buffers. A shader writes a resource that way only if the encoder
-        // declared it with `useResource:usage:` and MTLResourceUsageWrite (MTLCommandEncoder.h: the usage says "how a
-        // resource will be used by a shader through an argument buffer"); the render encoder records no write for
-        // the declaration, so it is taken from the records here, by the rule of `exec::writes`. `useHeap:` makes a
-        // heap's resources resident read-only (MTLComputeCommandEncoder.h: "may be accessed as readonly"; the
-        // executor records no write for it either), so a heap's resources are not among them. Nothing else reaches
-        // a resource the records do not name: AirWgsl refuses a buffer, texture or sampler member of an argument
-        // buffer and a pointer made from an integer that no pointer was converted to (an `inttoptr` without
-        // provenance) when the pipeline is made, so a shader reaches only the resources bound to its argument table.
-        let records = cx.records();
-        let mut declared: Vec<Rc<Texture<A>>> = Vec::new();
-        for &i in work {
-            texture_writes(&records[i].1, &mut |h, how| {
-                if how != TextureWrite::UseResource {
-                    return;
-                }
-                if let Some(b) = payload::<Buffer<A>>(objects, h) {
-                    mem.note_buffer_write(&b, None);
-                } else if let Some(lt) = payload::<LinearTexture<A>>(objects, h) {
-                    if lt.texture.as_ref().is_none_or(|t| t.shader_may_write()) {
-                        mem.note_buffer_write(&lt.buffer, None);
-                    }
-                } else if let Some(t) = payload::<Texture<A>>(objects, h)
-                    .or_else(|| payload::<TextureView<A>>(objects, h).map(|v| v.root.clone()))
-                    && t.shader_may_write()
-                    && !declared.iter().any(|u| Rc::ptr_eq(u, &t))
-                {
-                    declared.push(t);
-                }
-            });
-        }
+        // What the work could have written is what the encoder services noted. A host shader writes only what it is
+        // bound: WGSL declares every resource a shader accesses as a binding, AirWgsl refuses a buffer, texture or
+        // sampler member of an argument buffer and a pointer made from an integer that no pointer was converted to (an
+        // `inttoptr` without provenance), and the pipeline module refuses a binding sourced from an argument buffer
+        // (`pipeline::compute`, `pipeline::render`). So a resource the work reaches only through `useResource:usage:`
+        // (with MTLResourceUsageWrite, a Metal shader may write it through an argument buffer) or `useHeap:` is not
+        // written here, and its GPU copy is what Metal would have left had the work not run.
         // The textures without CPU-visible backing the work since the last write-back may have written: poisoned if
-        // that work is dropped. A texture over guest memory or an IOSurface plane the work may have written through an
-        // argument buffer is written whole from its backing if it is dropped.
+        // that work is dropped.
         let mut gpu_only: Vec<Rc<Texture<A>>> = Vec::new();
-        let mut backed: Vec<Rc<Texture<A>>> = Vec::new();
         // What the work could have written, for the encoders that use it later ([`super::hold`]).
         let mut written: Named<A> = Named::default();
         for t in &textures {
             let reads = (surfaces.len(), guests.len(), decodes.len(), words.len());
-            let declared = declared.iter().any(|u| Rc::ptr_eq(u, t));
-            let noted = t.take_gpu_written();
-            if (noted || declared) && t.surface.is_none() && t.guest.is_none() {
+            if t.take_gpu_written() && t.surface.is_none() && t.guest.is_none() {
                 gpu_only.push(t.clone());
-                written.texture(t.clone());
-            }
-            if declared && (t.surface.is_some() || t.guest.is_some()) {
-                backed.push(t.clone());
                 written.texture(t.clone());
             }
             if t.surface.is_some() {
@@ -922,7 +888,6 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         if readbacks.is_empty()
             && readbacks.private().is_empty()
             && gpu_only.is_empty()
-            && backed.is_empty()
             && surfaces.is_empty()
             && guests.is_empty()
             && decodes.is_empty()
@@ -983,9 +948,6 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
                     let _turn = arrived.discard(&mem, e).map_err(fail)?;
                     for t in gpu_only {
                         t.poison();
-                    }
-                    for t in backed {
-                        t.drop_backed_writes(seq);
                     }
                     for a in surfaced {
                         a.discard(&mem, seq);

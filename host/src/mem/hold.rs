@@ -14,16 +14,15 @@
 //!
 //! **What waits.** Before an encoder is recorded, the coherence service admits it ([`crate::exec::Coherence::admit`]).
 //! Every write-back records what the work it reads back could have written ([`Holds::record`]): the buffers it reads
-//! back or would poison, by the rule that picks its readbacks ([`super::Memory::encode_readbacks`]), the textures it
-//! reads back or would poison, and what the work declared it writes through argument buffers. The record is unsettled
-//! until its future has finished: merged, or dropped with every resource it names made stale or poisoned. An encoder
-//! is held while a record of another command buffer is unsettled, its verdict is not
-//! [`crate::exec::Verdict::Merge`], and it names a resource the encoder uses: a resource a record of the encoder names,
-//! a view's root texture, a texture over a buffer's buffer and texture, and every resource allocated from a heap the
-//! encoder makes resident, as the heap holds them then. The encoder's command buffer and the rest of its queue wait
-//! with it, so queue order is kept, and nothing else does: an encoder that uses nothing such a record names runs at
-//! once, and work of the same command buffer never waits on its own write-backs, since work after its fault is dropped
-//! with them.
+//! back or would poison, by the rule that picks its readbacks ([`super::Memory::encode_readbacks`]), and the textures
+//! it reads back or would poison. The record is unsettled until its future has finished: merged, or dropped with every
+//! resource it names made stale or poisoned. An encoder is held while a record of another command buffer is unsettled,
+//! its verdict is not [`crate::exec::Verdict::Merge`], and it names a resource the encoder uses: a resource a record of
+//! the encoder names (one it declares with `useResource:usage:` among them), a view's root texture, a texture over a
+//! buffer's buffer and texture, and every resource allocated from a heap the encoder makes resident, as the heap holds
+//! them then. The encoder's command buffer and the rest of its queue wait with it, so queue order is kept, and nothing
+//! else does: an encoder that uses nothing such a record names runs at once, and work of the same command buffer never
+//! waits on its own write-backs, since work after its fault is dropped with them.
 //!
 //! **What runs.** Once nothing holds it, the encoder runs on what Metal would have left: a buffer whose bytes dropped
 //! work left stale is uploaded from guest memory, a texture over guest memory or an IOSurface plane whose write-back was

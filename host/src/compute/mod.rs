@@ -10,7 +10,7 @@
 //! | `setThreadgroupMemoryLength:atIndex:` | Part of the variant key: WGSL fixes workgroup memory sizes. |
 //! | `setStageInRegion:` | Uniform values of the variant. |
 //! | `memoryBarrierWithScope:`, `memoryBarrierWithResources:count:`, the concurrent dispatch type | Dispatches of a WebGPU pass run in order and each sees the writes of those before it, which is one schedule a concurrent encoder allows and what every barrier asks for. |
-//! | `useResource:usage:`, `useResources:count:usage:` | Resources used through argument buffers: a write usage makes the memory module read the resource back. |
+//! | `useResource:usage:`, `useResources:count:usage:` | Residency of resources used through argument buffers, which no kernel this host runs reaches (a binding sourced from an argument buffer is refused): the usage is checked and nothing is recorded. |
 //! | `setSamplerState:atIndex:`, `setSamplerStates:withRange:` | The state's WebGPU sampler for the binding's type ([`crate::state::SamplerObject`]); a state with no WebGPU form is refused when a dispatch uses it. |
 //! | Per-binding sampler LOD clamps, dynamic attribute strides, the indirect stage-in region, imageblocks, function tables, acceleration structures, indirect command buffers, counter sampling, the SPI substreams and GPU control flow | Refused (see each record). |
 //!
@@ -79,7 +79,6 @@ const DISPATCH_TYPES: [u64; 2] = [0, 1];
 /// `MTLBarrierScope` bits: buffers, textures, render targets.
 const BARRIER_SCOPES: u64 = 0x7;
 /// `MTLResourceUsage` bits: read, write, sample (`MTLCommandEncoder.h`).
-const USAGE_WRITE: u64 = 0x2;
 const USAGES: u64 = 0x7;
 
 /// The compute encoder service.
@@ -406,8 +405,8 @@ impl<A: Api> ComputeService<A> {
                 Ok(())
             }
             Command::ComputeMemoryBarrierWithResources(_) => Ok(()),
-            Command::ComputeUseResource(r) => self.use_resources(objects, std::slice::from_ref(&r.resource), r.usage),
-            Command::ComputeUseResources(r) => self.use_resources(objects, &r.resources, r.usage),
+            Command::ComputeUseResource(r) => use_resources(r.usage),
+            Command::ComputeUseResources(r) => use_resources(r.usage),
             Command::ComputeUseHeap(_) | Command::ComputeUseHeaps(_) => Ok(()),
             Command::ComputeExecuteCommandsInBuffer(_) | Command::ComputeExecuteCommandsInBufferIndirect(_) => refused(
                 "the wire protocol does not define the indirect command buffer's memory yet (CreateIndirectCommandBuffer)",
@@ -472,35 +471,6 @@ impl<A: Api> ComputeService<A> {
             Some(h) => {
                 let tex = texture_payload::<A>(objects, Some(h), CALL, "the texture").map_err(|e| e.failure())?;
                 st.textures.insert(index, Rc::new(TexEntry { handle: h, tex }));
-            }
-        }
-        Ok(())
-    }
-
-    /// `useResource:usage:` and `useResources:count:usage:`: resources a function reaches through argument buffers. A
-    /// resource it may write is read back whole.
-    fn use_resources(&self, objects: &Table, resources: &[Option<Handle>], usage: u64) -> Result<(), Failure> {
-        if usage & !USAGES != 0 {
-            return Err(undefined("-[MTLComputeCommandEncoder useResource:usage:]", format!("usage {usage:#x}")));
-        }
-        if usage & USAGE_WRITE == 0 {
-            return Ok(());
-        }
-        for h in resources.iter().flatten() {
-            if let Some(b) = payload::<Buffer<A>>(objects, *h) {
-                self.memory.note_buffer_write(&b, None);
-            } else if let Some(t) = payload::<Texture<A>>(objects, *h) {
-                self.memory.note_texture_write(&t, 0..t.geometry.mip_levels, 0..t.geometry.slices());
-            } else if let Some(v) = payload::<TextureView<A>>(objects, *h) {
-                match &v.alias {
-                    Some(a) => self.memory.note_alias_write(&v.root, a, v.root_levels(), v.root_slices()),
-                    None => self.memory.note_texture_write(&v.root, v.root_levels(), v.root_slices()),
-                }
-            } else if payload::<crate::mem::linear::LinearTexture<A>>(objects, *h).is_some() {
-                return Err(failure::unimplemented(
-                    "-[MTLComputeCommandEncoder useResource:usage:] with a write usage of a texture over a buffer: \
-                     writes through argument buffers are not copied back to the buffer",
-                ));
             }
         }
         Ok(())
@@ -1026,4 +996,16 @@ impl<A: Api, E: Embedder> EncoderService<A, E> for ComputeService<A> {
         }
         Ok(())
     }
+}
+
+/// `useResource:usage:` and `useResources:count:usage:`: resources a function reaches through argument buffers. No
+/// function this host runs reaches any: AirWgsl refuses a buffer, texture or sampler member of an argument buffer and a
+/// pointer made from an integer that no pointer was converted to, and the pipeline module refuses a binding sourced
+/// from an argument buffer (`pipeline::compute`), so a dispatch reads and writes only what it is bound. The declaration
+/// makes resources resident and changes nothing the encoder records; only its usage is checked.
+fn use_resources(usage: u64) -> Result<(), Failure> {
+    if usage & !USAGES != 0 {
+        return Err(undefined("-[MTLComputeCommandEncoder useResource:usage:]", format!("usage {usage:#x}")));
+    }
+    Ok(())
 }

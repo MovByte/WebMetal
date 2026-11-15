@@ -1330,12 +1330,11 @@ fn render_pass(encoder: Handle) -> Command {
 /// Resources a command buffer's work reaches through argument buffers, which its records name only in residency
 /// declarations. After a faulting encoder, a render encoder declares with `useResource:usage:` and
 /// `MTLResourceUsageWrite` a private buffer it binds nowhere, a private buffer it also binds as a vertex buffer, and a
-/// private texture its shaders may write (`MTLTextureUsageShaderWrite`). Metal would not have run the encoder, and
-/// what it could have written through an argument buffer is kept nowhere, so each fails its next use. A private buffer
-/// of a heap the encoder makes resident with `useHeap:` is read only there (MTLComputeCommandEncoder.h: "may be
-/// accessed as readonly"), so it keeps its contents.
+/// private texture its shaders may write (`MTLTextureUsageShaderWrite`), and makes a heap resident with `useHeap:`.
+/// Metal would not have run the encoder; no host work writes a resource through an argument buffer (AirWgsl refuses
+/// their resource members), so each keeps what it held, and later command buffers use them.
 #[test]
-fn resources_declared_written_after_a_fault_are_poisoned() {
+fn resources_declared_through_argument_buffers_are_kept() {
     let h = Harness::with_encoders(Some(Box::new(Faulting)), true);
     let q = h.queue();
     const LEN: u64 = 256;
@@ -1371,6 +1370,16 @@ fn resources_declared_written_after_a_fault_are_poisoned() {
         contents: GuestAddr(0),
     }));
     let (copy, copy_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    let fill = |buffer, value| {
+        Command::BlitFillBuffer(BlitFillBuffer {
+            buffer: Some(buffer),
+            range: Range { location: 0, length: LEN },
+            value,
+        })
+    };
+    let filled = h.commit(q, &blit(h.handle(), vec![fill(unbound, 0x31), fill(bound, 0x32)]), &[unbound, bound]);
+    h.g.block_on(h.exec.idle());
+    assert_eq!(completion(&h, filled).failure, failure::ok());
     // MTLResourceUsageRead | MTLResourceUsageWrite.
     let declare = |resource| Command::RenderUseResource(RenderUseResource { resource: Some(resource), usage: 3 });
     let records = vec![
@@ -1390,26 +1399,12 @@ fn resources_declared_written_after_a_fault_are_poisoned() {
     assert_eq!(c.status, command_buffer_status::ERROR, "{c:?}");
     assert_eq!(c.failure.message, "a scripted fault");
 
-    let copy_from = |source| {
-        blit(
-            h.handle(),
-            vec![Command::BlitCopyBufferToBuffer(BlitCopyBufferToBuffer {
-                source_buffer: Some(source),
-                source_offset: 0,
-                destination_buffer: Some(copy),
-                destination_offset: 0,
-                size: LEN,
-            })],
-        )
-    };
-    let poisoned = |what: &str, cb: Handle| {
+    let kept = |what: &str, records: Vec<Command>, resources: &[Handle], value: u8, len: u64| {
+        let cb = h.commit(q, &records, resources);
         h.g.block_on(h.exec.idle());
-        let c = completion(&h, cb);
-        assert_eq!(c.failure.status, status::UNIMPLEMENTED, "{what}: {c:?}");
-        assert!(c.failure.message.contains("after an earlier command buffer's fault"), "{what}: {}", c.failure.message);
+        assert_eq!(completion(&h, cb).failure, failure::ok(), "{what}");
+        assert_eq!(h.guest.cpu_read(copy_addr, len as usize), vec![value; len as usize], "{what}");
     };
-    poisoned("a buffer bound nowhere", h.commit(q, &copy_from(unbound), &[unbound, copy]));
-    poisoned("a buffer also bound for reading", h.commit(q, &copy_from(bound), &[bound, copy]));
     let read_texture = blit(
         h.handle(),
         vec![Command::BlitCopyTextureToBuffer(BlitCopyTextureToBuffer {
@@ -1424,10 +1419,10 @@ fn resources_declared_written_after_a_fault_are_poisoned() {
             destination_bytes_per_image: 64,
         })],
     );
-    poisoned("a texture", h.commit(q, &read_texture, &[texture, copy]));
-    let kept = h.commit(q, &copy_from(in_heap), &[in_heap, copy]);
-    h.g.block_on(h.exec.idle());
-    assert_eq!(completion(&h, kept).failure, failure::ok());
-    assert_eq!(h.guest.cpu_read(copy_addr, LEN as usize), vec![0; LEN as usize]);
+    kept("a texture", read_texture, &[texture, copy], 0, 64);
+    let copy_from = |source| blit(h.handle(), vec![copy_buffer(source, copy, 0, LEN)]);
+    kept("a buffer bound nowhere", copy_from(unbound), &[unbound, copy], 0x31, LEN);
+    kept("a buffer also bound for reading", copy_from(bound), &[bound, copy], 0x32, LEN);
+    kept("a heap's buffer", copy_from(in_heap), &[in_heap, copy], 0, LEN);
     h.g.assert_no_errors();
 }

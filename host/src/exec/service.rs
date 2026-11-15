@@ -305,14 +305,12 @@ pub trait Coherence<A: Api, E: Embedder> {
     /// GPU's writes to CPU-visible resources back, and return the future that writes them to guest memory once the
     /// GPU has finished and `gate` has given its [`Verdict`]: [`Verdict::Merge`] writes them, [`Verdict::Drop`]
     /// discards them and has the GPU copy of every resource the work could have written made again from guest memory
-    /// before its next GPU use. `work` is the records (indices into the stream) of the encoder recorded since the
-    /// previous write-back, empty when none was. Called after each encoder, before a shared event the command buffer
-    /// signals becomes visible to the CPU, and before the command buffer completes.
+    /// before its next GPU use. Called after each encoder, before a shared event the command buffer signals becomes
+    /// visible to the CPU, and before the command buffer completes.
     fn write_back(
         &mut self,
         cx: &mut EncodeCx<'_, A, E>,
         info: &CommitInfo,
-        work: &[usize],
         gate: Gate,
     ) -> Result<Option<GpuFuture<Result<(), Failure>>>, Failure>;
 

@@ -986,6 +986,14 @@ fn binding(call: &str, e: &airwgsl::BindingEntry, reflection: &airwgsl::Reflecti
             }
             Source::Uniforms(UniformBlock { fields, size: block.size })
         }
+        // A resource reached through an argument buffer. AirWgsl refuses argument-buffer resource members today; the
+        // memory module counts what a draw writes from its argument-table bindings and attachments alone (its coherence
+        // service's write-back), so such a binding is refused rather than bound with its writes untracked.
+        BindingSource::ArgumentBufferMember { .. } => {
+            return Err(what(
+                "a resource member of an argument buffer, whose writes the memory module does not track".into(),
+            ));
+        }
         other => return Err(what(format!("the source {other:?}"))),
     };
     // The function's texture argument the binding stands for (vertex functions reflect as type 1, fragment as 2).
