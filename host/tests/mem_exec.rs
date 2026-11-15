@@ -176,6 +176,40 @@ impl EncoderService<A, E> for Faulting {
     }
 }
 
+/// A render stand-in that keeps what the real render encoder keeps of these records (`render::encoder`): a vertex buffer
+/// is a read-only binding, declared read at the end of the pass, and `useResource:usage:` and `useHeap:` are residency
+/// declarations it records nothing for.
+struct Resident {
+    memory: Rc<Memory<A>>,
+}
+
+impl EncoderService<A, E> for Resident {
+    fn encode(&mut self, cx: &mut EncodeCx<'_, A, E>, segment: &Segment) -> Result<(), RecordFailure> {
+        let records = cx.records();
+        let mut read = Vec::new();
+        for &i in &segment.records {
+            let (offset, record) = &records[i];
+            match record {
+                Command::BeginRenderPass(_)
+                | Command::RenderUseResource(_)
+                | Command::RenderUseHeap(_)
+                | Command::EncoderEndEncoding(_) => {}
+                Command::RenderSetVertexBuffer(r) => read.push(payload::<Buffer<A>>(cx, r.buffer).expect("a buffer")),
+                _ => {
+                    return Err(RecordFailure {
+                        offset: *offset as u64,
+                        failure: failure::unimplemented_record(record.opcode()),
+                    });
+                }
+            }
+        }
+        for b in &read {
+            self.memory.note_buffer_read(b);
+        }
+        Ok(())
+    }
+}
+
 struct Harness {
     g: Gpu,
     guest: Rc<Guest>,
@@ -190,6 +224,11 @@ impl Harness {
     }
 
     fn with_compute(compute: Option<Box<dyn EncoderService<A, E>>>) -> Harness {
+        Harness::with_encoders(compute, false)
+    }
+
+    /// With `compute` for compute encoders and, if `resident`, the [`Resident`] stand-in for render encoders.
+    fn with_encoders(compute: Option<Box<dyn EncoderService<A, E>>>, resident: bool) -> Harness {
         let g = Gpu::new(true);
         let guest = Rc::new(Guest::new(64 << 20, None));
         let svc = g
@@ -199,7 +238,7 @@ impl Harness {
             .expect("memory services");
         let services = Services {
             control: vec![svc.control() as Box<dyn ControlService<A, E>>],
-            render: None,
+            render: resident.then(|| Box::new(Resident { memory: svc.memory() }) as Box<dyn EncoderService<A, E>>),
             compute,
             blit: Some(Box::new(Blit { memory: svc.memory() })),
             coherence: Some(svc.coherence()),
@@ -1174,5 +1213,140 @@ fn work_after_a_fault_waits_for_the_fault() {
     assert_eq!(completion(&h, b).failure, failure::ok());
     assert!(!copy_submitted, "the copy was submitted before the fault it depends on was known");
     assert!(unrelated_submitted, "work that depends on nothing unsettled waited");
+    h.g.assert_no_errors();
+}
+
+fn render_pass(encoder: Handle) -> Command {
+    Command::BeginRenderPass(BeginRenderPass {
+        encoder,
+        render_pass_descriptor: RenderPassDescriptor {
+            binary_archives: Vec::new(),
+            color_attachments: Vec::new(),
+            default_color_sample_count: 0,
+            default_raster_sample_count: 0,
+            depth_attachment: None,
+            dither_enabled: false,
+            fine_grained_background_visibility_enabled: false,
+            imageblock_sample_length: 0,
+            open_gl_mode_enabled: false,
+            point_coord_y_flip_enabled: false,
+            rasterization_rate_map: None,
+            render_target_array_length: 0,
+            render_target_height: 4,
+            render_target_width: 4,
+            sample_buffer_attachments: Vec::new(),
+            skip_empty_tiles_on_clear_enabled: false,
+            stencil_attachment: None,
+            threadgroup_memory_length: 0,
+            tile_height: 0,
+            tile_width: 0,
+            visibility_result_buffer: None,
+            sample_positions: Vec::new(),
+        },
+    })
+}
+
+/// Resources a command buffer's work reaches through argument buffers, which its records name only in residency
+/// declarations. After a faulting encoder, a render encoder declares with `useResource:usage:` and
+/// `MTLResourceUsageWrite` a private buffer it binds nowhere, a private buffer it also binds as a vertex buffer, and a
+/// private texture its shaders may write (`MTLTextureUsageShaderWrite`). Metal would not have run the encoder, and
+/// what it could have written through an argument buffer is kept nowhere, so each fails its next use. A private buffer
+/// of a heap the encoder makes resident with `useHeap:` is read only there (MTLComputeCommandEncoder.h: "may be
+/// accessed as readonly"), so it keeps its contents.
+#[test]
+fn resources_declared_written_after_a_fault_are_poisoned() {
+    let h = Harness::with_encoders(Some(Box::new(Faulting)), true);
+    let q = h.queue();
+    const LEN: u64 = 256;
+    // MTLResourceStorageModePrivate.
+    let (unbound, _) = h.buffer(&[0u8; LEN as usize], 0x20);
+    let (bound, _) = h.buffer(&[0u8; LEN as usize], 0x20);
+    let texture = h.handle();
+    // MTLPixelFormatRGBA8Unorm, MTLStorageModePrivate, MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite.
+    h.ok(Request::CreateTexture(CreateTexture { texture, descriptor: texture_descriptor(70, 4, 4, 2, 3) }));
+    let heap = h.handle();
+    h.ok(Request::CreateHeap(CreateHeap {
+        heap,
+        descriptor: HeapDescriptor {
+            cpu_cache_mode: 0,
+            hazard_tracking_mode: 0,
+            memory_pool_id: 0,
+            pinned_gpu_address: 0,
+            protection_options: 0,
+            resource_options: 0x20,
+            size: 64 * 1024,
+            sparse_page_access_counters_enabled: false,
+            sparse_page_size: 0,
+            storage_mode: 2,
+            r#type: 0,
+        },
+    }));
+    let in_heap = h.handle();
+    h.ok(Request::HeapCreateBuffer(HeapCreateBuffer {
+        heap,
+        buffer: in_heap,
+        length: LEN,
+        options: 0x20,
+        contents: GuestAddr(0),
+    }));
+    let (copy, copy_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    // MTLResourceUsageRead | MTLResourceUsageWrite.
+    let declare = |resource| Command::RenderUseResource(RenderUseResource { resource: Some(resource), usage: 3 });
+    let records = vec![
+        Command::BeginCompute(BeginCompute { encoder: h.handle() }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+        render_pass(h.handle()),
+        Command::RenderSetVertexBuffer(RenderSetVertexBuffer { buffer: Some(bound), offset: 0, index: 0 }),
+        declare(unbound),
+        declare(bound),
+        declare(texture),
+        Command::RenderUseHeap(RenderUseHeap { heap: Some(heap) }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+    ];
+    let faulted = h.commit(q, &records, &[unbound, bound, texture, heap]);
+    h.g.block_on(h.exec.idle());
+    let c = completion(&h, faulted);
+    assert_eq!(c.status, command_buffer_status::ERROR, "{c:?}");
+    assert_eq!(c.failure.message, "a scripted fault");
+
+    let copy_from = |source| {
+        blit(
+            h.handle(),
+            vec![Command::BlitCopyBufferToBuffer(BlitCopyBufferToBuffer {
+                source_buffer: Some(source),
+                source_offset: 0,
+                destination_buffer: Some(copy),
+                destination_offset: 0,
+                size: LEN,
+            })],
+        )
+    };
+    let poisoned = |what: &str, cb: Handle| {
+        h.g.block_on(h.exec.idle());
+        let c = completion(&h, cb);
+        assert_eq!(c.failure.status, status::UNIMPLEMENTED, "{what}: {c:?}");
+        assert!(c.failure.message.contains("after an earlier command buffer's fault"), "{what}: {}", c.failure.message);
+    };
+    poisoned("a buffer bound nowhere", h.commit(q, &copy_from(unbound), &[unbound, copy]));
+    poisoned("a buffer also bound for reading", h.commit(q, &copy_from(bound), &[bound, copy]));
+    let read_texture = blit(
+        h.handle(),
+        vec![Command::BlitCopyTextureToBuffer(BlitCopyTextureToBuffer {
+            source_texture: Some(texture),
+            source_slice: 0,
+            source_level: 0,
+            source_origin: Origin { x: 0, y: 0, z: 0 },
+            source_size: Size { width: 4, height: 4, depth: 1 },
+            destination_buffer: Some(copy),
+            destination_offset: 0,
+            destination_bytes_per_row: 16,
+            destination_bytes_per_image: 64,
+        })],
+    );
+    poisoned("a texture", h.commit(q, &read_texture, &[texture, copy]));
+    let kept = h.commit(q, &copy_from(in_heap), &[in_heap, copy]);
+    h.g.block_on(h.exec.idle());
+    assert_eq!(completion(&h, kept).failure, failure::ok());
+    assert_eq!(h.guest.cpu_read(copy_addr, LEN as usize), vec![0; LEN as usize]);
     h.g.assert_no_errors();
 }

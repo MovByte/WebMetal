@@ -505,6 +505,13 @@ impl<A: Api> GuestReadback<A> {
     }
 }
 
+impl GuestTextureMemory {
+    /// The texture no longer holds the shadow's contents: it is written whole from the memory before its next use.
+    pub(crate) fn unload(&self) {
+        self.loaded.set(false);
+    }
+}
+
 impl<A: Api> GuestArrived<A> {
     /// The work that wrote the texture was dropped (its command buffer faulted before the write-back at queue
     /// position `seq`): nothing reaches the memory, and every subresource is written from it before the texture's

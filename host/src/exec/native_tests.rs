@@ -326,6 +326,7 @@ impl Coherence<Native, TestEmbedder> for Coherent {
         &mut self,
         cx: &mut EncodeCx<'_, Native, TestEmbedder>,
         info: &CommitInfo,
+        _: &[usize],
         gate: Gate,
     ) -> Result<Option<GpuFuture<Result<(), Failure>>>, Failure> {
         let mut reads = Vec::new();

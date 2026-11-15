@@ -949,7 +949,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
                             recording: &mut run.recording,
                         };
                         let gate = Gate::default();
-                        match co.write_back(&mut cx, &info, gate.clone()) {
+                        match co.write_back(&mut cx, &info, &segment.records, gate.clone()) {
                             Ok(f) => wb = f.map(|f| (f, gate)),
                             Err(f) => {
                                 run.recording.discard();
@@ -1108,7 +1108,8 @@ impl<A: Api, E: Embedder> Core<A, E> {
                                     recording: &mut run.recording,
                                 };
                                 let gate = Gate::default();
-                                match co.write_back(&mut cx, &info, gate.clone()) {
+                                // Every encoder before the signal was written back after it.
+                                match co.write_back(&mut cx, &info, &[], gate.clone()) {
                                     Ok(f) => wb = f.map(|f| (f, gate)),
                                     Err(f) => {
                                         run.recording.discard();
@@ -1154,7 +1155,8 @@ impl<A: Api, E: Embedder> Core<A, E> {
                     recording: &mut run.recording,
                 };
                 let gate = Gate::default();
-                match co.write_back(&mut cx, &info, gate.clone()) {
+                // Every encoder was written back after it.
+                match co.write_back(&mut cx, &info, &[], gate.clone()) {
                     Ok(f) => wb = f.map(|f| (f, gate)),
                     Err(f) => {
                         run.recording.discard();

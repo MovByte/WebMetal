@@ -93,6 +93,8 @@ pub mod usage {
     pub const SHADER_WRITE: u64 = 0x0002;
     pub const RENDER_TARGET: u64 = 0x0004;
     pub const PIXEL_FORMAT_VIEW: u64 = 0x0010;
+    /// `MTLTextureUsageShaderAtomic` (iOS 17): atomic operations in a shader, which write.
+    pub const SHADER_ATOMIC: u64 = 0x0020;
 }
 
 /// The Metal methods of the CPU transfers.
@@ -393,6 +395,25 @@ impl<A: Api> Texture<A> {
     pub(crate) fn note_dropped(&self, seq: u64) {
         let mut st = self.state.borrow_mut();
         st.dropped_at.get_or_insert(seq);
+    }
+
+    /// Whether a shader can write the texture: its usage allows it (`ShaderWrite`, `ShaderAtomic`, or `Unknown`, which
+    /// allows every use; `MTLTexture.h`).
+    pub(crate) fn shader_may_write(&self) -> bool {
+        self.usage == usage::UNKNOWN || self.usage & (usage::SHADER_WRITE | usage::SHADER_ATOMIC) != 0
+    }
+
+    /// Work that could have written the texture over guest memory or an IOSurface plane, and whose writes no readback
+    /// read, was dropped (its command buffer faulted before the write-back at queue position `seq`): the texture is
+    /// written whole from its backing before its next use.
+    pub(crate) fn drop_backed_writes(&self, seq: u64) {
+        if let Some(m) = &self.guest {
+            m.unload();
+        }
+        if self.surface.is_some() {
+            self.set_surface_state(u64::MAX, false);
+        }
+        self.note_dropped(seq);
     }
 
     /// Whether a dropped write-back left the GPU copy to be written whole from its backing before its next use.

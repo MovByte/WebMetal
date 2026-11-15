@@ -1182,7 +1182,8 @@ impl<A: Api> Run<'_, A> {
 
             // Residency and hazard-tracking declarations. WebGPU makes every bound resource resident and orders
             // accesses itself; the resources these name reach a draw only through argument buffers, which the render
-            // path does not bind (an argument-buffer binding source is reported at the draw).
+            // path does not bind (an argument-buffer binding source is reported at the draw). The memory module's
+            // write-back takes a write usage from the records itself.
             Command::RenderUseResource(_)
             | Command::RenderUseResourceStages(_)
             | Command::RenderUseResources(_)

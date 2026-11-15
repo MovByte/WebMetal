@@ -39,15 +39,12 @@ use crate::gpu::idl::{ErrorFilter, TextureFormat};
 use crate::gpu::{Api, Device as _, DeviceLostInfo, GpuFuture};
 use crate::mem::layout::TextureType;
 use crate::mem::options::StorageMode;
-use crate::mem::texture::{Texture, idl_format, usage};
+use crate::mem::texture::{Texture, idl_format};
 use crate::mem::view::TextureView;
 
 use super::canvas::{self, CanvasPlan, DisplayMode, PlanError};
 use super::format::{FramebufferFormat, code_name, framebuffer_format, texture_format};
 use super::target::{Target, read_texture};
-
-/// `MTLTextureUsageShaderAtomic` (`MTLTexture.h`, iOS 17): atomic operations in a shader, which write.
-const SHADER_ATOMIC: u64 = 0x0020;
 
 /// A frame that asks for an orientation transform.
 pub const TRANSFORM: Refusal = Refusal {
@@ -230,9 +227,7 @@ struct Checked<A: Api> {
 fn can_write<A: Api>(t: &Texture<A>, how: TextureWrite) -> bool {
     match how {
         TextureWrite::Attachment | TextureWrite::Blit => true,
-        TextureWrite::ShaderBinding | TextureWrite::UseResource => {
-            t.usage == usage::UNKNOWN || t.usage & (usage::SHADER_WRITE | SHADER_ATOMIC) != 0
-        }
+        TextureWrite::ShaderBinding | TextureWrite::UseResource => t.shader_may_write(),
     }
 }
 
