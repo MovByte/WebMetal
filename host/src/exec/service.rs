@@ -22,8 +22,10 @@
 //! `onSubmittedWorkDone`) and touch guest memory, but makes no such calls.
 
 use std::any::Any;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::future::Future;
 use std::rc::Rc;
+use std::task::{Poll, Waker};
 
 use webmetal_wire::{Command, Failure, Handle, Reply, Request};
 
@@ -293,16 +295,61 @@ pub trait Coherence<A: Api, E: Embedder> {
 
     /// All of the command buffer's work up to this point has been recorded: record (on `cx`'s encoder) what brings the
     /// GPU's writes to CPU-visible resources back, and return the future that writes them to guest memory once the
-    /// GPU has finished. Called before a shared event the command buffer signals becomes visible to the CPU, and
-    /// before the command buffer completes.
+    /// GPU has finished and `gate` has given its [`Verdict`]: [`Verdict::Merge`] writes them, [`Verdict::Drop`]
+    /// discards them and has the GPU copy of every resource the work could have written made again from guest memory
+    /// before its next GPU use. Called after each encoder, before a shared event the command buffer signals becomes
+    /// visible to the CPU, and before the command buffer completes.
     fn write_back(
         &mut self,
         cx: &mut EncodeCx<'_, A, E>,
         info: &CommitInfo,
+        gate: Gate,
     ) -> Result<Option<GpuFuture<Result<(), Failure>>>, Failure>;
 
     /// The task exited.
     fn task_exited(&mut self, task: TaskId);
+}
+
+/// What becomes of the GPU's writes a write-back read ([`Coherence::write_back`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verdict {
+    /// The work before the write-back ran: its writes reach guest memory.
+    Merge,
+    /// The command buffer faulted before the write-back's place in its stream: Metal would not have run the work it
+    /// reads back, so none of its writes reach guest memory.
+    Drop,
+}
+
+/// Where a write-back learns its [`Verdict`]: the executor gives it once every job before the write-back in its
+/// command buffer's stream has finished, so every failure before it is known.
+#[derive(Clone, Default)]
+pub struct Gate(Rc<GateState>);
+
+#[derive(Default)]
+struct GateState {
+    verdict: Cell<Option<Verdict>>,
+    waker: RefCell<Option<Waker>>,
+}
+
+impl Gate {
+    /// Resolves with the verdict once the executor has given it.
+    pub fn verdict(&self) -> impl Future<Output = Verdict> + '_ {
+        std::future::poll_fn(move |cx| match self.0.verdict.get() {
+            Some(v) => Poll::Ready(v),
+            None => {
+                *self.0.waker.borrow_mut() = Some(cx.waker().clone());
+                Poll::Pending
+            }
+        })
+    }
+
+    pub(crate) fn decide(&self, verdict: Verdict) {
+        self.0.verdict.set(Some(verdict));
+        let waker = self.0.waker.borrow_mut().take();
+        if let Some(w) = waker {
+            w.wake();
+        }
+    }
 }
 
 /// The services an executor runs with. A missing service makes what it serves unimplemented (status 2).

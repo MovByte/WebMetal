@@ -21,6 +21,11 @@
 //! shadow as it was at the readback's position. Bytes a later upload covers are not merged: the CPU wrote them after
 //! the GPU work was committed, which is the race Metal forbids, and the CPU's value is the one kept.
 //!
+//! **Dropped work.** A readback of work the executor drops (it followed its command buffer's first fault) is
+//! abandoned ([`Shadow::abandon_readback`]): its window becomes stale, the next upload writes the guest's bytes over it
+//! whether they changed or not, and a later readback that overlaps it before then is refused, since the work it reads
+//! back ran on what the dropped work left.
+//!
 //! **Alignment.** WebGPU writes buffers in 4-byte units (`writeBuffer` offset and size, WebGPU section 21.2.1, and the
 //! buffer-copy rules of `tables/limits.toml` question `6.3-copy-alignment`). With no readback pending, a changed run
 //! is widened to whole words: the bytes added are ones the guest did not change, so the shadow holds the guest's value
@@ -101,6 +106,9 @@ pub struct Shadow {
     log: Vec<Logged>,
     /// Readbacks submitted and not merged yet.
     pending: BTreeSet<u64>,
+    /// Runs whose GPU copy may hold writes of work the executor dropped (a readback abandoned at the queue position
+    /// with it): the next upload writes the guest's bytes there whether they changed or not.
+    stale: Vec<(Run, u64)>,
 }
 
 impl Shadow {
@@ -112,7 +120,7 @@ impl Shadow {
             assert_eq!(init.len() as u64, len, "initial bytes must cover the memory");
             bytes[..init.len()].copy_from_slice(init);
         }
-        Shadow { len, bytes, log: Vec::new(), pending: BTreeSet::new() }
+        Shadow { len, bytes, log: Vec::new(), pending: BTreeSet::new(), stale: Vec::new() }
     }
 
     pub fn len(&self) -> u64 {
@@ -136,6 +144,11 @@ impl Shadow {
     /// Readbacks submitted and not merged.
     pub fn pending(&self) -> impl Iterator<Item = u64> + '_ {
         self.pending.iter().copied()
+    }
+
+    /// The runs the next upload writes whatever the guest's bytes are ([`Shadow::abandon_readback`]).
+    pub fn stale(&self) -> impl Iterator<Item = Run> + '_ {
+        self.stale.iter().map(|(r, _)| *r)
     }
 
     /// The runs where `chunks` (each the guest's bytes at an offset of the memory) differ from the shadow.
@@ -165,7 +178,18 @@ impl Shadow {
     /// cover every byte the guest may have changed since the previous upload (all of the memory, or the pages the
     /// embedder reports written).
     pub fn plan_upload(&self, chunks: &[(u64, &[u8])]) -> UploadPlan {
-        let runs = self.changed_runs(chunks);
+        let mut runs = self.changed_runs(chunks);
+        // Stale runs go whole, from the guest's bytes (the caller's chunks cover them).
+        runs.extend(self.stale());
+        runs.sort_by_key(|r| r.start);
+        let mut joined: Vec<Run> = Vec::new();
+        for r in runs {
+            match joined.last_mut() {
+                Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+                _ => joined.push(r),
+            }
+        }
+        let runs = joined;
         if runs.is_empty() {
             return UploadPlan::default();
         }
@@ -243,6 +267,8 @@ impl Shadow {
                 self.bytes[at] = m.value[i];
             }
         }
+        // The plan wrote the guest's bytes over every stale run.
+        self.stale.clear();
     }
 
     /// Record that the GPU copy is read back at queue position `seq`.
@@ -251,11 +277,41 @@ impl Shadow {
         self.pending.insert(seq);
     }
 
+    /// The readback at `seq` of bytes `offset..offset + len` is abandoned: the work it read back was dropped, so the
+    /// GPU copy of those bytes may hold writes that must not survive, and the next upload writes the guest's bytes
+    /// over them.
+    pub fn abandon_readback(&mut self, seq: u64, offset: u64, len: u64) {
+        assert!(self.pending.remove(&seq), "readback {seq} is not pending");
+        let (start, end) = (offset.min(self.len), (offset + len).min(self.len));
+        if start < end {
+            self.stale.push((Run { start, end }, seq));
+        }
+        self.retain_log();
+    }
+
+    fn retain_log(&mut self) {
+        // Keep the log entries a pending readback still needs.
+        match self.pending.first() {
+            Some(&oldest) => self.log.retain(|l| l.seq > oldest),
+            None => self.log.clear(),
+        }
+    }
+
     /// Merge the GPU copy as read back at `seq`: `data` holds its bytes from `offset` on, and every byte the work
     /// could have written lies in that window. Returns the runs to write into the guest; the shadow already holds
-    /// them.
-    pub fn merge_readback(&mut self, seq: u64, offset: u64, data: &[u8]) -> Vec<GuestWrite> {
+    /// them. A readback that follows an abandoned one whose stale run it overlaps is refused with that run: the work
+    /// it reads back ran on the GPU copy the dropped work left, before the guest's bytes were written over it, so its
+    /// bytes there may carry the dropped writes.
+    pub fn merge_readback(&mut self, seq: u64, offset: u64, data: &[u8]) -> Result<Vec<GuestWrite>, Run> {
         assert!(self.pending.remove(&seq), "readback {seq} is not pending");
+        let window = Run { start: offset, end: offset + data.len() as u64 };
+        if let Some((r, _)) =
+            self.stale.iter().find(|(r, at)| *at < seq && r.start < window.end && window.start < r.end)
+        {
+            let r = *r;
+            self.retain_log();
+            return Err(r);
+        }
         let (lo, hi) = (offset as usize, offset as usize + data.len());
         assert!(hi <= self.bytes.len(), "a readback window lies inside the GPU copy");
         // The GPU copy before the work read back: the shadow without the uploads that reached the GPU later.
@@ -287,12 +343,8 @@ impl Shadow {
                 old: base[start..at].to_vec(),
             });
         }
-        // Keep the log entries a pending readback still needs.
-        match self.pending.first() {
-            Some(&oldest) => self.log.retain(|l| l.seq > oldest),
-            None => self.log.clear(),
-        }
-        writes
+        self.retain_log();
+        Ok(writes)
     }
 
     /// The contents were discarded and replaced by zeros on both sides (`setPurgeableState:` empty), at a moment
@@ -301,6 +353,7 @@ impl Shadow {
         assert!(self.pending.is_empty(), "contents discarded while a readback is pending");
         self.bytes.fill(0);
         self.log.clear();
+        self.stale.clear();
     }
 }
 
@@ -345,7 +398,7 @@ mod tests {
         assert_eq!(p.masked[0].words(), (0x0600, 0xff00));
         s.apply_upload(&p, 2);
         // The GPU work of 1 wrote byte 4; the masked write kept it, and the merge carries it.
-        let g = s.merge_readback(1, 0, &[0, 0, 0, 0, 9, 0, 0, 0]);
+        let g = s.merge_readback(1, 0, &[0, 0, 0, 0, 9, 0, 0, 0]).unwrap();
         assert_eq!(g, vec![GuestWrite { offset: 4, new: vec![9], old: vec![0] }]);
         assert_eq!(s.bytes(), &[1, 2, 3, 4, 9, 6, 0, 0]);
     }
@@ -359,7 +412,7 @@ mod tests {
         let p = s.plan_upload(&[(0, &[0, 0, 0, 0, 9, 9, 9, 9])]);
         s.apply_upload(&p, 3);
         // The readback holds the GPU work's bytes and the old bytes 4..8.
-        let g = s.merge_readback(2, 0, &[5, 5, 5, 5, 0, 0, 0, 0]);
+        let g = s.merge_readback(2, 0, &[5, 5, 5, 5, 0, 0, 0, 0]).unwrap();
         assert_eq!(g, vec![GuestWrite { offset: 0, new: vec![5; 4], old: vec![0; 4] }]);
         assert_eq!(s.bytes(), &[5, 5, 5, 5, 9, 9, 9, 9]);
         assert!(s.log.is_empty());
@@ -370,7 +423,7 @@ mod tests {
         let mut s = Shadow::new(10, None);
         s.begin_readback(1);
         // The window 8..12 covers bytes 8 and 9 of the memory and the two padding bytes.
-        let g = s.merge_readback(1, 8, &[0, 4, 0, 0]);
+        let g = s.merge_readback(1, 8, &[0, 4, 0, 0]).unwrap();
         assert_eq!(g, vec![GuestWrite { offset: 9, new: vec![4], old: vec![0] }]);
         assert_eq!(s.bytes(), &[0, 0, 0, 0, 0, 0, 0, 0, 0, 4]);
     }
@@ -382,8 +435,26 @@ mod tests {
         let p = s.plan_upload(&[(0, &[3, 3, 3, 3])]);
         s.apply_upload(&p, 2);
         // The GPU work of 1 also wrote these bytes: the race is resolved in favour of the later CPU write.
-        assert!(s.merge_readback(1, 0, &[7, 7, 7, 7]).is_empty());
+        assert!(s.merge_readback(1, 0, &[7, 7, 7, 7]).unwrap().is_empty());
         assert_eq!(s.bytes(), &[3, 3, 3, 3]);
+    }
+
+    #[test]
+    fn an_abandoned_readback_rewrites_its_window_from_the_guest() {
+        let mut s = Shadow::new(8, None);
+        // Readbacks 1 and 2 are pending; the work 1 read back is dropped, so the GPU copy of bytes 0..8 is untrusted.
+        s.begin_readback(1);
+        s.begin_readback(2);
+        s.abandon_readback(1, 0, 8);
+        // Readback 2 ran on that GPU copy: its bytes there are refused.
+        assert_eq!(s.merge_readback(2, 4, &[7, 7, 7, 7]), Err(Run { start: 0, end: 8 }));
+        // The next upload writes the guest's bytes whole although they equal the shadow.
+        let p = s.plan_upload(&[(0, &[0; 8])]);
+        assert_eq!(p.writes, vec![UploadWrite { offset: 0, bytes: vec![0; 8] }]);
+        s.apply_upload(&p, 3);
+        assert_eq!(s.stale().count(), 0);
+        s.begin_readback(4);
+        assert_eq!(s.merge_readback(4, 0, &[1, 0, 0, 0]).unwrap().len(), 1);
     }
 
     /// A random legal program run against the shared-memory model.
@@ -495,7 +566,7 @@ mod tests {
                 let i = readbacks.iter().position(|(s, _, _)| *s == c.seq).unwrap();
                 let (_, lo, data) = readbacks.remove(i);
                 let later = shadow.log.iter().any(|l| l.seq > c.seq);
-                for w in shadow.merge_readback(c.seq, lo as u64, &data) {
+                for w in shadow.merge_readback(c.seq, lo as u64, &data).unwrap() {
                     for (k, (&n, &o)) in w.new.iter().zip(&w.old).enumerate() {
                         if n != o {
                             guest[w.offset as usize + k] = n;

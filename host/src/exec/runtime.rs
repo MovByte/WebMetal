@@ -15,7 +15,7 @@ use webmetal_wire::{
 use super::failure::{self, GpuCause, NO_RECORD, command_buffer_status};
 use super::objects::{Entry, Owner, Table};
 use super::schema::{self, HandleUse, Kind, Role};
-use super::service::{CommitInfo, EncodeCx, Gpu, Recording, Served, ServiceCx, Services};
+use super::service::{CommitInfo, EncodeCx, Gate, Gpu, Recording, Served, ServiceCx, Services, Verdict};
 use super::stream::{self, EncoderKind, Step};
 use super::{Config, Report};
 use crate::embed::{Embedder, SharedEventId, TaskId};
@@ -100,6 +100,9 @@ enum ActionKind<E: Embedder> {
     SignalShared(Rc<SharedEvent<E>>, u64, u64),
     /// Post EncoderCompleted for the encoder with this handle: its work has completed and been written back.
     EncoderComplete(Handle),
+    /// Give a write-back its verdict once every job before it has finished: the action's position is the write-back's
+    /// own, which is then the first job outstanding.
+    WriteBack(Gate),
     /// Post CommandBufferCompleted (in queue order).
     Complete,
 }
@@ -287,11 +290,23 @@ fn settle<A: Api>(scopes: &ErrorScopes<A>, calls: &Cell<u64>) -> Option<GpuFutur
     Some(scopes.settle())
 }
 
-fn add_job<A: Api, E: Embedder>(jobs: &mut Vec<Job>, run: &mut Run<A, E>, id: RunId, fut: GpuFuture<JobOut>) {
+fn add_job<A: Api, E: Embedder>(jobs: &mut Vec<Job>, run: &mut Run<A, E>, id: RunId, fut: GpuFuture<JobOut>) -> u64 {
     let seq = run.next_job;
     run.next_job += 1;
     run.outstanding.insert(seq);
     jobs.push(Job { owner: JobOwner::Run(id), seq, fut });
+    seq
+}
+
+/// Start a write-back's job and the action that gives it its verdict.
+fn add_write_back<A: Api, E: Embedder>(
+    jobs: &mut Vec<Job>,
+    run: &mut Run<A, E>,
+    id: RunId,
+    wb: (GpuFuture<Result<(), Failure>>, Gate),
+) {
+    let after = add_job(jobs, run, id, written_back(wb.0));
+    run.actions.push_back(Action { after, kind: ActionKind::WriteBack(wb.1) });
 }
 
 fn settled(f: GpuFuture<Vec<Captured>>) -> GpuFuture<JobOut> {
@@ -843,7 +858,7 @@ impl<A: Api, E: Embedder> Core<A, E> {
                 .flat_map(|(_, r)| r.actions.iter())
                 .filter_map(|a| match &a.kind {
                     ActionKind::SignalShared(e, ..) => Some(e.id),
-                    ActionKind::EncoderComplete(_) | ActionKind::Complete => None,
+                    ActionKind::EncoderComplete(_) | ActionKind::WriteBack(_) | ActionKind::Complete => None,
                 })
                 .collect()
         };
@@ -901,8 +916,9 @@ impl<A: Api, E: Embedder> Core<A, E> {
                             objects: &state.table,
                             recording: &mut run.recording,
                         };
-                        match co.write_back(&mut cx, &info) {
-                            Ok(f) => wb = f,
+                        let gate = Gate::default();
+                        match co.write_back(&mut cx, &info, gate.clone()) {
+                            Ok(f) => wb = f.map(|f| (f, gate)),
                             Err(f) => {
                                 run.recording.discard();
                                 run.fail(f, NO_RECORD);
@@ -918,13 +934,13 @@ impl<A: Api, E: Embedder> Core<A, E> {
                         add_job(&mut self.jobs, run, id, settled(f));
                     }
                     add_job(&mut self.jobs, run, id, work_done(self.queue.on_submitted_work_done()));
-                    if let Some(f) = wb {
-                        add_job(&mut self.jobs, run, id, written_back(f));
-                    }
                     // The services' checks of the encoder's results (EncodeCx::check), now that its work is
-                    // submitted: a check's failure is the encoder's.
+                    // submitted: a check's failure is the encoder's, before its write-back.
                     for f in std::mem::take(&mut run.recording.checks) {
                         add_job(&mut self.jobs, run, id, written_back(f));
+                    }
+                    if let Some(wb) = wb {
+                        add_write_back(&mut self.jobs, run, id, wb);
                     }
                     let after = run.position();
                     run.actions.push_back(Action { after, kind: ActionKind::EncoderComplete(segment.encoder) });
@@ -1059,8 +1075,9 @@ impl<A: Api, E: Embedder> Core<A, E> {
                                     objects: &state.table,
                                     recording: &mut run.recording,
                                 };
-                                match co.write_back(&mut cx, &info) {
-                                    Ok(f) => wb = f,
+                                let gate = Gate::default();
+                                match co.write_back(&mut cx, &info, gate.clone()) {
+                                    Ok(f) => wb = f.map(|f| (f, gate)),
                                     Err(f) => {
                                         run.recording.discard();
                                         run.fail(f, offset);
@@ -1076,8 +1093,8 @@ impl<A: Api, E: Embedder> Core<A, E> {
                                 add_job(&mut self.jobs, run, id, settled(f));
                             }
                             add_job(&mut self.jobs, run, id, work_done(self.queue.on_submitted_work_done()));
-                            if let Some(f) = wb {
-                                add_job(&mut self.jobs, run, id, written_back(f));
+                            if let Some(wb) = wb {
+                                add_write_back(&mut self.jobs, run, id, wb);
                             }
                             let after = run.position();
                             run.actions.push_back(Action { after, kind: ActionKind::SignalShared(s, value, offset) });
@@ -1104,8 +1121,9 @@ impl<A: Api, E: Embedder> Core<A, E> {
                     objects: &state.table,
                     recording: &mut run.recording,
                 };
-                match co.write_back(&mut cx, &info) {
-                    Ok(f) => wb = f,
+                let gate = Gate::default();
+                match co.write_back(&mut cx, &info, gate.clone()) {
+                    Ok(f) => wb = f.map(|f| (f, gate)),
                     Err(f) => {
                         run.recording.discard();
                         run.fail(f, NO_RECORD);
@@ -1136,12 +1154,12 @@ impl<A: Api, E: Embedder> Core<A, E> {
                 add_job(&mut self.jobs, run, id, settled(f));
             }
             add_job(&mut self.jobs, run, id, work_done(self.queue.on_submitted_work_done()));
-            if let Some(f) = wb {
-                add_job(&mut self.jobs, run, id, written_back(f));
-            }
             // Checks of an encoder whose recording failed (EncodeCx::check), now that all the work is submitted.
             for f in std::mem::take(&mut run.recording.checks) {
                 add_job(&mut self.jobs, run, id, written_back(f));
+            }
+            if let Some(wb) = wb {
+                add_write_back(&mut self.jobs, run, id, wb);
             }
         }
         let after = run.position();
@@ -1186,6 +1204,18 @@ impl<A: Api, E: Embedder> Core<A, E> {
                                 }),
                             );
                         }
+                    }
+                    ActionKind::WriteBack(gate) => {
+                        // Metal's encoder error states (MTLCommandBuffer.h) leave the work at and after the first
+                        // fault Faulted, Affected ("failed to execute in full") or Pending ("never started
+                        // execution"); how much of it ran is not measurable, so none of its writes are kept: the
+                        // guest's bytes, which no such work changed, stay the truth.
+                        let verdict = if run.failed_before(after) || self.lost.is_some() {
+                            Verdict::Drop
+                        } else {
+                            Verdict::Merge
+                        };
+                        gate.decide(verdict);
                     }
                     ActionKind::Complete => {
                         run.complete = true;

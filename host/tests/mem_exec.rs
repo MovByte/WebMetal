@@ -16,7 +16,7 @@ use std::time::Duration;
 use mem_common::{Api, Golden, Gpu, Guest, TASK};
 use std::collections::BTreeSet;
 use webmetal_host::embed::{SurfaceDesc, SurfacePlane as PlaneDesc};
-use webmetal_host::exec::failure;
+use webmetal_host::exec::failure::{self, command_buffer_status};
 use webmetal_host::exec::{
     Config, ControlService, DebugGroups, EncodeCx, EncoderService, Executor, RecordFailure, Segment, Services,
 };
@@ -166,6 +166,16 @@ impl EncoderService<A, E> for Blit {
     }
 }
 
+/// A compute stand-in whose every encoder faults: its check fails the command buffer once its work has run.
+struct Faulting;
+
+impl EncoderService<A, E> for Faulting {
+    fn encode(&mut self, cx: &mut EncodeCx<'_, A, E>, _: &Segment) -> Result<(), RecordFailure> {
+        cx.check(Box::pin(async { Err(failure::unimplemented("a scripted fault")) }));
+        Ok(())
+    }
+}
+
 struct Harness {
     g: Gpu,
     guest: Rc<Guest>,
@@ -176,6 +186,10 @@ struct Harness {
 
 impl Harness {
     fn new() -> Harness {
+        Harness::with_compute(None)
+    }
+
+    fn with_compute(compute: Option<Box<dyn EncoderService<A, E>>>) -> Harness {
         let g = Gpu::new(true);
         let guest = Rc::new(Guest::new(64 << 20, None));
         let svc = g
@@ -186,7 +200,7 @@ impl Harness {
         let services = Services {
             control: vec![svc.control() as Box<dyn ControlService<A, E>>],
             render: None,
-            compute: None,
+            compute,
             blit: Some(Box::new(Blit { memory: svc.memory() })),
             coherence: Some(svc.coherence()),
         };
@@ -277,6 +291,19 @@ impl Harness {
             }
         }
     }
+}
+
+/// The completion of command buffer `cb`.
+fn completion(h: &Harness, cb: Handle) -> CommandBufferCompleted {
+    h.guest
+        .posted
+        .borrow()
+        .iter()
+        .find_map(|e| match e {
+            Event::CommandBufferCompleted(c) if c.command_buffer == cb => Some(c.clone()),
+            _ => None,
+        })
+        .expect("a completion")
 }
 
 fn blit(encoder: Handle, body: Vec<Command>) -> Vec<Command> {
@@ -1012,5 +1039,64 @@ fn no_copy_texture_through_the_executor() {
     h.guest.cpu_write(src, &rewritten);
     h.request(layout_copy_in(&d, memory, src, 3, region(w3, h3)));
     assert_eq!(read_level(3), rewritten, "the CPU's write reached the texture");
+    h.g.assert_no_errors();
+}
+
+/// Work after a command buffer's first fault: Metal leaves it Affected or Pending (MTLCommandBuffer.h), and none of its
+/// writes is kept. A blit after a faulting encoder fills a shared and a private buffer: the shared buffer's bytes stay
+/// the guest's, in guest memory and for a later command buffer that reads it on the GPU; the private buffer, whose
+/// contents from before the blit are kept nowhere, fails its next use.
+#[test]
+fn writes_after_a_fault_are_dropped() {
+    let h = Harness::with_compute(Some(Box::new(Faulting)));
+    let q = h.queue();
+    const LEN: u64 = 256;
+    let (shared, shared_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    let (copy, copy_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    // MTLResourceStorageModePrivate.
+    let (private, _) = h.buffer(&[0u8; LEN as usize], 0x20);
+    let fill = |buffer, value| {
+        Command::BlitFillBuffer(BlitFillBuffer {
+            buffer: Some(buffer),
+            range: Range { location: 0, length: LEN },
+            value,
+        })
+    };
+    let copy_into = |source| {
+        Command::BlitCopyBufferToBuffer(BlitCopyBufferToBuffer {
+            source_buffer: Some(source),
+            source_offset: 0,
+            destination_buffer: Some(copy),
+            destination_offset: 0,
+            size: LEN,
+        })
+    };
+    let mut records = vec![
+        Command::BeginCompute(BeginCompute { encoder: h.handle() }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+    ];
+    records.extend(blit(h.handle(), vec![fill(shared, 0xab), fill(private, 0xcd)]));
+    let faulted = h.commit(q, &records, &[shared, private]);
+    h.g.block_on(h.exec.idle());
+    let c = completion(&h, faulted);
+    assert_eq!(c.status, command_buffer_status::ERROR, "{c:?}");
+    assert_eq!(c.failure.message, "a scripted fault");
+    assert_eq!(h.guest.cpu_read(shared_addr, LEN as usize), vec![0; LEN as usize], "the fill reached guest memory");
+
+    let read = h.commit(q, &blit(h.handle(), vec![copy_into(shared)]), &[shared, copy]);
+    h.g.block_on(h.exec.idle());
+    assert_eq!(completion(&h, read).failure, failure::ok());
+    assert_eq!(
+        h.guest.cpu_read(copy_addr, LEN as usize),
+        vec![0; LEN as usize],
+        "the fill reached a later command buffer"
+    );
+
+    let poisoned = h.commit(q, &blit(h.handle(), vec![copy_into(private)]), &[private, copy]);
+    h.g.block_on(h.exec.idle());
+    let c = completion(&h, poisoned);
+    assert_eq!(c.failure.status, status::UNIMPLEMENTED, "{c:?}");
+    assert!(c.failure.message.contains("after an earlier command buffer's fault"), "{}", c.failure.message);
+    assert_eq!(h.guest.cpu_read(copy_addr, LEN as usize), vec![0; LEN as usize]);
     h.g.assert_no_errors();
 }

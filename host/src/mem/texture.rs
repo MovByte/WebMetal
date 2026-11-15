@@ -150,6 +150,16 @@ struct State {
     /// whether GPU work wrote it since its last write-back.
     surface_version: u64,
     backing_written: bool,
+    /// For an IOSurface texture or one over guest memory: the queue position of a write-back of it that was dropped
+    /// (its work followed a fault) since the texture was last written whole from its backing. Until then its GPU copy
+    /// may hold the dropped writes, and no later read back of it is merged.
+    dropped_at: Option<u64>,
+    /// GPU work may have written the texture since the last write-back of its command buffer.
+    gpu_written: bool,
+    /// A texture with no CPU-visible backing that work after a command buffer's fault may have written (a dropped
+    /// write-back): Metal would not have run that work, and the contents from before it are kept nowhere, so its next
+    /// use fails.
+    poisoned: bool,
     /// For a PVRTC texture, per subresource: the level's words in reflected Morton order as the CPU last wrote them or
     /// the GPU's work left them, or `None` from GPU work that may write the subresource until its words are read back.
     /// Empty for other formats.
@@ -162,6 +172,7 @@ struct State {
 impl State {
     /// GPU work writes subresource `i`: its words are no longer the CPU's.
     fn gpu_wrote(&mut self, i: usize) {
+        self.gpu_written = true;
         if let Some(words) = self.pvrtc_words.get_mut(i) {
             *words = None;
             self.pvrtc_writes[i] += 1;
@@ -375,6 +386,46 @@ impl<A: Api> Texture<A> {
         let mut st = self.state.borrow_mut();
         st.surface_version = version;
         st.backing_written = written;
+    }
+
+    /// A write-back of the texture at queue position `seq` was dropped: its GPU copy may hold writes that must not
+    /// survive.
+    pub(crate) fn note_dropped(&self, seq: u64) {
+        let mut st = self.state.borrow_mut();
+        st.dropped_at.get_or_insert(seq);
+    }
+
+    /// The texture was written whole from its backing.
+    pub(crate) fn clear_dropped(&self) {
+        self.state.borrow_mut().dropped_at = None;
+    }
+
+    /// Whether GPU work may have written the texture since the last call.
+    pub(crate) fn take_gpu_written(&self) -> bool {
+        std::mem::take(&mut self.state.borrow_mut().gpu_written)
+    }
+
+    /// Work that may have written a texture without CPU-visible backing was dropped.
+    pub(crate) fn poison(&self) {
+        self.state.borrow_mut().poisoned = true;
+    }
+
+    /// Fails for a poisoned texture ([`Texture::poison`]).
+    pub(crate) fn check_usable(&self, call: &str) -> Result<(), MemError> {
+        if self.state.borrow().poisoned {
+            return Err(MemError::unimplemented(format!(
+                "{call}: {}: a texture that GPU work after an earlier command buffer's fault may have written, which \
+                 Metal would not have run: its contents from before that work are not kept, so they are not \
+                 reproduced",
+                self.label
+            )));
+        }
+        Ok(())
+    }
+
+    /// Whether a read back of the texture at queue position `seq` ran on writes a dropped write-back left.
+    pub(crate) fn read_after_drop(&self, seq: u64) -> bool {
+        self.state.borrow().dropped_at.is_some_and(|d| d < seq)
     }
 }
 
@@ -632,6 +683,9 @@ impl<A: Api> Memory<A> {
             purgeable: Purgeable::NonVolatile,
             surface_version: 0,
             backing_written: false,
+            dropped_at: None,
+            gpu_written: false,
+            poisoned: false,
             pvrtc_words: pvrtc_zero_words(&geometry, blocks, per_level),
             pvrtc_writes: vec![0; if blocks.is_some_and(|b| b.pvrtc.is_some()) { subs } else { 0 }],
         };
@@ -1229,6 +1283,7 @@ impl<A: Api> Memory<A> {
         t: &Rc<Texture<A>>,
         a: &RegionArgs,
     ) -> Result<TextureRead<A>, MemError> {
+        t.check_usable(call)?;
         let (l, _) = self.cpu_region(call, t, a)?;
         if l.rows_overlap() {
             return Err(MemError::unimplemented(format!(
@@ -1389,6 +1444,8 @@ impl<A: Api> Memory<A> {
         }
         st.pvrtc_words = pvrtc_zero_words(&t.geometry, t.blocks, t.per_level());
         st.pvrtc_writes.iter_mut().for_each(|n| *n += 1);
+        // Zeros are defined contents again.
+        st.poisoned = false;
         Ok(())
     }
 
@@ -1800,6 +1857,11 @@ impl<A: Api> PvrtcReadback<A> {
 }
 
 impl<A: Api> PvrtcWords<A> {
+    /// The work that wrote the words was dropped: the subresource keeps no CPU copy of them.
+    pub fn discard(self, mem: &Memory<A>) {
+        self.bytes.release(mem);
+    }
+
     /// Keep the words as the subresource's, unless they were dropped or replaced again since the read was encoded.
     pub fn keep(self, mem: &Memory<A>) {
         let words = self.bytes.release(mem);

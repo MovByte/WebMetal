@@ -27,6 +27,9 @@
 //!    copies take their queue position here, so the encoder must reach the queue before any other upload.
 //! 4. [`Readbacks::wait`] and [`Arrived::merge`] once the GPU has run them, before the command buffer is reported
 //!    completed. Readbacks merge in queue order whatever order their maps settle in (see [`super::memory::Turn`]).
+//!    A readback of work after its command buffer's first fault is dropped instead ([`Arrived::discard`]): its window
+//!    is written from the guest's bytes before the buffer's next use, and a private buffer the work could have
+//!    written fails its next use.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -49,7 +52,7 @@ use super::heap::{Heap, HeapAllocation};
 use super::memory::{Memory, Turn};
 use super::options::{ResourceOptions, StorageMode};
 use super::purgeable::Purgeable;
-use super::shadow::{MaskedWord, Shadow, UploadPlan, UploadWrite};
+use super::shadow::{MaskedWord, Run, Shadow, UploadPlan, UploadWrite};
 
 /// Every usage a Metal buffer can need: copies, vertex, index, uniform, storage and indirect use, and counter
 /// resolution.
@@ -102,6 +105,9 @@ struct State {
     zero_gpu: bool,
     /// Advances whenever the GPU copy may change: an upload that wrote bytes, GPU work that may write, a discard.
     generation: u64,
+    /// A private buffer that work after a command buffer's fault may have written ([`Arrived::discard`]): Metal would
+    /// not have run that work, and the contents from before it are kept nowhere, so its next use fails.
+    poisoned: bool,
 }
 
 /// A Metal buffer: the payload of a buffer handle in the executor's object table.
@@ -143,6 +149,8 @@ impl<A: Api> Buffer<A> {
 /// Readback copies encoded into a command encoder, at one queue position.
 pub struct Readbacks<A: Api> {
     entries: Vec<Entry<A>>,
+    /// The private buffers the work before this position may have written (by the rule that picks the readbacks).
+    private: Vec<Rc<Buffer<A>>>,
     turn: Turn,
 }
 
@@ -156,6 +164,7 @@ struct Entry<A: Api> {
 /// Readback data, mapped and copied out, to merge into the guest: its turn has come.
 pub struct Arrived<A: Api> {
     entries: Vec<(Entry<A>, Vec<u8>)>,
+    private: Vec<Rc<Buffer<A>>>,
     turn: Turn,
 }
 
@@ -358,6 +367,7 @@ impl<A: Api> Memory<A> {
                 shadow,
                 purgeable: Purgeable::NonVolatile,
                 writes: Writes::Unknown,
+                poisoned: false,
                 discard_when_idle: false,
                 zero_gpu: false,
                 generation: 0,
@@ -515,14 +525,31 @@ impl<A: Api> Memory<A> {
         Ok(b)
     }
 
-    /// Send the guest's changes to the GPU copy, ahead of the GPU work submitted next.
+    /// Send the guest's changes to the GPU copy, ahead of the GPU work submitted next. A poisoned buffer
+    /// ([`Arrived::discard`]) fails.
     pub fn upload_buffer(&self, g: &impl Calls<A>, e: &dyn Embedder, b: &Buffer<A>) -> Result<(), MemError> {
+        if b.state.borrow().poisoned {
+            return Err(MemError::unimplemented(format!(
+                "{}: a private buffer that GPU work after an earlier command buffer's fault may have written, which \
+                 Metal would not have run: its contents from before that work are not kept, so they are not \
+                 reproduced",
+                b.label
+            )));
+        }
         if b.state.borrow().zero_gpu {
             self.clear_gpu(g, b)?;
             b.state.borrow_mut().zero_gpu = false;
         }
         let Backing::Guest { task, addr } = b.backing else { return Ok(()) };
-        let chunks = changed_guest_chunks(e, task, addr, b.length)?;
+        let mut chunks = changed_guest_chunks(e, task, addr, b.length)?;
+        // The runs whose GPU copy dropped work may have written go from the guest's bytes whether they changed or not.
+        let stale: Vec<Run> =
+            b.state.borrow().shadow.as_ref().expect("guest-backed buffers have a shadow").stale().collect();
+        for r in stale {
+            let mut bytes = vec![0u8; (r.end - r.start) as usize];
+            e.read_guest(task, addr + r.start, &mut bytes)?;
+            chunks.push((r.start, bytes));
+        }
         let views: Vec<(u64, &[u8])> = chunks.iter().map(|(o, v)| (*o, v.as_slice())).collect();
         let mut st = b.state.borrow_mut();
         let plan = st.shadow.as_ref().expect("guest-backed buffers have a shadow").plan_upload(&views);
@@ -533,9 +560,6 @@ impl<A: Api> Memory<A> {
     pub fn note_buffer_write(&self, b: &Buffer<A>, range: Option<(u64, u64)>) {
         let mut st = b.state.borrow_mut();
         st.generation += 1;
-        if b.backing == Backing::Private {
-            return;
-        }
         let (lo, hi) = range.unwrap_or((0, b.length));
         let (lo, hi) = (lo.min(b.length), hi.min(b.length));
         let hull = match st.writes {
@@ -568,7 +592,7 @@ impl<A: Api> Memory<A> {
             return None;
         }
         let shadow = st.shadow.as_ref()?;
-        if shadow.pending().next().is_some() {
+        if shadow.pending().next().is_some() || shadow.stale().next().is_some() {
             return None;
         }
         shadow.bytes().get(range.start as usize..range.end as usize).map(<[u8]>::to_vec)
@@ -586,18 +610,21 @@ impl<A: Api> Memory<A> {
         let turn = self.readback_turn();
         let seq = turn.seq();
         let mut entries = Vec::new();
+        let mut private = Vec::new();
         for b in buffers {
             let window = {
                 let mut st = b.state.borrow_mut();
-                if b.backing == Backing::Private {
-                    continue;
-                }
                 match std::mem::replace(&mut st.writes, Writes::Unknown) {
                     Writes::Unknown => Some((0, b.length)),
                     Writes::Known(h) => h,
                 }
             };
             let Some((lo, hi)) = window else { continue };
+            if b.backing == Backing::Private {
+                // No CPU copy to read back; the buffer is remembered in case the work is dropped.
+                private.push(b.clone());
+                continue;
+            }
             let (offset, end) = (lo & !3, hi.next_multiple_of(4));
             let size = end - offset;
             let staging = self.staging.take(g, size)?;
@@ -609,7 +636,7 @@ impl<A: Api> Memory<A> {
             b.state.borrow_mut().shadow.as_mut().expect("guest-backed buffers have a shadow").begin_readback(seq);
             entries.push(Entry { buffer: b.clone(), staging, offset, size });
         }
-        Ok(Readbacks { entries, turn })
+        Ok(Readbacks { entries, private, turn })
     }
 
     /// `setPurgeableState:` of a buffer that is not in a heap (a heap buffer reflects its heap: see
@@ -652,7 +679,10 @@ impl<A: Api> Memory<A> {
         let cb = g.call("GPUCommandEncoder.finish", &b.label, |_| encoder.finish(&CommandBufferDescriptor::new()));
         g.call("GPUQueue.submit", &b.label, |_| g.queue().submit(&[&cb]));
         self.next_seq();
-        b.state.borrow_mut().generation += 1;
+        let mut st = b.state.borrow_mut();
+        st.generation += 1;
+        // Zeros are defined contents again.
+        st.poisoned = false;
         Ok(())
     }
 }
@@ -673,6 +703,11 @@ impl<A: Api> Readbacks<A> {
         self.entries.is_empty()
     }
 
+    /// The private buffers the work before the copies may have written.
+    pub fn private(&self) -> &[Rc<Buffer<A>>] {
+        &self.private
+    }
+
     /// The queue position of the copies.
     pub fn seq(&self) -> u64 {
         self.turn.seq()
@@ -683,7 +718,7 @@ impl<A: Api> Readbacks<A> {
     /// error.
     pub fn wait(self) -> GpuFuture<Result<Arrived<A>, MemError>> {
         Box::pin(async move {
-            let Readbacks { entries, turn } = self;
+            let Readbacks { entries, private, turn } = self;
             let mut out = Vec::with_capacity(entries.len());
             for entry in entries {
                 let size = size64(entry.size, "mapAsync")?;
@@ -702,7 +737,7 @@ impl<A: Api> Readbacks<A> {
                 out.push((entry, data));
             }
             turn.ready().await;
-            Ok(Arrived { entries: out, turn })
+            Ok(Arrived { entries: out, private, turn })
         })
     }
 }
@@ -718,7 +753,7 @@ impl<A: Api> Arrived<A> {
     /// readback's turn: later readbacks merge once it is dropped, so a caller that writes other bytes the same queue
     /// position read back holds it until those are written too.
     pub fn merge(self, mem: &Memory<A>, e: &dyn Embedder) -> Result<Turn, MemError> {
-        let Arrived { entries, turn } = self;
+        let Arrived { entries, turn, .. } = self;
         let seq = turn.seq();
         let mut first_error = None;
         for (entry, data) in entries {
@@ -731,6 +766,18 @@ impl<A: Api> Arrived<A> {
                 (writes, st.discard_when_idle && idle)
             };
             mem.staging.give_back(entry.staging);
+            let writes = match writes {
+                Ok(w) => w,
+                Err(r) => {
+                    first_error.get_or_insert(MemError::unimplemented(format!(
+                        "{}: bytes {}..{} were read back after GPU work that ran on what an earlier command buffer's \
+                         work after its fault left there, which Metal would not have run; that work's results are \
+                         not reproduced",
+                        b.label, r.start, r.end
+                    )));
+                    Vec::new()
+                }
+            };
             if let Backing::Guest { task, addr } = b.backing {
                 for w in &writes {
                     if let Err(err) = e.write_guest_changed(task, addr + w.offset, &w.new, &w.old) {
@@ -738,6 +785,38 @@ impl<A: Api> Arrived<A> {
                     }
                 }
             }
+            if discard {
+                b.state.borrow_mut().zero_gpu = true;
+                if let Err(err) = zero_cpu(e, b) {
+                    first_error.get_or_insert(err);
+                }
+            }
+        }
+        first_error.map_or(Ok(turn), Err)
+    }
+
+    /// Drop the readback: the work it read back is not kept (its command buffer faulted before it). The GPU copy of
+    /// every byte the work could have written, the readback's window, is written from the guest's bytes before its
+    /// next use, and no later readback that ran on it is merged until then. A private buffer the work could have
+    /// written has no such bytes: it is poisoned, and its next use fails. Makes no WebGPU call. Returns the turn, as
+    /// [`Arrived::merge`] does.
+    pub fn discard(self, mem: &Memory<A>, e: &dyn Embedder) -> Result<Turn, MemError> {
+        let Arrived { entries, private, turn } = self;
+        for b in private {
+            b.state.borrow_mut().poisoned = true;
+        }
+        let seq = turn.seq();
+        let mut first_error = None;
+        for (entry, _) in entries {
+            let b = &entry.buffer;
+            let discard = {
+                let mut st = b.state.borrow_mut();
+                let shadow = st.shadow.as_mut().expect("readbacks are of guest-backed buffers");
+                shadow.abandon_readback(seq, entry.offset, entry.size);
+                let idle = shadow.pending().next().is_none();
+                st.discard_when_idle && idle
+            };
+            mem.staging.give_back(entry.staging);
             if discard {
                 b.state.borrow_mut().zero_gpu = true;
                 if let Err(err) = zero_cpu(e, b) {

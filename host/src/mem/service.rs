@@ -40,7 +40,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 use crate::embed::{Embedder, TaskId};
-use crate::exec::{Coherence, CommitInfo, ControlService, EncodeCx, Entry, Served, ServiceCx, Table};
+use crate::exec::{Coherence, CommitInfo, ControlService, EncodeCx, Entry, Gate, Served, ServiceCx, Table, Verdict};
 use crate::format::handling::{self, Resolution, Upload};
 use crate::format::webgpu::{HostFeatures, WebGpuFormat};
 use crate::gpu::{Api, GpuFuture};
@@ -670,6 +670,9 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for Control<A, E> {
     }
 }
 
+/// What a command buffer's use of a resource is called in failures.
+const USE: &str = "a command buffer's use";
+
 struct Coherent<A: Api, E: Embedder> {
     memory: Rc<Memory<A>>,
     embedder: Rc<E>,
@@ -688,14 +691,18 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
             if let Some(b) = payload::<Buffer<A>>(objects, h) {
                 mem.upload_buffer(g, e, &b).map_err(|e| e.failure())?;
             } else if let Some(t) = payload::<Texture<A>>(objects, h) {
+                t.check_usable(USE).map_err(|e| e.failure())?;
                 if t.surface.is_some() {
                     mem.prepare_surface_texture(g, e, &t).map_err(|e| e.failure())?;
                 }
                 if t.guest.is_some() {
                     mem.prepare_guest_texture(g, e, &t).map_err(|e| e.failure())?;
                 }
-            } else if let Some(v) = payload::<TextureView<A>>(objects, h).filter(|v| v.root.guest.is_some()) {
-                mem.prepare_guest_texture(g, e, &v.root).map_err(|e| e.failure())?;
+            } else if let Some(v) = payload::<TextureView<A>>(objects, h) {
+                v.root.check_usable(USE).map_err(|e| e.failure())?;
+                if v.root.guest.is_some() {
+                    mem.prepare_guest_texture(g, e, &v.root).map_err(|e| e.failure())?;
+                }
             } else if let Some(lt) = payload::<LinearTexture<A>>(objects, h) {
                 mem.upload_buffer(g, e, &lt.buffer).map_err(|e| e.failure())?;
                 linear.push(lt);
@@ -721,6 +728,7 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         &mut self,
         cx: &mut EncodeCx<'_, A, E>,
         info: &CommitInfo,
+        gate: Gate,
     ) -> Result<Option<GpuFuture<Result<(), Failure>>>, Failure> {
         let mem = self.memory.clone();
         let encoder = cx.encoder().clone();
@@ -742,7 +750,13 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
                 textures.push(t);
             }
         }
+        // The textures without CPU-visible backing the work since the last write-back may have written: poisoned if
+        // that work is dropped.
+        let mut gpu_only: Vec<Rc<Texture<A>>> = Vec::new();
         for t in &textures {
+            if t.take_gpu_written() && t.surface.is_none() && t.guest.is_none() {
+                gpu_only.push(t.clone());
+            }
             if t.surface.is_some() {
                 surfaces.extend(mem.read_back_surface_texture(g, &encoder, t).map_err(|e| e.failure())?);
             }
@@ -775,29 +789,77 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
             }
         }
         let readbacks: Readbacks<A> = mem.encode_readbacks(g, &encoder, &unique).map_err(|e| e.failure())?;
-        if readbacks.is_empty() && surfaces.is_empty() && guests.is_empty() && decodes.is_empty() && words.is_empty() {
+        if readbacks.is_empty()
+            && readbacks.private().is_empty()
+            && gpu_only.is_empty()
+            && surfaces.is_empty()
+            && guests.is_empty()
+            && decodes.is_empty()
+            && words.is_empty()
+        {
             return Ok(None);
         }
         let (embedder, decoded) = (self.embedder.clone(), self.decoded.clone());
         Ok(Some(Box::pin(async move {
             // The buffers' readback resolves once every write-back encoded earlier has merged; its turn is held until
             // this write-back's other readbacks are merged too, so write-backs reach guest memory in queue order.
-            let arrived = readbacks.wait().await.map_err(|e| e.failure())?;
-            let _turn = arrived.merge(&mem, embedder.as_ref()).map_err(|e| e.failure())?;
+            let fail = |e: MemError| e.failure();
+            let arrived = readbacks.wait().await.map_err(fail)?;
+            let seq = arrived.seq();
+            let mut surfaced = Vec::with_capacity(surfaces.len());
             for s in surfaces {
-                let a = s.wait().await.map_err(|e| e.failure())?;
-                a.merge(&mem, embedder.as_ref()).map_err(|e| e.failure())?;
+                surfaced.push(s.wait().await.map_err(fail)?);
             }
+            let mut guested = Vec::with_capacity(guests.len());
             for r in guests {
-                let a = r.wait(mem.clone()).await.map_err(|e| e.failure())?;
-                a.merge(embedder.as_ref()).map_err(|e| e.failure())?;
+                guested.push(r.wait(mem.clone()).await.map_err(fail)?);
             }
+            let mut blocks = Vec::with_capacity(decodes.len());
             for (t, read) in decodes {
-                let blocks = read.wait().await.map_err(|e| e.failure())?;
-                decoded.borrow_mut().push((t, blocks));
+                blocks.push((t, read.wait().await.map_err(fail)?));
             }
+            let mut kept = Vec::with_capacity(words.len());
             for r in words {
-                r.wait().await.map_err(|e| e.failure())?.keep(&mem);
+                kept.push(r.wait().await.map_err(fail)?);
+            }
+            let e = embedder.as_ref();
+            match gate.verdict().await {
+                Verdict::Merge => {
+                    let _turn = arrived.merge(&mem, e).map_err(fail)?;
+                    for a in surfaced {
+                        a.merge(&mem, e, seq).map_err(fail)?;
+                    }
+                    for a in guested {
+                        a.merge(e, seq).map_err(fail)?;
+                    }
+                    decoded.borrow_mut().extend(blocks);
+                    for w in kept {
+                        w.keep(&mem);
+                    }
+                }
+                Verdict::Drop => {
+                    // The work this write-back reads back followed the command buffer's first fault: none of its
+                    // writes reach guest memory, and the GPU copies it could have written are made again from guest
+                    // memory before their next use. What has no CPU-visible backing (private buffers, the other
+                    // textures, and with them a decoded texture's blocks and a PVRTC subresource's words) keeps no
+                    // copy of its contents from before that work: it is poisoned, and its next use fails.
+                    let _turn = arrived.discard(&mem, e).map_err(fail)?;
+                    for t in gpu_only {
+                        t.poison();
+                    }
+                    for a in surfaced {
+                        a.discard(&mem, seq);
+                    }
+                    for a in guested {
+                        a.discard(seq);
+                    }
+                    for (_, b) in blocks {
+                        b.release(&mem);
+                    }
+                    for w in kept {
+                        w.discard(&mem);
+                    }
+                }
             }
             Ok(())
         })))

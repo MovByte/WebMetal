@@ -175,7 +175,8 @@ impl<A: Api> Memory<A> {
         if held == p.version() {
             return Ok(());
         }
-        let (first, last) = if held != u64::MAX && held + 1 == p.version() { p.changed.get() } else { (0, u32::MAX) };
+        let whole = !(held != u64::MAX && held + 1 == p.version());
+        let (first, last) = if whole { (0, u32::MAX) } else { p.changed.get() };
         let (first, last) = (first.min(t.geometry.height), last.min(t.geometry.height));
         if first < last {
             let l = self.surface_rows(t, first, last)?;
@@ -187,6 +188,9 @@ impl<A: Api> Memory<A> {
             self.upload_region(g, CALL, t, &l, (0, 0), &tight)?;
         }
         t.set_surface_state(p.version(), written);
+        if whole {
+            t.clear_dropped();
+        }
         Ok(())
     }
 
@@ -225,9 +229,26 @@ impl<A: Api> SurfaceReadback<A> {
 }
 
 impl<A: Api> SurfaceArrived<A> {
-    /// Write the rows that differ from the plane's shadow into the surface and tell the kernel the GPU wrote it.
-    pub fn merge(self, mem: &Memory<A>, e: &dyn Embedder) -> Result<(), MemError> {
+    /// The work that wrote the texture was dropped (its command buffer faulted before the write-back at queue
+    /// position `seq`): nothing reaches the surface, and the texture is written whole from the plane before its next
+    /// use.
+    pub fn discard(self, mem: &Memory<A>, seq: u64) {
+        self.bytes.release(mem);
+        self.texture.set_surface_state(u64::MAX, false);
+        self.texture.note_dropped(seq);
+    }
+
+    /// Write the rows that differ from the plane's shadow into the surface and tell the kernel the GPU wrote it. The
+    /// write-back is at queue position `seq`.
+    pub fn merge(self, mem: &Memory<A>, e: &dyn Embedder, seq: u64) -> Result<(), MemError> {
         let t = self.texture;
+        if t.read_after_drop(seq) {
+            self.bytes.release(mem);
+            return Err(MemError::unimplemented(
+                "an IOSurface texture was read back after GPU work that ran on what an earlier command buffer's work \
+                 after its fault left in it, which Metal would not have run; that work's results are not reproduced",
+            ));
+        }
         let p = t.surface.as_ref().expect("an IOSurface texture").clone();
         let tight = self.bytes.release(mem);
         let bpr = p.geometry.bytes_per_row as usize;

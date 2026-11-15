@@ -183,6 +183,8 @@ struct TestBuffer {
     size: u64,
     contents: u64,
     shadow: RefCell<Vec<u8>>,
+    /// The GPU copy may hold writes of work after a fault: the next commit writes the guest's bytes whole.
+    stale: Cell<bool>,
 }
 
 /// Allocate a texture no GPU can hold (`maxTextureDimension2D`² texels of 16 bytes in `maxTextureArrayLayers`
@@ -233,7 +235,14 @@ impl ControlService<Native, TestEmbedder> for Memory {
         } else {
             Vec::new()
         };
-        let b = TestBuffer { gpu, length: r.length, size, contents: r.contents.0, shadow: RefCell::new(shadow) };
+        let b = TestBuffer {
+            gpu,
+            length: r.length,
+            size,
+            contents: r.contents.0,
+            shadow: RefCell::new(shadow),
+            stale: Cell::new(false),
+        };
         cx.attach(Rc::new(b));
         Served::Ready(Reply::CreateBuffer(Ok(CreateBufferReply {})))
     }
@@ -281,7 +290,7 @@ impl Coherence<Native, TestEmbedder> for Coherent {
             }
             let mut guest = vec![0; b.length as usize];
             self.embedder.read_guest(cx.task(), b.contents, &mut guest).map_err(|e| failure::invalid(e.to_string()))?;
-            if guest != *b.shadow.borrow() {
+            if b.stale.replace(false) || guest != *b.shadow.borrow() {
                 let mut padded = guest.clone();
                 padded.resize(b.size as usize, 0);
                 cx.gpu()
@@ -305,6 +314,7 @@ impl Coherence<Native, TestEmbedder> for Coherent {
         &mut self,
         cx: &mut EncodeCx<'_, Native, TestEmbedder>,
         info: &CommitInfo,
+        gate: Gate,
     ) -> Result<Option<GpuFuture<Result<(), Failure>>>, Failure> {
         let mut reads = Vec::new();
         for (_, p) in buffers(cx.objects(), &info.resources) {
@@ -348,6 +358,12 @@ impl Coherence<Native, TestEmbedder> for Coherent {
                 if ticket.open.borrow().first() == Some(&ticket.n) { Poll::Ready(()) } else { Poll::Pending }
             })
             .await;
+            if gate.verdict().await == Verdict::Drop {
+                for (p, _) in arrived {
+                    p.downcast_ref::<TestBuffer>().unwrap().stale.set(true);
+                }
+                return Ok(());
+            }
             for (p, new) in arrived {
                 let b = p.downcast_ref::<TestBuffer>().unwrap();
                 let mut shadow = b.shadow.borrow_mut();

@@ -240,6 +240,9 @@ impl<A: Api> Memory<A> {
         *m.shadow.borrow_mut() = bytes;
         m.loaded.set(true);
         t.set_surface_state(state.0, state.1);
+        if !loaded {
+            t.clear_dropped();
+        }
         Ok(())
     }
 
@@ -503,9 +506,25 @@ impl<A: Api> GuestReadback<A> {
 }
 
 impl<A: Api> GuestArrived<A> {
+    /// The work that wrote the texture was dropped (its command buffer faulted before the write-back at queue
+    /// position `seq`): nothing reaches the memory, and every subresource is written from it before the texture's
+    /// next use.
+    pub fn discard(self, seq: u64) {
+        let m = self.texture.guest.as_ref().expect("a texture over caller memory");
+        m.loaded.set(false);
+        self.texture.note_dropped(seq);
+    }
+
     /// Put the subresources into the driver's layout over the bytes last seen and write the bytes that changed into
-    /// the memory.
-    pub fn merge(self, e: &dyn Embedder) -> Result<(), MemError> {
+    /// the memory. The write-back is at queue position `seq`.
+    pub fn merge(self, e: &dyn Embedder, seq: u64) -> Result<(), MemError> {
+        if self.texture.read_after_drop(seq) {
+            return Err(MemError::unimplemented(
+                "a texture over caller memory was read back after GPU work that ran on what an earlier command \
+                 buffer's work after its fault left in it, which Metal would not have run; that work's results are \
+                 not reproduced",
+            ));
+        }
         let m = self.texture.guest.as_ref().expect("a texture over caller memory").clone();
         let mut shadow = m.shadow.borrow_mut();
         let mut new = shadow.clone();
