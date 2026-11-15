@@ -382,12 +382,14 @@ static void writeWord(AGXA10FamilyIndirectArgumentEncoder *encoder, uint64_t wor
 // -[AGXA10FamilyDevice newIndirectArgumentBufferLayoutWithStructType:] (AGXMetalA10 0x21c8db140). Metal.framework
 // passes the struct type of the argument buffer: from the argument descriptors (newArgumentEncoderWithArguments:), from
 // a reflected binding, or from the function's reflection, which it asks the device's compiler for (-[_MTLFunction
-// reflectionWithOptions:binaryArchives:], Metal 0x187a9fbbc); the plugin has no compiler, so that path brings no type.
+// reflectionWithOptions:binaryArchives:], Metal 0x187a9fbbc; WebMetalCompiler.mm). A buffer argument without a struct
+// type reaches here with nil (-[_MTLFunction newArgumentEncoderWithBufferIndex:reflection:functionReflection:],
+// Metal 0x187ac1d88, passes its bufferStructType unchecked); what the driver makes of nil is not established.
 - (id)newIndirectArgumentBufferLayoutWithStructType:(MTLStructType *)structType
 {
     if (!structType)
-        WMLoudMethod(self, _cmd, "no struct type: a function's reflection, which Metal.framework asks the device's "
-                                 "compiler for, has no WebMetal source");
+        WMLoudMethod(self, _cmd, "no struct type: the argument is not an argument buffer, and the A10X driver's layout "
+                                 "for a nil struct type is not established");
     return [[AGXA10FamilyIndirectArgumentBufferLayout alloc] initWithStructType:structType];
 }
 

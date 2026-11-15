@@ -10,16 +10,30 @@
 // compilerFlags & 0x80) and runs in MTLCompilerService itself.
 //
 // WebMetal has no back end in the guest: the host compiles AIR. The device's compiler object answers the flags the
-// A10X's compiler has, so that specialization requests are the A10X's, and every other MTLCompiler method of 21H461 is a
-// LOUD stub, so that a framework path that needs the back end reports instead of receiving nothing.
+// A10X's compiler has, so that specialization requests are the A10X's, and function reflection, whose reply the host
+// writes as MTLCompilerService writes it (ReflectFunction). Every other MTLCompiler method of 21H461 is a LOUD stub, so
+// that a framework path that needs the back end reports instead of receiving nothing.
 
 #import "WebMetalShaders.h"
 
+#import <objc/message.h>
 #import <objc/runtime.h>
 
-@interface WebMetalCompiler : NSObject
+#include <mach-o/dyld.h>
+
+#include <cstring>
+
+@interface WebMetalCompiler : NSObject {
+@public
+    __weak AGXA10FamilyDevice *_device;
+}
 - (uint64_t)compilerFlags;
 @end
+
+// The completion handler of MTLCompiler's reflection requests: the compiler's status (0 when the request succeeded), the
+// reply's reflection data and the compiler's message (the block signature v32@?0Q8@"NSObject<OS_dispatch_data>"16@"NSString"24
+// of -[_MTLFunction reflectionWithOptions:binaryArchives:]'s handler, Metal 0x187c0e3fa).
+typedef void (^WebMetalReflectionHandler)(NSUInteger status, dispatch_data_t reflection, NSString *message);
 
 // Metal.framework's MTLTargetDeviceArchitecture setters (21H461: setCpuType: v20@0:8I16, setSubType: v20@0:8I16,
 // setDriverVersion: v24@0:8Q16, setVersion: v20@0:8{MTLTargetDeviceArchVersion=SCC}16).
@@ -39,7 +53,8 @@ struct WebMetalTargetDeviceArchVersion {
 namespace {
 
 // The instance methods of Metal.framework's MTLCompiler on 21H461 (its method list in the dyld shared cache), with their
-// type encodings, other than its initializer, its C++ constructor and destructor, -dealloc and -compilerFlags.
+// type encodings, other than its initializer, its C++ constructor and destructor, -dealloc, -compilerFlags and the
+// reflection requests WebMetalCompiler implements.
 struct CompilerSelector {
     const char *name;
     const char *types;
@@ -108,11 +123,6 @@ const CompilerSelector kCompilerSelectors[] = {
     {"pipelineCacheStats", "{?=II}16@0:8"},
     {"pipelineStateWithVariant:descriptor:options:computeProgram:kernelDriverCompileTimeData:serializedComputeDataDescriptor:compileTimeStatistics:reflection:error:completionHandler:", "@96@0:8^{VariantEntry=*QQQ@@Q@@}16@24Q32^v40@48@56@64^@72^@80@?88"},
     {"pluginPath", "@16@0:8"},
-    {"reflectionWithFunction:options:completionHandler:", "v40@0:8@16Q24@?32"},
-    {"reflectionWithFunction:options:sync:binaryArchives:completionHandler:", "v52@0:8@16Q24B32@36@?44"},
-    {"reflectionWithFunction:options:sync:completionHandler:", "v44@0:8@16Q24B32@?36"},
-    {"reflectionWithFunction:options:sync:pipelineLibrary:binaryArchives:completionHandler:", "v60@0:8@16Q24B32@36@44@?52"},
-    {"reflectionWithFunction:options:sync:pipelineLibrary:completionHandler:", "v52@0:8@16Q24B32@36@?44"},
     {"releaseCompilerOutputBlocks:", "v24@0:8^v16"},
     {"releaseCompilerOutputBlocks:hashMap:", "v32@0:8^v16^v24"},
     {"releaseHashMaps:", "v24@0:8^v16"},
@@ -134,6 +144,47 @@ void installStubs()
                 WMReport("WebMetalCompiler", (std::string("refused: a stub for -") + s.name + " cannot be added").c_str());
         }
     });
+}
+
+}  // namespace
+
+namespace {
+
+// -[_MTLFunctionInternal functionData] on 21H461: the function's MTLFunctionData (its AIR version at +0x28 and +0x2a,
+// its language version at +0x2c and +0x2e).
+constexpr char kFunctionDataTypes[] = "r^{MTLFunctionData=QQQQQSSSS{?=[32C]}C@Cb2b6@{?=[32C]}@}16@0:8";
+
+// -[MTLCompiler validateLanguageAndAIRVersionForFunction:completionHandler:] (Metal 0x187a9b72c), which the
+// reflection request runs first (compileFunctionRequestInternal:..., 0x187a97f24): nil when the function's versions are
+// ones 21H461 compiles, else the message the compiler's handler receives with status 2. Language versions 1.0-1.2,
+// 2.0-2.6, 3.0 and 3.1 are accepted (the table at 0x187bfb606 accepts every 2.x up to 2.6); AIR versions 1.6, 1.8-1.11
+// and 2.0-2.6. A bad AIR version is reported as such when the language version is accepted.
+NSString *versionProblem(id self, SEL _cmd, id<MTLFunction> function)
+{
+    SEL selector = sel_registerName("functionData");
+    Method method = class_getInstanceMethod(object_getClass(function), selector);
+    if (!method || strcmp(method_getTypeEncoding(method), kFunctionDataTypes) != 0)
+        WMLoudMethod(self, _cmd, "the function has no 21H461 -functionData, whose versions the compiler checks");
+    using FunctionData = const uint8_t *(*)(id, SEL);
+    const uint8_t *data = ((FunctionData)objc_msgSend)(function, selector);
+    auto half = [data](size_t at) {
+        uint16_t v;
+        memcpy(&v, data + at, sizeof v);
+        return static_cast<uint32_t>(v);
+    };
+    const uint32_t air = half(0x28) << 16 | half(0x2a);
+    const uint32_t language = half(0x2c) << 16 | half(0x2e);
+    const bool languageOk = (language >= 0x20000 && language - 0x20000 <= 6) || language == 0x30000 ||
+                            language == 0x30001 || (language < 0x20000 && language - 0x10000 < 3);
+    const bool airOk = air - 0x20000 < 7 || (air - 0x10006 <= 5 && air - 0x10006 != 1);
+    if (languageOk && airOk)
+        return nil;
+    if (languageOk)
+        return [NSString stringWithFormat:@"Function %@ has a deployment target (0x%08X) which is incompatible with "
+                                          @"this OS (0x%08X).",
+                                          function.name, air, 0x20006u];
+    return [NSString stringWithFormat:@"Function %@ is using language version %u.%u which is incompatible with this OS.",
+                                      function.name, half(0x2c), half(0x2e)];
 }
 
 }  // namespace
@@ -164,6 +215,109 @@ void SetShaderDebugInfoCaching(AGXA10FamilyDevice *device, bool caching)
 - (uint64_t)compilerFlags
 {
     return 0x21c;
+}
+
+// -[MTLCompiler reflectionWithFunction:options:completionHandler:] (Metal 0x187b90194): not synchronous.
+- (void)reflectionWithFunction:(id<MTLFunction>)function
+                       options:(uint64_t)options
+             completionHandler:(WebMetalReflectionHandler)handler
+{
+    [self reflectionWithFunction:function options:options sync:NO completionHandler:handler];
+}
+
+// -[MTLCompiler reflectionWithFunction:options:sync:completionHandler:] (Metal 0x187ac881c): no pipeline library.
+- (void)reflectionWithFunction:(id<MTLFunction>)function
+                       options:(uint64_t)options
+                          sync:(BOOL)sync
+             completionHandler:(WebMetalReflectionHandler)handler
+{
+    [self reflectionWithFunction:function options:options sync:sync pipelineLibrary:nil completionHandler:handler];
+}
+
+// -[MTLCompiler reflectionWithFunction:options:sync:pipelineLibrary:completionHandler:] (Metal 0x187ac8810): no binary
+// archives.
+- (void)reflectionWithFunction:(id<MTLFunction>)function
+                       options:(uint64_t)options
+                          sync:(BOOL)sync
+               pipelineLibrary:(id)pipelineLibrary
+             completionHandler:(WebMetalReflectionHandler)handler
+{
+    [self reflectionWithFunction:function
+                         options:options
+                            sync:sync
+                 pipelineLibrary:pipelineLibrary
+                  binaryArchives:nil
+               completionHandler:handler];
+}
+
+// -[MTLCompiler reflectionWithFunction:options:sync:binaryArchives:completionHandler:] (Metal 0x187a9ff5c): no pipeline
+// library.
+- (void)reflectionWithFunction:(id<MTLFunction>)function
+                       options:(uint64_t)options
+                          sync:(BOOL)sync
+                binaryArchives:(NSArray *)binaryArchives
+             completionHandler:(WebMetalReflectionHandler)handler
+{
+    [self reflectionWithFunction:function
+                         options:options
+                            sync:sync
+                 pipelineLibrary:nil
+                  binaryArchives:binaryArchives
+               completionHandler:handler];
+}
+
+// -[MTLCompiler reflectionWithFunction:options:sync:pipelineLibrary:binaryArchives:completionHandler:] (Metal
+// 0x187a9fcb0) sends a reflection-only request for the function to MTLCompilerService, after looking for the reply in
+// the binary archives and the pipeline library's cache. Its request's pipeline options are (options & 0x20200000) |
+// 0x10003, which never include MTLPipelineOptionFailOnBinaryArchiveMiss, so the archives and the cache only decide where
+// the reply comes from: what the handler receives is the service's reply, which the host writes (ReflectFunction,
+// host/src/pipeline/function_reflection.rs), with status 0 and no message. A synchronous request runs the handler
+// before it returns; an asynchronous one runs it on a queue, as the compiler's connection does.
+- (void)reflectionWithFunction:(id<MTLFunction>)function
+                       options:(uint64_t)options
+                          sync:(BOOL)sync
+               pipelineLibrary:(id)pipelineLibrary
+                binaryArchives:(NSArray *)binaryArchives
+             completionHandler:(WebMetalReflectionHandler)handler
+{
+    // The reply is the legacy reflection of MTLCompiler.framework 343.21, which Metal.framework 343.21 parses
+    // (-[MTLFunctionReflectionInternal initWithDevice:reflectionData:functionType:options:], Metal 0x187abe160). Another
+    // framework's reader expects another layout (this Mac's, for one, writes version 0x20001 with fields 343.21 has
+    // not) and aborts on a layout it does not expect, so the request is refused under any other framework.
+    if (NSVersionOfRunTimeLibrary("Metal") != (343 << 16 | 21 << 8))
+        WMLoudMethod(self, _cmd, "the running Metal.framework is not 343.21 (21H461), whose reflection reader the host "
+                                 "writes for");
+    if (!function)
+        WMLoudMethod(self, _cmd, "no function: the compiler service's reply to a request without one is not established");
+    if (NSString *problem = versionProblem(self, _cmd, function)) {
+        handler(2, nil, problem);
+        return;
+    }
+    AGXA10FamilyDevice *device = _device;
+    if (!device)
+        WMLoudMethod(self, _cmd, "the compiler's device is gone");
+    webmetal::Connection *connection = webmetal::DeviceConnection(device);
+    webmetal::wire::ReflectFunction request;
+    request.function = webmetal::FunctionHandle(device, self, _cmd, function);
+    webmetal::wire::Reply<webmetal::wire::ReflectFunctionReply> reply;
+    connection->Call(self, _cmd, request, &reply);
+    if (!reply.ok)
+        WMLoudMethod(self, _cmd, ("the host answered a reflection request with a failure Metal defines, which the "
+                                  "compiler service's reply does not carry: " + reply.failure.message).c_str());
+    dispatch_data_t data = dispatch_data_create(reply.value.reflection.data(), reply.value.reflection.size(), nullptr,
+                                                DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    if (sync) {
+        handler(0, data, nil);
+        return;
+    }
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("com.apple.WebMetal.reflection-completion", DISPATCH_QUEUE_SERIAL);
+    });
+    dispatch_async(queue, ^{
+        handler(0, data, nil);
+    });
 }
 
 @end
@@ -210,6 +364,7 @@ void SetShaderDebugInfoCaching(AGXA10FamilyDevice *device, bool caching)
         WebMetalCompiler *compiler = objc_getAssociatedObject(self, &kKey);
         if (!compiler) {
             compiler = [WebMetalCompiler new];
+            compiler->_device = self;
             objc_setAssociatedObject(self, &kKey, compiler, OBJC_ASSOCIATION_RETAIN);
         }
         return compiler;
