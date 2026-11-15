@@ -1100,3 +1100,79 @@ fn writes_after_a_fault_are_dropped() {
     assert_eq!(h.guest.cpu_read(copy_addr, LEN as usize), vec![0; LEN as usize]);
     h.g.assert_no_errors();
 }
+
+/// Work submitted before a fault was known. Command buffer B, committed right after a command buffer A whose first
+/// encoder faults, copies the shared buffer A's next encoder filled into a second shared buffer. Both are on the queue
+/// before A's fault is found; B's copy waits until A's work has settled and runs on the guest's bytes, which Metal would
+/// have left there, not on the fill that is dropped. Command buffer C, on another queue, uses nothing A could have
+/// written and does not wait.
+#[test]
+fn work_after_a_fault_waits_for_the_fault() {
+    let h = Harness::with_compute(Some(Box::new(Faulting)));
+    let q = h.queue();
+    const LEN: u64 = 256;
+    let (shared, shared_addr) = h.buffer(&[0x11u8; LEN as usize], 0);
+    let (copy, copy_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    // Made first: a request a service serves pumps the executor, and nothing may settle before the checks below.
+    let (other, other_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    let q2 = h.queue();
+    let mut faulting = vec![
+        Command::BeginCompute(BeginCompute { encoder: h.handle() }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+    ];
+    faulting.extend(blit(
+        h.handle(),
+        vec![Command::BlitFillBuffer(BlitFillBuffer {
+            buffer: Some(shared),
+            range: Range { location: 0, length: LEN },
+            value: 0xab,
+        })],
+    ));
+    let a = h.commit(q, &faulting, &[shared]);
+    let b = h.commit(
+        q,
+        &blit(
+            h.handle(),
+            vec![Command::BlitCopyBufferToBuffer(BlitCopyBufferToBuffer {
+                source_buffer: Some(shared),
+                source_offset: 0,
+                destination_buffer: Some(copy),
+                destination_offset: 0,
+                size: LEN,
+            })],
+        ),
+        &[shared, copy],
+    );
+    let unrelated = h.commit(
+        q2,
+        &blit(
+            h.handle(),
+            vec![Command::BlitFillBuffer(BlitFillBuffer {
+                buffer: Some(other),
+                range: Range { location: 0, length: LEN },
+                value: 0x5a,
+            })],
+        ),
+        &[other],
+    );
+    let scheduled = |cb: Handle| {
+        h.guest.posted.borrow().iter().any(|e| matches!(e, Event::CommandBufferScheduled(s) if s.command_buffer == cb))
+    };
+    // Before anything has settled.
+    let (copy_submitted, unrelated_submitted) = (scheduled(b), scheduled(unrelated));
+    h.g.block_on(h.exec.idle());
+    assert_eq!(completion(&h, unrelated).failure, failure::ok());
+    assert_eq!(h.guest.cpu_read(other_addr, LEN as usize), vec![0x5a; LEN as usize]);
+    let c = completion(&h, a);
+    assert_eq!(c.status, command_buffer_status::ERROR, "{c:?}");
+    assert_eq!(h.guest.cpu_read(shared_addr, LEN as usize), vec![0x11; LEN as usize], "the fill reached guest memory");
+    assert_eq!(
+        h.guest.cpu_read(copy_addr, LEN as usize),
+        vec![0x11; LEN as usize],
+        "the dropped fill reached the copy of a command buffer committed before the fault was known"
+    );
+    assert_eq!(completion(&h, b).failure, failure::ok());
+    assert!(!copy_submitted, "the copy was submitted before the fault it depends on was known");
+    assert!(unrelated_submitted, "work that depends on nothing unsettled waited");
+    h.g.assert_no_errors();
+}

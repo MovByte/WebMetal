@@ -395,6 +395,11 @@ impl<A: Api> Texture<A> {
         st.dropped_at.get_or_insert(seq);
     }
 
+    /// Whether a dropped write-back left the GPU copy to be written whole from its backing before its next use.
+    pub(crate) fn was_dropped(&self) -> bool {
+        self.state.borrow().dropped_at.is_some()
+    }
+
     /// The texture was written whole from its backing.
     pub(crate) fn clear_dropped(&self) {
         self.state.borrow_mut().dropped_at = None;

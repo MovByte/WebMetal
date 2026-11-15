@@ -310,6 +310,18 @@ impl Coherence<Native, TestEmbedder> for Coherent {
         Ok(())
     }
 
+    /// The stand-in admits every encoder at once: it stands in for the memory module in the core's ordering tests,
+    /// none of which uses what an earlier command buffer's dropped work could have written. The memory module's
+    /// admission is tested through the executor in `host/tests/mem_exec.rs`.
+    fn admit(
+        &mut self,
+        _: &mut EncodeCx<'_, Native, TestEmbedder>,
+        _: &CommitInfo,
+        _: &Segment,
+    ) -> Result<Admit, Failure> {
+        Ok(Admit::Ready)
+    }
+
     fn write_back(
         &mut self,
         cx: &mut EncodeCx<'_, Native, TestEmbedder>,

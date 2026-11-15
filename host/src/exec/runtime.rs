@@ -15,7 +15,7 @@ use webmetal_wire::{
 use super::failure::{self, GpuCause, NO_RECORD, command_buffer_status};
 use super::objects::{Entry, Owner, Table};
 use super::schema::{self, HandleUse, Kind, Role};
-use super::service::{CommitInfo, EncodeCx, Gate, Gpu, Recording, Served, ServiceCx, Services, Verdict};
+use super::service::{Admit, CommitInfo, EncodeCx, Gate, Gpu, Recording, Served, ServiceCx, Services, Verdict};
 use super::stream::{self, EncoderKind, Step};
 use super::{Config, Report};
 use crate::embed::{Embedder, SharedEventId, TaskId};
@@ -882,6 +882,38 @@ impl<A: Api, E: Embedder> Core<A, E> {
             let step = run.steps[run.cursor].clone();
             match step {
                 Step::Encoder(segment) => {
+                    // The encoder waits, with its queue, while earlier work whose writes may still be dropped could
+                    // have written a resource it uses (the coherence service's admission).
+                    if let Some(co) = self.services.coherence.as_mut() {
+                        let info = run.info.clone();
+                        let mut cx = EncodeCx {
+                            task: run.task,
+                            info: &info,
+                            gpu: gpu!(self),
+                            embedder: &*self.embedder,
+                            objects: &state.table,
+                            recording: &mut run.recording,
+                        };
+                        match co.admit(&mut cx, &info, &segment) {
+                            Ok(Admit::Ready) => {}
+                            Ok(Admit::Wait) => {
+                                // The work before the encoder runs now, as before a wait.
+                                if run.recording.submit(&gpu) {
+                                    run.gpu_start.get_or_insert(now);
+                                }
+                                if let Some(f) = settle(&self.scopes, &self.calls) {
+                                    add_job(&mut self.jobs, run, id, settled(f));
+                                }
+                                return progress;
+                            }
+                            Err(f) => {
+                                run.recording.discard();
+                                run.fail(f, NO_RECORD);
+                                run.cursor = run.steps.len();
+                                break;
+                            }
+                        }
+                    }
                     let service = match segment.kind {
                         EncoderKind::Render | EncoderKind::ParallelRender => self.services.render.as_mut(),
                         EncoderKind::Compute => self.services.compute.as_mut(),

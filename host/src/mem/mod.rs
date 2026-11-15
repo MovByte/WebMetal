@@ -15,7 +15,8 @@
 //! - [`linear`]: textures over a buffer's bytes; [`surface`]: textures over IOSurface planes and the plane table;
 //!   [`nocopy`]: textures over caller memory in the A10X driver's layout.
 //! - [`calls`]: how the module reaches WebGPU (through the executor's error scopes, or directly).
-//! - [`service`]: the module as the executor's control and coherence services, and the payloads it binds to handles.
+//! - [`service`]: the module as the executor's control and coherence services, and the payloads it binds to handles;
+//!   [`hold`]: holding an encoder until the earlier work whose dropped writes it could read has settled.
 //!
 //! Every failure is a [`MemError`] that names what failed; nothing here substitutes a result.
 
@@ -24,6 +25,7 @@ pub mod buffer;
 pub mod calls;
 pub mod error;
 pub mod heap;
+pub mod hold;
 pub mod layout;
 pub mod linear;
 pub mod memory;

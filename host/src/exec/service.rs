@@ -8,7 +8,8 @@
 //! - [`EncoderService`] (render `render/`, compute `compute/`, blit `blit/`): one encoder's records, recorded into the
 //!   command buffer's WebGPU command encoder.
 //! - [`Coherence`] (memory `mem/`): guest memory and the GPU copies of CPU-visible resources: uploads at commit,
-//!   write-back before a shared event is signalled and before completion.
+//!   admission of each encoder, write-back after each encoder, before a shared event is signalled and before
+//!   completion.
 //! - [`super::Executor::committed_work_done_where`] with [`super::writes`], and [`super::Executor::object`]
 //!   (presentation `present/`): waiting for the committed command buffers that can write a frame's source, and
 //!   reaching a task's texture outside a request.
@@ -293,6 +294,13 @@ pub trait Coherence<A: Api, E: Embedder> {
     /// it, without executing.
     fn commit(&mut self, cx: &mut ServiceCx<'_, A, E>, info: &CommitInfo) -> Result<(), Failure>;
 
+    /// The encoder `segment` is about to be recorded. [`Admit::Wait`] holds it, and the rest of its command buffer's
+    /// queue, until earlier work whose writes may still be dropped and that could have written a resource the
+    /// encoder uses has settled; the core asks again whenever a job finishes. [`Admit::Ready`] lets it run, once
+    /// every resource it uses that dropped work left stale is made again from guest memory (recording and submitting
+    /// on `cx` as needed). A failure stops the command buffer at the encoder.
+    fn admit(&mut self, cx: &mut EncodeCx<'_, A, E>, info: &CommitInfo, segment: &Segment) -> Result<Admit, Failure>;
+
     /// All of the command buffer's work up to this point has been recorded: record (on `cx`'s encoder) what brings the
     /// GPU's writes to CPU-visible resources back, and return the future that writes them to guest memory once the
     /// GPU has finished and `gate` has given its [`Verdict`]: [`Verdict::Merge`] writes them, [`Verdict::Drop`]
@@ -308,6 +316,14 @@ pub trait Coherence<A: Api, E: Embedder> {
 
     /// The task exited.
     fn task_exited(&mut self, task: TaskId);
+}
+
+/// Whether an encoder may be recorded now ([`Coherence::admit`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Admit {
+    Ready,
+    /// Earlier work it depends on has not settled.
+    Wait,
 }
 
 /// What becomes of the GPU's writes a write-back read ([`Coherence::write_back`]).
@@ -341,6 +357,11 @@ impl Gate {
                 Poll::Pending
             }
         })
+    }
+
+    /// The verdict, once the executor has given it.
+    pub fn decided(&self) -> Option<Verdict> {
+        self.0.verdict.get()
     }
 
     pub(crate) fn decide(&self, verdict: Verdict) {

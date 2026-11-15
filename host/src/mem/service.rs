@@ -40,12 +40,15 @@ use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 use crate::embed::{Embedder, TaskId};
-use crate::exec::{Coherence, CommitInfo, ControlService, EncodeCx, Entry, Gate, Served, ServiceCx, Table, Verdict};
+use crate::exec::schema::command_handles;
+use crate::exec::{
+    Admit, Coherence, CommitInfo, ControlService, EncodeCx, Entry, Gate, Segment, Served, ServiceCx, Table, Verdict,
+};
 use crate::format::handling::{self, Resolution, Upload};
 use crate::format::webgpu::{HostFeatures, WebGpuFormat};
 use crate::gpu::{Api, GpuFuture};
 use webmetal_wire::{
-    BufferDidModifyRangeReply, CountCounterSampleBufferReply, CreateBufferNoCopyReply, CreateBufferReply,
+    BufferDidModifyRangeReply, Command, CountCounterSampleBufferReply, CreateBufferNoCopyReply, CreateBufferReply,
     CreateBufferTextureReply, CreateBufferWithBytesReply, CreateHeapReply, CreateLinearTextureReply,
     CreateTextureNoCopyReply, CreateTextureReply, CreateTextureViewLevelsSlicesReply,
     CreateTextureViewLevelsSlicesResourceIndexReply, CreateTextureViewLevelsSlicesSwizzleReply,
@@ -61,6 +64,7 @@ use super::buffer::{Buffer, Readbacks};
 use super::calls::Calls;
 use super::error::MemError;
 use super::heap::Heap;
+use super::hold::{Holds, Named};
 use super::layout::RegionArgs;
 use super::linear::LinearTexture;
 use super::memory::Memory;
@@ -145,6 +149,8 @@ impl<A: Api, E: Embedder + 'static> MemoryServices<A, E> {
             memory: self.memory.clone(),
             embedder: self.embedder.clone(),
             decoded: self.decoded.clone(),
+            heaps: self.heaps.clone(),
+            holds: Holds::default(),
         })
     }
 }
@@ -677,6 +683,51 @@ struct Coherent<A: Api, E: Embedder> {
     memory: Rc<Memory<A>>,
     embedder: Rc<E>,
     decoded: Decoded<A>,
+    /// The resources of each heap: a heap an encoder makes resident stands for them.
+    heaps: HeapMembers<A>,
+    /// The write-backs whose dropped writes a later encoder could still read ([`super::hold`]).
+    holds: Holds<A>,
+}
+
+impl<A: Api, E: Embedder> Coherent<A, E> {
+    /// The resources the records `indices` of `records` name, with a view's root texture, a texture over a buffer's
+    /// buffer and texture, and the resources allocated from a heap as it holds them now.
+    fn named(&self, task: TaskId, objects: &Table, records: &[(usize, Command)], indices: &[usize]) -> Named<A> {
+        let mut n = Named::default();
+        for &i in indices {
+            command_handles(&records[i].1, &mut |u| {
+                let h = u.handle;
+                if let Some(b) = payload::<Buffer<A>>(objects, h) {
+                    n.buffer(b);
+                } else if let Some(t) = payload::<Texture<A>>(objects, h) {
+                    n.texture(t);
+                } else if let Some(v) = payload::<TextureView<A>>(objects, h) {
+                    n.texture(v.root.clone());
+                } else if let Some(lt) = payload::<LinearTexture<A>>(objects, h) {
+                    n.buffer(lt.buffer.clone());
+                    if let Some(t) = &lt.texture {
+                        n.texture(t.clone());
+                    }
+                } else if let Some(members) = self.heaps.borrow().get(&(task, h)) {
+                    for m in members {
+                        match m {
+                            Member::Buffer(b) => {
+                                if let Some(b) = b.upgrade() {
+                                    n.buffer(b);
+                                }
+                            }
+                            Member::Texture(t) => {
+                                if let Some(t) = t.upgrade() {
+                                    n.texture(t);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        n
+    }
 }
 
 impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
@@ -724,6 +775,38 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         Ok(())
     }
 
+    fn admit(&mut self, cx: &mut EncodeCx<'_, A, E>, info: &CommitInfo, segment: &Segment) -> Result<Admit, Failure> {
+        let uses = self.named(info.task, cx.objects(), cx.records(), &segment.records);
+        if self.holds.holds((info.task, info.command_buffer), &uses) {
+            return Ok(Admit::Wait);
+        }
+        // What dropped work left behind is made again from guest memory before the encoder's work; a poisoned
+        // resource fails here.
+        for t in &uses.textures {
+            t.check_usable(USE).map_err(|e| e.failure())?;
+        }
+        let stale_buffers: Vec<&Rc<Buffer<A>>> = uses.buffers.iter().filter(|b| b.dropped()).collect();
+        let stale_textures: Vec<&Rc<Texture<A>>> = uses.textures.iter().filter(|t| t.was_dropped()).collect();
+        if stale_buffers.is_empty() && stale_textures.is_empty() {
+            return Ok(Admit::Ready);
+        }
+        // The uploads land after everything the command buffer recorded so far.
+        cx.submit();
+        let (mem, g, e) = (&*self.memory, cx.gpu(), self.embedder.as_ref() as &dyn Embedder);
+        for b in stale_buffers {
+            mem.upload_buffer(g, e, b).map_err(|e| e.failure())?;
+        }
+        for t in stale_textures {
+            if t.surface.is_some() {
+                mem.prepare_surface_texture(g, e, t).map_err(|e| e.failure())?;
+            }
+            if t.guest.is_some() {
+                mem.prepare_guest_texture(g, e, t).map_err(|e| e.failure())?;
+            }
+        }
+        Ok(Admit::Ready)
+    }
+
     fn write_back(
         &mut self,
         cx: &mut EncodeCx<'_, A, E>,
@@ -753,9 +836,13 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         // The textures without CPU-visible backing the work since the last write-back may have written: poisoned if
         // that work is dropped.
         let mut gpu_only: Vec<Rc<Texture<A>>> = Vec::new();
+        // What the work could have written, for the encoders that use it later ([`super::hold`]).
+        let mut written: Named<A> = Named::default();
         for t in &textures {
+            let reads = (surfaces.len(), guests.len(), decodes.len(), words.len());
             if t.take_gpu_written() && t.surface.is_none() && t.guest.is_none() {
                 gpu_only.push(t.clone());
+                written.texture(t.clone());
             }
             if t.surface.is_some() {
                 surfaces.extend(mem.read_back_surface_texture(g, &encoder, t).map_err(|e| e.failure())?);
@@ -772,6 +859,9 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
                 }
             }
             words.extend(mem.read_back_pvrtc_words(g, &encoder, t).map_err(|e| e.failure())?);
+            if reads != (surfaces.len(), guests.len(), decodes.len(), words.len()) {
+                written.texture(t.clone());
+            }
         }
         for &h in &info.resources {
             if let Some(b) = payload::<Buffer<A>>(objects, h) {
@@ -799,8 +889,14 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
         {
             return Ok(None);
         }
+        for b in readbacks.written() {
+            written.buffer(b.clone());
+        }
+        let settles = self.holds.record((info.task, info.command_buffer), gate.clone(), &written);
         let (embedder, decoded) = (self.embedder.clone(), self.decoded.clone());
         Ok(Some(Box::pin(async move {
+            // The record settles when the future finishes or is dropped.
+            let _settles = settles;
             // The buffers' readback resolves once every write-back encoded earlier has merged; its turn is held until
             // this write-back's other readbacks are merged too, so write-backs reach guest memory in queue order.
             let fail = |e: MemError| e.failure();
@@ -866,6 +962,6 @@ impl<A: Api, E: Embedder + 'static> Coherence<A, E> for Coherent<A, E> {
     }
 
     fn task_exited(&mut self, task: TaskId) {
-        let _ = task;
+        self.holds.task_exited(task);
     }
 }

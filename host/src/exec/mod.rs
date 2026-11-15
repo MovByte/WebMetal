@@ -81,8 +81,8 @@ use runtime::{Core, Pending};
 pub use objects::{Entry, Owner, Table};
 pub use schema::Kind;
 pub use service::{
-    Coherence, CommitInfo, ControlService, DebugGroups, EncodeCx, EncoderService, Gate, Gpu, RecordFailure, Served,
-    ServiceCx, Services, Verdict,
+    Admit, Coherence, CommitInfo, ControlService, DebugGroups, EncodeCx, EncoderService, Gate, Gpu, RecordFailure,
+    Served, ServiceCx, Services, Verdict,
 };
 pub use stream::{EncoderKind, Segment};
 

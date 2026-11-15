@@ -135,6 +135,13 @@ impl<A: Api> Buffer<A> {
         self.state.borrow().purgeable
     }
 
+    /// Whether work the executor dropped may have left its GPU copy different from what Metal would hold
+    /// ([`Arrived::discard`]): it is poisoned, or bytes of it are written from the guest's before its next use.
+    pub(crate) fn dropped(&self) -> bool {
+        let st = self.state.borrow();
+        st.poisoned || st.shadow.as_ref().is_some_and(|s| s.stale().next().is_some())
+    }
+
     /// A counter that advances whenever the GPU copy may change (textures over the buffer compare it).
     pub fn generation(&self) -> u64 {
         self.state.borrow().generation
@@ -706,6 +713,11 @@ impl<A: Api> Readbacks<A> {
     /// The private buffers the work before the copies may have written.
     pub fn private(&self) -> &[Rc<Buffer<A>>] {
         &self.private
+    }
+
+    /// Every buffer the work before the copies may have written: those read back and the private ones.
+    pub fn written(&self) -> impl Iterator<Item = &Rc<Buffer<A>>> {
+        self.entries.iter().map(|e| &e.buffer).chain(&self.private)
     }
 
     /// The queue position of the copies.
