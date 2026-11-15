@@ -13,6 +13,7 @@
 //! - [`render`]: render pipeline creation: the descriptor's fields, Metal's checks, the WebGPU color targets;
 //! - [`archive`]: binary archive records;
 //! - [`reflection`]: the compiler's reflection as the wire protocol's, for the replies that carry it;
+//! - [`function_reflection`]: the A10X compiler service's reply to a reflection-only request (`ReflectFunction`);
 //! - [`errors`]: how creation fails, as Metal defines it and as far as the A10X's errors are established.
 //!
 //! **Payloads.** The objects these records create are bound with these payloads:
@@ -44,6 +45,7 @@ pub mod bound;
 pub mod compile;
 pub mod compute;
 pub mod errors;
+pub mod function_reflection;
 pub mod gpu;
 pub mod reflection;
 pub mod registry;

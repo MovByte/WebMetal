@@ -1411,6 +1411,14 @@ receiver = "archive"
 args = ["archive: BinaryArchive", "descriptor: TileRenderPipelineDescriptor", "error: out"]
 
 [[op]]
+code = 0x030f
+name = "ReflectFunction"
+channel = "control"
+args = ["function: Function"]
+reply = ["reflection: bytes"]
+doc = "The reply of the A10X's compiler service (MTLCompilerService, MTLCompiler.framework 343.21) to a reflection-only request for the function: the serialized reflection block the compiler's completion handler receives, which Metal.framework parses into an MTLFunctionReflection (host/src/pipeline/function_reflection.rs)."
+
+[[op]]
 code = 0x0401
 name = "RegisterSharedEvent"
 channel = "control"

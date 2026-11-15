@@ -6,7 +6,7 @@
 // value breaks a rule of the format (a nil handle where none is allowed, a length constraint, an invalid string,
 // an oversized record); the caller must then report the failure, never send a substitute.
 //
-// Schema SHA-256: b12b180a4b320628c280987b41a63844866db425cdf7be14bb49c1b4630a8ff2
+// Schema SHA-256: 766c726c006d8ed8c3269015a2245e398f1505f13584c538216bd93441555898
 
 #pragma once
 
@@ -344,7 +344,7 @@ template <class T>
 struct Reply;
 
 
-constexpr std::array<uint8_t, 32> kSchemaHash = {0xb1, 0x2b, 0x18, 0x0a, 0x4b, 0x32, 0x06, 0x28, 0xc2, 0x80, 0x98, 0x7b, 0x41, 0xa6, 0x38, 0x44, 0x86, 0x6d, 0xb4, 0x25, 0xcd, 0xf7, 0xbe, 0x14, 0xbb, 0x49, 0xc1, 0xb4, 0x63, 0x0a, 0x8f, 0xf2};
+constexpr std::array<uint8_t, 32> kSchemaHash = {0x76, 0x6c, 0x72, 0x6c, 0x00, 0x6d, 0x8e, 0xd8, 0xc3, 0x26, 0x90, 0x15, 0xa2, 0x24, 0x5e, 0x39, 0x8f, 0x15, 0x05, 0xf1, 0x35, 0x84, 0xc5, 0x38, 0x21, 0x6b, 0xd9, 0x34, 0x41, 0x55, 0x58, 0x98};
 
 namespace opcode {
 constexpr uint16_t kOpen = 0x0001;
@@ -407,6 +407,7 @@ constexpr uint16_t kCreateBinaryArchive = 0x030b;
 constexpr uint16_t kBinaryArchiveAddRenderPipelineFunctions = 0x030c;
 constexpr uint16_t kBinaryArchiveAddComputePipelineFunctions = 0x030d;
 constexpr uint16_t kBinaryArchiveAddTileRenderPipelineFunctions = 0x030e;
+constexpr uint16_t kReflectFunction = 0x030f;
 constexpr uint16_t kRegisterSharedEvent = 0x0401;
 constexpr uint16_t kCreateFence = 0x0402;
 constexpr uint16_t kCreateEvent = 0x0403;
@@ -5116,6 +5117,46 @@ inline bool decodeFields(Reader&, BinaryArchiveAddTileRenderPipelineFunctionsRep
 // Decode the reply to a BinaryArchiveAddTileRenderPipelineFunctions request: either its fields or the failure.
 inline bool decodeReply(const uint8_t* data, size_t size, Reply<BinaryArchiveAddTileRenderPipelineFunctionsReply>& out, DecodeError* error = nullptr) {
     return decodeReplyRecord(data, size, BinaryArchiveAddTileRenderPipelineFunctionsReply::kOpcode, out, error);
+}
+
+// 0x030f control record. The reply of the A10X's compiler service (MTLCompilerService, MTLCompiler.framework 343.21)
+// to a reflection-only request for the function: the serialized reflection block the compiler's completion handler
+// receives, which Metal.framework parses into an MTLFunctionReflection (host/src/pipeline/function_reflection.rs).
+struct ReflectFunction {
+    static constexpr uint16_t kOpcode = 0x030f;
+    uint64_t function = 0;  // wire type `Function`.
+};
+
+inline bool encodeFields(Writer& w, const ReflectFunction& v) {
+    if (v.function == 0) return false;
+    w.u64(v.function);
+    return true;
+}
+
+// Append the record; returns false (writer unchanged) if the value breaks a format rule.
+inline bool encode(Writer& w, const ReflectFunction& v) {
+    size_t start = w.begin(ReflectFunction::kOpcode);
+    if (!encodeFields(w, v)) {
+        w.abandon(start);
+        return false;
+    }
+    return w.finish(start);
+}
+
+// 0x030f reply fields.
+struct ReflectFunctionReply {
+    static constexpr uint16_t kOpcode = 0x830f;
+    std::vector<uint8_t> reflection{};  // wire type `bytes`.
+};
+
+inline bool decodeFields(Reader& r, ReflectFunctionReply& v) {
+    if (!r.bytes(v.reflection)) return false;
+    return true;
+}
+
+// Decode the reply to a ReflectFunction request: either its fields or the failure.
+inline bool decodeReply(const uint8_t* data, size_t size, Reply<ReflectFunctionReply>& out, DecodeError* error = nullptr) {
+    return decodeReplyRecord(data, size, ReflectFunctionReply::kOpcode, out, error);
 }
 
 // 0x0401 control record. Name a shared event (an IOSurfaceSharedEvent kernel object; on 21H461 _MTLSharedEvent

@@ -2128,6 +2128,18 @@ inline bool same(const BinaryArchiveAddTileRenderPipelineFunctionsReply&, const 
     return true;
 }
 
+inline void random(Gen& g, ReflectFunction& v) {
+    v.function = g.handle();
+}
+
+inline void random(Gen& g, ReflectFunctionReply& v) {
+    v.reflection = g.ownBytes(g.bytesLength());
+}
+
+inline bool same(const ReflectFunctionReply& a, const ReflectFunctionReply& b) {
+    return a.reflection == b.reflection;
+}
+
 inline void random(Gen& g, RegisterSharedEvent& v) {
     v.event = g.handle();
     v.port = g.u32();
@@ -4422,7 +4434,7 @@ inline bool same(const DeviceLost& a, const DeviceLost& b) {
 
 // Append one random control record, the op chosen uniformly in schema order.
 inline bool encodeRandomRequest(Gen& g, Writer& w) {
-    switch (g.below(63)) {
+    switch (g.below(64)) {
     case 0: { Open v; random(g, v); return encode(w, v); }
     case 1: { FetchEvents v; random(g, v); return encode(w, v); }
     case 2: { Release v; random(g, v); return encode(w, v); }
@@ -4483,9 +4495,10 @@ inline bool encodeRandomRequest(Gen& g, Writer& w) {
     case 57: { BinaryArchiveAddRenderPipelineFunctions v; random(g, v); return encode(w, v); }
     case 58: { BinaryArchiveAddComputePipelineFunctions v; random(g, v); return encode(w, v); }
     case 59: { BinaryArchiveAddTileRenderPipelineFunctions v; random(g, v); return encode(w, v); }
-    case 60: { RegisterSharedEvent v; random(g, v); return encode(w, v); }
-    case 61: { CreateFence v; random(g, v); return encode(w, v); }
-    case 62: { CreateEvent v; random(g, v); return encode(w, v); }
+    case 60: { ReflectFunction v; random(g, v); return encode(w, v); }
+    case 61: { RegisterSharedEvent v; random(g, v); return encode(w, v); }
+    case 62: { CreateFence v; random(g, v); return encode(w, v); }
+    case 63: { CreateEvent v; random(g, v); return encode(w, v); }
     }
     return false;
 }
@@ -4779,7 +4792,7 @@ inline bool checkRandomReply(Gen& g, const uint8_t* data, size_t size, size_t* c
     DecodeError e;
     if (!splitRecord(data, size, opcode, length, &e)) return false;
     *consumed = length;
-    switch (g.below(63)) {
+    switch (g.below(64)) {
     case 0: {
         Reply<OpenReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
@@ -5201,20 +5214,27 @@ inline bool checkRandomReply(Gen& g, const uint8_t* data, size_t size, size_t* c
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
     case 60: {
+        Reply<ReflectFunctionReply> expected;
+        if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
+        Reply<ReflectFunctionReply> got;
+        if (!decodeReply(data, length, got, &e)) return false;
+        return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
+    }
+    case 61: {
         Reply<RegisterSharedEventReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<RegisterSharedEventReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 61: {
+    case 62: {
         Reply<CreateFenceReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateFenceReply> got;
         if (!decodeReply(data, length, got, &e)) return false;
         return got.ok == expected.ok && (got.ok ? same(got.value, expected.value) : same(got.failure, expected.failure));
     }
-    case 62: {
+    case 63: {
         Reply<CreateEventReply> expected;
         if (g.below(4) == 0) { randomErrorFailure(g, expected.failure); } else { expected.ok = true; random(g, expected.value); }
         Reply<CreateEventReply> got;

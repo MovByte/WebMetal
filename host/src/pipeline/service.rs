@@ -7,15 +7,15 @@ use webmetal_wire::{
     BinaryArchiveAddComputePipelineFunctionsReply, BinaryArchiveAddRenderPipelineFunctionsReply,
     ComputePipelineDescriptor, CreateBinaryArchiveReply, CreateComputePipelineAsyncReply, CreateComputePipelineReply,
     CreateRenderPipelineAsyncReply, CreateRenderPipelineReflectionAsyncReply, CreateRenderPipelineReflectionReply,
-    CreateRenderPipelineReply, Failure, Handle, RegisterAirReply, RegisterFunctionReply, RenderPipelineDescriptor,
-    Reply, Request, opcode,
+    CreateRenderPipelineReply, Failure, Handle, ReflectFunctionReply, RegisterAirReply, RegisterFunctionReply,
+    RenderPipelineDescriptor, Reply, Request, opcode,
 };
 
 use super::archive::{self, Archive};
 use super::compute::{self, option};
 use super::registry::{AirRegistry, Function};
 use super::render;
-use super::{Shared, errors, gpu, reflection};
+use super::{Shared, errors, function_reflection, gpu, reflection};
 use crate::embed::{Embedder, TaskId};
 use crate::exec::{ControlService, Entry, Served, ServiceCx, failure};
 use crate::gpu::{Api, GpuFuture};
@@ -246,6 +246,7 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for PipelineService<A, 
             opcode::BINARY_ARCHIVE_ADD_RENDER_PIPELINE_FUNCTIONS,
             opcode::BINARY_ARCHIVE_ADD_COMPUTE_PIPELINE_FUNCTIONS,
             opcode::BINARY_ARCHIVE_ADD_TILE_RENDER_PIPELINE_FUNCTIONS,
+            opcode::REFLECT_FUNCTION,
         ]
     }
 
@@ -261,6 +262,11 @@ impl<A: Api, E: Embedder + 'static> ControlService<A, E> for PipelineService<A, 
                     RegisterFunctionReply {}
                 })))
             }
+            Request::ReflectFunction(r) => ready(Reply::ReflectFunction(
+                compute::function(cx.objects(), r.function)
+                    .and_then(|f| function_reflection::reply(&f))
+                    .map(|reflection| ReflectFunctionReply { reflection }),
+            )),
             Request::CreateRenderPipeline(r) => {
                 let res = self.create_render(cx, NEW_RENDER, r.pipeline, &r.descriptor, 0, false);
                 ready(Reply::CreateRenderPipeline(res.map(|_| CreateRenderPipelineReply {})))
