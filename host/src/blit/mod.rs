@@ -293,7 +293,6 @@ impl<A: Api> BlitService<A> {
             Part::Texels => {
                 let tr = TextureRegion { level: r.level, slice: r.slice, layout: l };
                 mem.encode_buffer_to_texture(g, &encoder, (&src, offset), t, &tr)?;
-                mem.note_buffer_read(&src);
             }
             Part::Aspect(a) => depth::buffer_to_aspect(mem, g, &encoder, (&src, offset), (t, a), &r, &l)?,
         }
@@ -499,7 +498,6 @@ impl<A: Api> BlitService<A> {
                 "copying data to overlapping regions within the same buffer may result in unexpected behavior",
             ));
         }
-        mem.note_buffer_read(&src);
         mem.note_buffer_write(&dst, Some((dst_offset, dst_offset + size)));
         if size == 0 {
             return Ok(());

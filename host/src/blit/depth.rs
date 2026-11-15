@@ -124,7 +124,6 @@ pub fn buffer_to_aspect<A: Api>(
             .map_err(gpu_err("GPUCommandEncoder.copyBufferToTexture"))?;
         }
     }
-    mem.note_buffer_read(src);
     mem.note_texture_write(t, r.level..r.level + 1, layer..layer + 1);
     Ok(())
 }

@@ -17,9 +17,8 @@
 //!
 //! **What encoder services owe this module** (they record the passes; this module cannot see inside them):
 //!
-//! - every command that may write a buffer: [`Memory::note_buffer_write`] with the range when it is known; a buffer a
-//!   command buffer only reads may be declared with [`Memory::note_buffer_read`] (a buffer with neither is read back
-//!   whole, which is exact but costs a copy);
+//! - every command that may write a buffer: [`Memory::note_buffer_write`] with the range when it is known (a buffer
+//!   with no write noted is not read back, and dropped work leaves it as it was);
 //! - every pass that writes a texture: [`Memory::note_texture_write`];
 //! - before a pass uses a texture: [`Memory::prepare_texture`] (refreshes the stored texture after a blit into its
 //!   twin; a decoded format refreshed in the same command buffer is refused, see below) and, for a texture over a

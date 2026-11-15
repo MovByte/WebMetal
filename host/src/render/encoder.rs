@@ -660,14 +660,13 @@ type GpuBinding<A> = (<A as Api>::Buffer, u64, u64);
 
 /// What the encoder used, for the memory module.
 struct Notes<A: Api> {
-    read: Vec<Rc<Buffer<A>>>,
     written: Vec<BufferRange<A>>,
     textures: Vec<(Tex<A>, u32, u32)>,
 }
 
 impl<A: Api> Default for Notes<A> {
     fn default() -> Self {
-        Notes { read: Vec::new(), written: Vec::new(), textures: Vec::new() }
+        Notes { written: Vec::new(), textures: Vec::new() }
     }
 }
 
@@ -913,10 +912,6 @@ impl<A: Api> Run<'_, A> {
                 &job.source,
             )
             .map_err(at(job.offset))?;
-            self.notes.read.push(job.index_buffer.clone());
-            if let StageSource::Indirect { buffer, .. } = &job.source {
-                self.notes.read.push(buffer.clone());
-            }
             self.staged.insert(job.draw, staged);
         }
         for (draw, src, src_offset, field) in &s.copies {
@@ -931,14 +926,9 @@ impl<A: Api> Run<'_, A> {
                     Some(Size64::from(4u32)),
                 )
             });
-            self.notes.read.push(src.clone());
         }
         for (draw, offset, job) in &s.tess {
             let generated = tessellator.encode(self.g, &self.encoder, job, self.tess_limits()).map_err(at(*offset))?;
-            self.notes.read.push(job.factors.clone());
-            if let Some((b, _)) = &job.patch_indices {
-                self.notes.read.push(b.clone());
-            }
             self.checks.push(generated.check);
             self.tessellated.insert(*draw, generated.geometry);
         }
@@ -1250,7 +1240,6 @@ impl<A: Api> Run<'_, A> {
             for r in ranges {
                 self.notes.written.push((buffer.clone(), r));
             }
-            self.notes.read.push(buffer);
         }
         if let Some(arena) = &self.arena.buffer {
             let mirror = &self.arena.mirror;
@@ -1262,9 +1251,6 @@ impl<A: Api> Run<'_, A> {
         // The memory module's bookkeeping.
         for (t, level, layer) in self.targets.written() {
             self.notes.textures.push((t, level, layer));
-        }
-        for b in &self.notes.read {
-            self.memory.note_buffer_read(b);
         }
         for (b, range) in &self.notes.written {
             self.memory.note_buffer_write(b, Some(*range));
@@ -1510,9 +1496,6 @@ impl<A: Api> Run<'_, A> {
             };
             let vertices = geometry.vertices.clone();
             let indices = crate::tess::control_point_indices::<A>(self.objects, d, self.tess_limits())?;
-            if let Some(w) = &indices {
-                self.notes.read.push(w.buffer.clone());
-            }
             self.patch_binding = Some(PatchBinding { vertices, indices });
         }
         let uniforms = self.uniforms(&p, ordinal, kind)?;
@@ -1890,13 +1873,11 @@ impl<A: Api> Run<'_, A> {
                                 ),
                             ));
                         }
-                        if let Some(Bound::Buffer { buffer, offset, .. }) =
-                            self.state.slots_ref(*stage).buffers.get(index).cloned()
+                        if b.writable()
+                            && let Some(Bound::Buffer { buffer, offset, .. }) =
+                                self.state.slots_ref(*stage).buffers.get(index).cloned()
                         {
-                            if b.writable() {
-                                self.notes.written.push((buffer.clone(), (offset, buffer.length)));
-                            }
-                            self.notes.read.push(buffer);
+                            self.notes.written.push((buffer.clone(), (offset, buffer.length)));
                         }
                         buffers.push((b.binding, binding));
                     }
@@ -2011,10 +1992,7 @@ impl<A: Api> Run<'_, A> {
                 )
             })?;
             let (buffer, offset) = match bound {
-                Bound::Buffer { buffer, offset, .. } => {
-                    self.notes.read.push(buffer.clone());
-                    (buffer.gpu().clone(), offset)
-                }
+                Bound::Buffer { buffer, offset, .. } => (buffer.gpu().clone(), offset),
                 Bound::Bytes { offset, .. } => (self.arena.buffer.clone().expect("arena"), offset),
             };
             if offset % 4 != 0 || offset > buffer.size() {
@@ -2342,14 +2320,12 @@ impl<A: Api> Run<'_, A> {
                 self.call("GPURenderPassEncoder.drawIndexed", |_| {
                     self.pass().draw_indexed(count, instances, 0, bv, base)
                 });
-                self.notes.read.push(b);
             }
             DrawKind::Indirect { buffer: h, offset } => {
                 self.require_first_instance()?;
                 let b = buffer::<A>(self.objects, h.expect("checked in scan"), DRAW)?;
                 let o = size64(*offset, "GPURenderPassEncoder.drawIndirect")?;
                 self.call("GPURenderPassEncoder.drawIndirect", |_| self.pass().draw_indirect(b.gpu(), o));
-                self.notes.read.push(b);
             }
             DrawKind::IndexedIndirect { index_type, buffer: h, offset, indirect, indirect_offset } => {
                 self.require_first_instance()?;
@@ -2375,8 +2351,6 @@ impl<A: Api> Run<'_, A> {
                 self.call("GPURenderPassEncoder.drawIndexedIndirect", |_| {
                     self.pass().draw_indexed_indirect(ib.gpu(), io)
                 });
-                self.notes.read.push(b);
-                self.notes.read.push(ib);
             }
         }
         Ok(())

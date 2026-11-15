@@ -19,10 +19,11 @@
 //!    [`crate::exec::Coherence::commit`]): the guest's changes reach the WebGPU buffer ahead of the work. Words the
 //!    guest changed only in part go through a masked shader write while readbacks are pending (see
 //!    [`super::shadow`]), so an upload never waits for the GPU.
-//! 2. [`Memory::note_buffer_write`] for commands that may write the buffer (writable bindings per reflection, blit
-//!    destinations, indirect command buffers) and [`Memory::note_buffer_read`] for buffers a command buffer only
-//!    reads. A buffer a command buffer uses without either is read back whole: the safe answer when nothing says what
-//!    its commands write.
+//! 2. [`Memory::note_buffer_write`] for every command that may write the buffer (writable bindings per reflection,
+//!    blit destinations, the visibility result buffer, a texture over the buffer copied back into it). Only those
+//!    bytes are read back: a host shader reaches no resource it is not bound (WGSL declares every resource a shader
+//!    accesses as a binding, and AirWgsl refuses the resource members of argument buffers and pointers made from
+//!    integers that no pointer was converted to), so what is not noted the work cannot write.
 //! 3. [`Memory::encode_readbacks`] at the end of the command buffer's encoder (or before a shared event signal): the
 //!    copies take their queue position here, so the encoder must reach the queue before any other upload.
 //! 4. [`Readbacks::wait`] and [`Arrived::merge`] once the GPU has run them, before the command buffer is reported
@@ -85,20 +86,13 @@ pub enum Backing {
     Guest { task: TaskId, addr: u64 },
 }
 
-/// What the command buffer being recorded is known to write of a buffer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Writes {
-    /// Nothing was said: the whole buffer is read back.
-    Unknown,
-    /// The hull of the bytes it may write (`None`: none).
-    Known(Option<(u64, u64)>),
-}
-
 #[derive(Debug)]
 struct State {
     shadow: Option<Shadow>,
     purgeable: Purgeable,
-    writes: Writes,
+    /// The hull of the bytes the GPU work recorded since the buffer's last readback may write
+    /// ([`Memory::note_buffer_write`]; `None`: none).
+    writes: Option<(u64, u64)>,
     /// Contents emptied while readbacks were pending: zero them once the last one is merged.
     discard_when_idle: bool,
     /// The guest's bytes and the shadow were zeroed by a discard; the GPU copy is zeroed before its next use.
@@ -373,7 +367,7 @@ impl<A: Api> Memory<A> {
             state: RefCell::new(State {
                 shadow,
                 purgeable: Purgeable::NonVolatile,
-                writes: Writes::Unknown,
+                writes: None,
                 poisoned: false,
                 discard_when_idle: false,
                 zero_gpu: false,
@@ -569,21 +563,8 @@ impl<A: Api> Memory<A> {
         st.generation += 1;
         let (lo, hi) = range.unwrap_or((0, b.length));
         let (lo, hi) = (lo.min(b.length), hi.min(b.length));
-        let hull = match st.writes {
-            Writes::Known(Some((a, z))) if lo < hi => Some((a.min(lo), z.max(hi))),
-            Writes::Known(h) if lo >= hi => h,
-            _ if lo < hi => Some((lo, hi)),
-            _ => None,
-        };
-        st.writes = Writes::Known(hull);
-    }
-
-    /// The command buffer being recorded uses the buffer and its commands that write it are all noted with
-    /// [`Memory::note_buffer_write`] (a buffer it only reads needs no readback).
-    pub fn note_buffer_read(&self, b: &Buffer<A>) {
-        let mut st = b.state.borrow_mut();
-        if st.writes == Writes::Unknown {
-            st.writes = Writes::Known(None);
+        if lo < hi {
+            st.writes = Some(st.writes.map_or((lo, hi), |(a, z)| (a.min(lo), z.max(hi))));
         }
     }
 
@@ -595,7 +576,7 @@ impl<A: Api> Memory<A> {
         if b.backing == Backing::Private || st.zero_gpu || st.discard_when_idle {
             return None;
         }
-        if matches!(st.writes, Writes::Known(Some(_))) {
+        if st.writes.is_some() {
             return None;
         }
         let shadow = st.shadow.as_ref()?;
@@ -619,14 +600,7 @@ impl<A: Api> Memory<A> {
         let mut entries = Vec::new();
         let mut private = Vec::new();
         for b in buffers {
-            let window = {
-                let mut st = b.state.borrow_mut();
-                match std::mem::replace(&mut st.writes, Writes::Unknown) {
-                    Writes::Unknown => Some((0, b.length)),
-                    Writes::Known(h) => h,
-                }
-            };
-            let Some((lo, hi)) = window else { continue };
+            let Some((lo, hi)) = b.state.borrow_mut().writes.take() else { continue };
             if b.backing == Backing::Private {
                 // No CPU copy to read back; the buffer is remembered in case the work is dropped.
                 private.push(b.clone());

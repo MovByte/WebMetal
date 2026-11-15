@@ -106,7 +106,6 @@ impl EncoderService<A, E> for Blit {
                             Some(Size64::new(r.size).unwrap()),
                         )
                     });
-                    mem.note_buffer_read(&src);
                     mem.note_buffer_write(&dst, Some((r.destination_offset, r.destination_offset + r.size)));
                 }
                 Command::BlitCopyBufferToTexture(r) => {
@@ -131,7 +130,6 @@ impl EncoderService<A, E> for Blit {
                     let region = TextureRegion { level: a.level as u32, slice: a.slice as u32, layout };
                     mem.encode_buffer_to_texture(cx.gpu(), &encoder, (&src, r.source_offset), &t, &region)
                         .map_err(fail)?;
-                    mem.note_buffer_read(&src);
                     if let Some(lt) = lt {
                         mem.note_linear_write(&lt);
                     }
@@ -177,16 +175,13 @@ impl EncoderService<A, E> for Faulting {
 }
 
 /// A render stand-in that keeps what the real render encoder keeps of these records (`render::encoder`): a vertex buffer
-/// is a read-only binding, declared read at the end of the pass, and `useResource:usage:` and `useHeap:` are residency
-/// declarations it records nothing for.
-struct Resident {
-    memory: Rc<Memory<A>>,
-}
+/// is a read-only binding, and `useResource:usage:` and `useHeap:` are residency declarations; it notes no write for
+/// any of them.
+struct Resident;
 
 impl EncoderService<A, E> for Resident {
     fn encode(&mut self, cx: &mut EncodeCx<'_, A, E>, segment: &Segment) -> Result<(), RecordFailure> {
         let records = cx.records();
-        let mut read = Vec::new();
         for &i in &segment.records {
             let (offset, record) = &records[i];
             match record {
@@ -194,7 +189,9 @@ impl EncoderService<A, E> for Resident {
                 | Command::RenderUseResource(_)
                 | Command::RenderUseHeap(_)
                 | Command::EncoderEndEncoding(_) => {}
-                Command::RenderSetVertexBuffer(r) => read.push(payload::<Buffer<A>>(cx, r.buffer).expect("a buffer")),
+                Command::RenderSetVertexBuffer(r) => {
+                    payload::<Buffer<A>>(cx, r.buffer).expect("a buffer");
+                }
                 _ => {
                     return Err(RecordFailure {
                         offset: *offset as u64,
@@ -202,9 +199,6 @@ impl EncoderService<A, E> for Resident {
                     });
                 }
             }
-        }
-        for b in &read {
-            self.memory.note_buffer_read(b);
         }
         Ok(())
     }
@@ -238,7 +232,7 @@ impl Harness {
             .expect("memory services");
         let services = Services {
             control: vec![svc.control() as Box<dyn ControlService<A, E>>],
-            render: resident.then(|| Box::new(Resident { memory: svc.memory() }) as Box<dyn EncoderService<A, E>>),
+            render: resident.then(|| Box::new(Resident) as Box<dyn EncoderService<A, E>>),
             compute,
             blit: Some(Box::new(Blit { memory: svc.memory() })),
             coherence: Some(svc.coherence()),
@@ -1213,6 +1207,93 @@ fn work_after_a_fault_waits_for_the_fault() {
     assert_eq!(completion(&h, b).failure, failure::ok());
     assert!(!copy_submitted, "the copy was submitted before the fault it depends on was known");
     assert!(unrelated_submitted, "work that depends on nothing unsettled waited");
+    h.g.assert_no_errors();
+}
+
+fn copy_buffer(source: Handle, destination: Handle, destination_offset: u64, size: u64) -> Command {
+    Command::BlitCopyBufferToBuffer(BlitCopyBufferToBuffer {
+        source_buffer: Some(source),
+        source_offset: 0,
+        destination_buffer: Some(destination),
+        destination_offset,
+        size,
+    })
+}
+
+/// A private buffer an encoder filled before the encoder that faults: Metal ran the fill to completion
+/// (`MTLCommandEncoderErrorStateCompleted`, MTLCommandBuffer.h), so the buffer keeps it, and a later command buffer
+/// copies it.
+#[test]
+fn a_fill_before_the_fault_is_kept() {
+    let h = Harness::with_compute(Some(Box::new(Faulting)));
+    let q = h.queue();
+    const LEN: u64 = 256;
+    // MTLResourceStorageModePrivate.
+    let (private, _) = h.buffer(&[0u8; LEN as usize], 0x20);
+    let (copy, copy_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    let mut records = blit(
+        h.handle(),
+        vec![Command::BlitFillBuffer(BlitFillBuffer {
+            buffer: Some(private),
+            range: Range { location: 0, length: LEN },
+            value: 0xcd,
+        })],
+    );
+    records.extend([
+        Command::BeginCompute(BeginCompute { encoder: h.handle() }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+    ]);
+    let faulted = h.commit(q, &records, &[private]);
+    h.g.block_on(h.exec.idle());
+    let c = completion(&h, faulted);
+    assert_eq!(c.status, command_buffer_status::ERROR, "{c:?}");
+    assert_eq!(c.failure.message, "a scripted fault");
+    let read = h.commit(q, &blit(h.handle(), vec![copy_buffer(private, copy, 0, LEN)]), &[private, copy]);
+    h.g.block_on(h.exec.idle());
+    assert_eq!(completion(&h, read).failure, failure::ok(), "the fill before the fault was dropped");
+    assert_eq!(h.guest.cpu_read(copy_addr, LEN as usize), vec![0xcd; LEN as usize]);
+    h.g.assert_no_errors();
+}
+
+/// Buffers a dropped encoder names but does not write: it only reads them, so it leaves them as they were. A shared
+/// buffer it copies from is not read back, and a command buffer committed before the fault was known that reads it
+/// does not wait; a private buffer it copies from is not poisoned.
+#[test]
+fn what_a_dropped_encoder_only_reads_is_left_alone() {
+    let h = Harness::with_compute(Some(Box::new(Faulting)));
+    let q = h.queue();
+    const LEN: u64 = 256;
+    let (shared, _) = h.buffer(&[0x22u8; LEN as usize], 0);
+    // MTLResourceStorageModePrivate.
+    let (private, _) = h.buffer(&[0u8; LEN as usize], 0x20);
+    let (written, written_addr) = h.buffer(&[0u8; 2 * LEN as usize], 0);
+    let (copy, copy_addr) = h.buffer(&[0u8; LEN as usize], 0);
+    let mut records = vec![
+        Command::BeginCompute(BeginCompute { encoder: h.handle() }),
+        Command::EncoderEndEncoding(EncoderEndEncoding {}),
+    ];
+    records
+        .extend(blit(h.handle(), vec![copy_buffer(shared, written, 0, LEN), copy_buffer(private, written, LEN, LEN)]));
+    let faulted = h.commit(q, &records, &[shared, private, written]);
+    let read = h.commit(q, &blit(h.handle(), vec![copy_buffer(shared, copy, 0, LEN)]), &[shared, copy]);
+    // Before anything has settled.
+    let submitted = h
+        .guest
+        .posted
+        .borrow()
+        .iter()
+        .any(|e| matches!(e, Event::CommandBufferScheduled(s) if s.command_buffer == read));
+    h.g.block_on(h.exec.idle());
+    let c = completion(&h, faulted);
+    assert_eq!(c.status, command_buffer_status::ERROR, "{c:?}");
+    assert_eq!(h.guest.cpu_read(written_addr, 2 * LEN as usize), vec![0; 2 * LEN as usize], "the copies were kept");
+    assert_eq!(completion(&h, read).failure, failure::ok());
+    assert_eq!(h.guest.cpu_read(copy_addr, LEN as usize), vec![0x22; LEN as usize]);
+    assert!(submitted, "a copy from a buffer the dropped work only read waited for it");
+    let from_private = h.commit(q, &blit(h.handle(), vec![copy_buffer(private, copy, 0, LEN)]), &[private, copy]);
+    h.g.block_on(h.exec.idle());
+    assert_eq!(completion(&h, from_private).failure, failure::ok(), "a buffer the dropped work only read was poisoned");
+    assert_eq!(h.guest.cpu_read(copy_addr, LEN as usize), vec![0; LEN as usize]);
     h.g.assert_no_errors();
 }
 

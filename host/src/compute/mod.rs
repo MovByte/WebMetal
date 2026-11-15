@@ -16,9 +16,8 @@
 //!
 //! The memory module's duties (its `service` module documentation) are kept: textures the encoder binds are brought up
 //! to date before the pass ([`Memory::prepare_texture`], [`Memory::prepare_linear`]); every writable binding is noted
-//! ([`Memory::note_buffer_write`], [`Memory::note_texture_write`]) and every read-only one declared
-//! ([`Memory::note_buffer_read`]); textures over buffers that a dispatch writes are copied back after the pass
-//! ([`Memory::sync_linear`]).
+//! ([`Memory::note_buffer_write`], [`Memory::note_texture_write`]); textures over buffers that a dispatch writes are
+//! copied back after the pass ([`Memory::sync_linear`]).
 //!
 //! A texture view ([`crate::mem::view`]) binds as a WebGPU view of its root texture: its format (the root's, the sRGB
 //! sibling, or the stencil aspect), its levels and its slices; the pipeline variant takes the view's pixel format and
@@ -391,7 +390,6 @@ impl<A: Api> ComputeService<A> {
                         )));
                     }
                 }
-                self.memory.note_buffer_read(&b);
                 self.dispatch(cx, pass, st, Grid::Indirect(b, r.indirect_buffer_offset), &r.threads_per_threadgroup)
             }
             Command::ComputeDispatchThreadsWithIndirectBuffer(_) => refused(
@@ -676,11 +674,8 @@ impl<A: Api> ComputeService<A> {
                             BufferSlot::Buffer { buffer, offset } => {
                                 let a = align.get(index).copied().unwrap_or(storage_align);
                                 let base = offset / a * a;
-                                match ty {
-                                    BufferBindingType::Storage => {
-                                        mem.note_buffer_write(buffer, Some((*offset, buffer.length)))
-                                    }
-                                    _ => mem.note_buffer_read(buffer),
+                                if ty == &BufferBindingType::Storage {
+                                    mem.note_buffer_write(buffer, Some((*offset, buffer.length)));
                                 }
                                 (buffer.gpu().clone(), base, buffer.gpu().size() - base, buffer.length - offset)
                             }
