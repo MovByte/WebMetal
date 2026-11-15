@@ -694,3 +694,39 @@ fn a_frame_waits_only_for_the_work_that_can_write_its_source() {
     h.block_on(f).unwrap();
     assert!(drawing_buffer(&h, 0) == second);
 }
+
+/// A command buffer that declares the drawable's texture only with `useResource:usage:` and `MTLResourceUsageWrite`
+/// holds no frame of it: no host shader writes a texture through an argument buffer (`exec::writes`), so the frame does
+/// not wait for that command buffer, held here by an event no one has signalled.
+#[test]
+fn a_frame_does_not_wait_for_a_use_resource_declaration() {
+    let h = H::new();
+    h.open();
+    let (_, drawable_texture) = drawable(&h, 1);
+    h.host.attach_offscreen(0, srgb(64, 32)).unwrap();
+    let event = h.handle();
+    h.ok(&Request::CreateEvent(CreateEvent { event }));
+    let held = h.queue();
+    let e = h.handle();
+    // The drawable's usage (0x17) includes MTLTextureUsageShaderWrite, so a shader bound to it could write it.
+    // MTLResourceUsageRead | MTLResourceUsageWrite.
+    submit(
+        &h,
+        held,
+        &[
+            Command::EncodeWaitForEvent(EncodeWaitForEvent { event: Some(event), value: 1 }),
+            Command::BeginCompute(BeginCompute { encoder: e }),
+            Command::ComputeUseResource(ComputeUseResource { resource: Some(drawable_texture), usage: 3 }),
+            end(),
+        ],
+    );
+    let pixels = pattern(320 * 32, 34);
+    h.host.embedder.surface_cpu_write(SurfaceId(1), 0, &pixels).unwrap();
+    let shown = h.gpu.block_on(h.host.presenter.present(frame(0, 1, 0, 0, 64, 32)), std::time::Duration::from_secs(10));
+    assert!(shown.is_ok(), "the frame waited for a command buffer that only declares the drawable through useResource");
+    shown.unwrap().unwrap();
+    assert!(drawing_buffer(&h, 0) == rows(&pixels, 320, 0, 0, 64, 32));
+    let signaller = h.queue();
+    submit(&h, signaller, &[Command::EncodeSignalEvent(EncodeSignalEvent { event: Some(event), value: 1 })]);
+    h.block_on(h.host.exec.idle());
+}

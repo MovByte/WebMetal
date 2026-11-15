@@ -227,7 +227,7 @@ struct Checked<A: Api> {
 fn can_write<A: Api>(t: &Texture<A>, how: TextureWrite) -> bool {
     match how {
         TextureWrite::Attachment | TextureWrite::Blit => true,
-        TextureWrite::ShaderBinding | TextureWrite::UseResource => t.shader_may_write(),
+        TextureWrite::ShaderBinding => t.shader_may_write(),
     }
 }
 

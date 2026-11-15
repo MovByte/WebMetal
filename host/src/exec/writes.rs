@@ -5,14 +5,15 @@
 //! counters). [`texture_writes`] reports each texture a record names in a writing position, with how it is written,
 //! so that a caller can decide whether a committed command buffer may write a given texture without replaying it.
 //!
-//! A texture reached only through an argument buffer is written by a shader only if the encoder declared it with
-//! `useResource:usage:` and `MTLResourceUsageWrite` (`MTLCommandEncoder.h`: resources an argument buffer refers to
-//! must be made resident with `useResource`), so the declaration is what names it here.
+//! These are the writes of the host's work, which the executor runs in place of the A10X's. On Metal a shader may also
+//! write a texture an argument buffer refers to, which the encoder declares with `useResource:usage:` and
+//! `MTLResourceUsageWrite` (`MTLCommandEncoder.h`). No host shader reaches a texture that way: WGSL accesses only the
+//! resources bound to it, AirWgsl refuses the resource members of argument buffers and pointers made from integers that
+//! no pointer was converted to, and the pipeline module refuses a binding sourced from an argument buffer
+//! (`pipeline::compute`, `pipeline::render`). So the declaration writes nothing here, as it writes nothing in the
+//! memory module's coherence (`mem::service`).
 
 use webmetal_wire::{Command, Handle, RenderPassDescriptor};
-
-/// `MTLResourceUsageWrite` (`MTLCommandEncoder.h`).
-pub const RESOURCE_USAGE_WRITE: u64 = 1 << 1;
 
 /// How a record can write a texture it names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,9 +26,6 @@ pub enum TextureWrite {
     /// Bound to a shader stage. A shader writes a texture only when its `MTLTextureUsage` allows it: `ShaderWrite` or
     /// `ShaderAtomic`, or `Unknown`, which allows every use (`MTLTexture.h`).
     ShaderBinding,
-    /// Declared with `useResource:usage:` and `MTLResourceUsageWrite`; written by a shader through an argument buffer
-    /// under the same usage rule as [`TextureWrite::ShaderBinding`].
-    UseResource,
 }
 
 fn pass(d: &RenderPassDescriptor, f: &mut dyn FnMut(Handle, TextureWrite)) {
@@ -50,8 +48,7 @@ fn pass(d: &RenderPassDescriptor, f: &mut dyn FnMut(Handle, TextureWrite)) {
     }
 }
 
-/// Report each texture `record` can write, with how. A resource a `useResource` record declares is reported whatever
-/// its kind; the caller tells textures from buffers by the object.
+/// Report each texture `record` can write, with how.
 pub fn texture_writes(record: &Command, f: &mut dyn FnMut(Handle, TextureWrite)) {
     use TextureWrite::*;
     let mut one = |t: Option<Handle>, w: TextureWrite| {
@@ -83,19 +80,6 @@ pub fn texture_writes(record: &Command, f: &mut dyn FnMut(Handle, TextureWrite))
         Command::RenderSetMeshTextures(r) => r.textures.iter().for_each(|t| one(*t, ShaderBinding)),
         Command::ComputeSetTextures(r) => r.textures.iter().for_each(|t| one(*t, ShaderBinding)),
 
-        Command::RenderUseResource(r) if r.usage & RESOURCE_USAGE_WRITE != 0 => one(r.resource, UseResource),
-        Command::RenderUseResourceStages(r) if r.usage & RESOURCE_USAGE_WRITE != 0 => one(r.resource, UseResource),
-        Command::ComputeUseResource(r) if r.usage & RESOURCE_USAGE_WRITE != 0 => one(r.resource, UseResource),
-        Command::RenderUseResources(r) if r.usage & RESOURCE_USAGE_WRITE != 0 => {
-            r.resources.iter().for_each(|t| one(*t, UseResource))
-        }
-        Command::RenderUseResourcesStages(r) if r.usage & RESOURCE_USAGE_WRITE != 0 => {
-            r.resources.iter().for_each(|t| one(*t, UseResource))
-        }
-        Command::ComputeUseResources(r) if r.usage & RESOURCE_USAGE_WRITE != 0 => {
-            r.resources.iter().for_each(|t| one(*t, UseResource))
-        }
-
         Command::BlitCopyBufferToTexture(r) => one(r.destination_texture, Blit),
         Command::BlitCopyBufferToTextureOptions(r) => one(r.destination_texture, Blit),
         Command::BlitCopyTextureToTexture(r) => one(r.destination_texture, Blit),
@@ -120,7 +104,7 @@ mod tests {
     use webmetal_wire::fuzz::Rng;
 
     /// The stream records that name a texture (or any resource) without writing it.
-    const READ_ONLY: [&str; 16] = [
+    const READ_ONLY: [&str; 22] = [
         "BlitCopyTextureToBuffer",
         "BlitCopyTextureToBufferOptions",
         "BlitGetTextureAccessCounters",
@@ -133,6 +117,13 @@ mod tests {
         "BlitSynchronizeTexture",
         "RenderMemoryBarrierWithResources",
         "ComputeMemoryBarrierWithResources",
+        // Residency: a host shader reaches no resource through an argument buffer (the module documentation).
+        "RenderUseResource",
+        "RenderUseResourceStages",
+        "RenderUseResources",
+        "RenderUseResourcesStages",
+        "ComputeUseResource",
+        "ComputeUseResources",
         "EncodeCacheHintTag",
         "EncodeCacheHintFinalize",
         "SetResourceGroups",
@@ -179,14 +170,14 @@ mod tests {
     }
 
     #[test]
-    fn use_resource_writes_only_with_the_write_usage() {
+    fn use_resource_writes_nothing_on_the_host() {
         let h = Handle::new(9).unwrap();
         let mut got = Vec::new();
-        let read = Command::ComputeUseResource(webmetal_wire::ComputeUseResource { resource: Some(h), usage: 1 });
-        texture_writes(&read, &mut |t, w| got.push((t, w)));
-        assert!(got.is_empty());
+        // MTLResourceUsageRead | MTLResourceUsageWrite.
         let write = Command::ComputeUseResource(webmetal_wire::ComputeUseResource { resource: Some(h), usage: 3 });
         texture_writes(&write, &mut |t, w| got.push((t, w)));
-        assert_eq!(got, vec![(h, TextureWrite::UseResource)]);
+        let write = Command::RenderUseResource(webmetal_wire::RenderUseResource { resource: Some(h), usage: 3 });
+        texture_writes(&write, &mut |t, w| got.push((t, w)));
+        assert!(got.is_empty(), "{got:?}");
     }
 }
