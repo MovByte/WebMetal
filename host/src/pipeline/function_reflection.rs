@@ -34,10 +34,39 @@
 //! - visible, intersection, mesh and object functions (other requests, other readers);
 //! - argument kinds whose records carry data the host does not model (imageblocks, payloads, meshes, `air.constant`
 //!   and `air.byval` arguments, function pointers), buffers of pixel-format types, `air.global_bindings`, and an
-//!   argument named `trace.buffer` (which the service lists or drops by a request flag).
+//!   argument named `trace.buffer` (which the service lists or drops by a request flag);
+//! - modules whose AIR upgrade would change what the reflection reads (below).
 //!
-//! The module as the service reads it is first upgraded to the request's AIR version (`upgradeAIRModule`,
-//! 0x1c3e09964, calling `MTLUpgradeAIRModule`); the reflection here is the module's own metadata.
+//! **The AIR upgrade.** The service upgrades every module it reads from AIR bitcode before it reflects it:
+//! `readModuleFromBinaryRequest` calls `MTLCompilerObject::upgradeAIRModule` (0x1c3e09578, 0x1c3e09964) with the
+//! request's AIR version (request bytes 0x30-0x37, `getReadParametersFromRequest` 0x1c3e09340), and (0, 0) there means
+//! AIR 2.6 (0x1c3e099fc). Metal sends (0, 0) for this request unless the app sets `MTL_FORCE_AIR_VERSION` or
+//! `MTL_FORCE_LANGUAGE_VERSION` (`_getForcedAIRVersion`'s block 0x187b84e7c): `MTLCompilerFunctionRequest::
+//! serializedRequest` (Metal 0x187ac3a58-0x187ac3aa0) sends (0, 0) when the request's LLVM version equals its argument,
+//! and here both are 0 (`compileFunctionRequestInternal` stores 0 in the request, 0x187a99450, which
+//! `_MTLGetDefaultLLVMVersion` 0x187ac506c also answers; `XPCCompilerConnection::BuildRequestInternal` passes 0,
+//! 0x187ac26ec). `MTLUpgradeAIRModule` (libGPUCompiler 0x1c4094888) calls
+//! `llvm::air::upgradeAIRModule` (libGPUCompilerImpl 0x1c43a9b08) with that version. It runs one step for each of AIR
+//! 1.8, 1.11 and 2.0-2.6 that is above the module's `air.version` and not above the target, then, for a module at 2.6
+//! or later, rewrites the calls to AIR built-ins declared with fewer operands than the 2.6 tables give them
+//! (0x1c43b1ca4-0x1c43b21d4), and for every module adjusts LLVM attributes and `air.compile_options`
+//! (0x1c43b21d8-0x1c43b2cf8). Its built-in rewrites keep every operand of the old call, bitcast where the new
+//! parameter's type differs (0x1c43b3150 and its call rewrite 0x1c43b333c, with the operand lists of 0x1c43b4b20 and
+//! 0x1c43b608c). The reflection reads the entry point's argument metadata, `air.struct_type_info`, whether each argument
+//! has uses, and the module's data layout (`parseStructTypeMetadata` places members in their LLVM struct by it,
+//! 0x1c3df9df8); it reads no attribute, no compile option, no triple and no built-in declaration. So:
+//!
+//! - an AIR 2.6 module runs no step, and the rest changes nothing the reflection reads: its own metadata is reflected;
+//! - an AIR 2.5 module runs the 2.6 step (0x1c43b17fc-0x1c43b1ca0): the triple's OS version, the data layout
+//!   (0x1c43b3034, the AIR layout of the triple's architecture), operand-keeping built-in rewrites and `air.version`.
+//!   Its own metadata is reflected when the module is air64 with the air64 layout that step writes, which then leaves
+//!   the layout as it was; any other 2.5 module is refused;
+//! - a module below AIR 2.5 runs the steps of 1.8-2.5, which rewrite entry-point argument metadata (argument type
+//!   names, built-in roles, `air.arg_unused`, `air.thread_execution_width` and `air.threads_per_simdgroup`). They are
+//!   not reproduced, and such modules are refused.
+//!
+//! A forced version only decides which of the steps up to 2.6 run, and for the modules reflected here those steps
+//! change nothing the reflection reads, so the reply does not depend on it.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -54,6 +83,12 @@ const BLOCK_MAGIC: u64 = 0x8_ef13_c710;
 const BLOCK_VERSION: u64 = 0x134_b112;
 /// The block header's size: the legacy reflection starts after it.
 const BLOCK_HEADER: usize = 0x50;
+
+/// The data layout the AIR upgrade gives a module whose triple's architecture is not air32 (libGPUCompilerImpl
+/// 0x1c43b3034: `setDataLayout` of the 0xd7-byte string at 0x1c48256f2).
+const AIR64_DATA_LAYOUT: &str = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-\
+v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-\
+v1024:1024:1024-n8:16:32";
 
 /// The legacy reflection's magic and the version `generateReflectionData` writes (0x1c3dfde60-0x1c3dfde8c).
 const LEGACY_MAGIC: &[u8; 8] = b"MTLPSBIN";
@@ -889,6 +924,9 @@ pub fn reply(f: &Function) -> Result<Vec<u8>, Failure> {
     let module = super::compute::decode_module(f).map_err(|r| {
         failure::unimplemented(format!("function reflection of {describe}: the AIR layer refuses the module: {r}"))
     })?;
+    if let Some(problem) = upgrade_problem(module.air_version, &module.ir.triple, &module.ir.datalayout) {
+        return Err(failure::unimplemented(format!("function reflection of {describe}: {problem}")));
+    }
     let Some(entry) = module.entry_point(&f.name) else {
         return Err(failure::unimplemented(format!(
             "function reflection of {describe}: the function is not an entry point of its module"
@@ -902,6 +940,32 @@ pub fn reply(f: &Function) -> Result<Vec<u8>, Failure> {
     }
     let legacy = legacy(&module, entry, f.function_type, &describe)?;
     Ok(block(&legacy))
+}
+
+/// Why the AIR upgrade the service runs before reflecting (the module comment's **The AIR upgrade**) would change what
+/// the reflection reads in a module of this `air.version`, triple and data layout, or `None` when it changes nothing.
+fn upgrade_problem(version: Option<(u32, u32, u32)>, triple: &str, data_layout: &str) -> Option<String> {
+    const STEPS: &str = "llvm::air::upgradeAIRModule, libGPUCompilerImpl 21H461 0x1c43a9b08";
+    match version {
+        None => Some(format!("the module has no air.version, which the service's AIR upgrade reads first ({STEPS})")),
+        Some((2, 6, _)) => None,
+        Some((2, 5, _)) if triple.split('-').next() == Some("air64") && data_layout == AIR64_DATA_LAYOUT => None,
+        Some((2, 5, patch)) => Some(format!(
+            "the service upgrades an AIR 2.5.{patch} module to 2.6 before reflecting it, and the 2.6 step sets the \
+             data layout by which the service places struct members (0x1c43b3034); this module (triple {triple:?}, \
+             data layout {data_layout:?}) is not an air64 module that already has the air64 layout, and the host does \
+             not reproduce the reflection under the layout the step writes ({STEPS})"
+        )),
+        Some((major, minor, patch)) if (major, minor) < (2, 5) => Some(format!(
+            "the service upgrades an AIR {major}.{minor}.{patch} module to 2.6 before reflecting it, and the upgrade \
+             steps of AIR 1.8 to 2.5 rewrite entry-point argument metadata, which the host does not reproduce \
+             ({STEPS}, 0x1c43a9b74-0x1c43b17bc)"
+        )),
+        Some((major, minor, patch)) => Some(format!(
+            "an AIR {major}.{minor}.{patch} module is newer than the AIR 2.6 the service upgrades to, and what its \
+             upgrade does to such a module is not established ({STEPS})"
+        )),
+    }
 }
 
 /// `CompilerOutputReflectionBlock`'s layout (0x1c3e01698) with only the legacy section: a 0x50-byte header of the
@@ -977,6 +1041,41 @@ mod tests {
         let words: Vec<u64> = b[..0x50].chunks(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
         assert_eq!(words, [0x8_ef13_c710, 0x134_b112, 0x50, 0x217, 0x268, 0, 0x268, 0, 0x268, 0]);
         assert!(b[0x50..0x267].iter().all(|&x| x == 0xab) && b[0x267] == 0);
+    }
+
+    #[test]
+    fn the_air64_layout_is_the_one_the_upgrade_writes() {
+        // `setDataLayout`'s length operand at 0x1c43b3084.
+        assert_eq!(AIR64_DATA_LAYOUT.len(), 0xd7);
+        assert!(AIR64_DATA_LAYOUT.starts_with("e-p:64:64:64-") && AIR64_DATA_LAYOUT.ends_with("-n8:16:32"));
+    }
+
+    #[test]
+    fn modules_the_upgrade_leaves_unchanged_for_reflection_are_reflected() {
+        let air64 = "air64-apple-ios17.0.0";
+        // AIR 2.6: no upgrade step, whatever the triple or layout.
+        assert_eq!(upgrade_problem(Some((2, 6, 0)), air64, AIR64_DATA_LAYOUT), None);
+        assert_eq!(upgrade_problem(Some((2, 6, 1)), "air32-apple-ios17.0.0", ""), None);
+        // AIR 2.5 with the layout the 2.6 step writes.
+        assert_eq!(upgrade_problem(Some((2, 5, 0)), "air64-apple-ios16.0.0", AIR64_DATA_LAYOUT), None);
+    }
+
+    #[test]
+    fn modules_the_upgrade_changes_are_refused() {
+        let air64 = "air64-apple-ios16.0.0";
+        // AIR 2.5 whose layout the 2.6 step would replace.
+        assert!(upgrade_problem(Some((2, 5, 0)), air64, "").is_some());
+        assert!(upgrade_problem(Some((2, 5, 0)), air64, &AIR64_DATA_LAYOUT.replace("-n8:16:32", "")).is_some());
+        // An air32 module gets the air32 layout instead.
+        assert!(upgrade_problem(Some((2, 5, 0)), "air32-apple-ios16.0.0", AIR64_DATA_LAYOUT).is_some());
+        // The steps of 1.8 to 2.5 run below 2.5.
+        for v in [(1, 6, 0), (1, 8, 0), (1, 11, 0), (2, 0, 0), (2, 3, 0), (2, 4, 0), (2, 4, 9)] {
+            assert!(upgrade_problem(Some(v), air64, AIR64_DATA_LAYOUT).is_some(), "{v:?}");
+        }
+        // Newer than the target, and no version at all.
+        assert!(upgrade_problem(Some((2, 7, 0)), air64, AIR64_DATA_LAYOUT).is_some());
+        assert!(upgrade_problem(Some((3, 0, 0)), air64, AIR64_DATA_LAYOUT).is_some());
+        assert!(upgrade_problem(None, air64, AIR64_DATA_LAYOUT).is_some());
     }
 
     fn record(name: &str, flags: u32) -> Record {
