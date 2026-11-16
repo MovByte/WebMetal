@@ -377,6 +377,8 @@ impl Record {
 /// contents are equal).
 struct Parser<'a> {
     function: &'a str,
+    /// The module's data layout, by which `parseStructTypeMetadata` lays out each struct it parses.
+    data_layout: &'a str,
     next_id: u64,
     cache: Vec<(StructInfo, Rc<Layout>)>,
 }
@@ -587,6 +589,16 @@ impl<'a> Parser<'a> {
 
     /// `parseStructTypeMetadata`'s member visitor (0x1c3dfa2c0) for each member.
     fn members(&mut self, info: &'a StructInfo) -> Result<Vec<StructMember>, Failure> {
+        // parseStructTypeMetadata lays the struct's LLVM type out by the module's data layout (getStructLayout,
+        // 0x1c3df9df8) and finds the element at each member's offset, whose type its nested and indirect members are
+        // parsed from. Under the air64 layout the frontend writes, that element is the member the metadata describes,
+        // as the members are read here; under another the search is not reproduced.
+        if self.data_layout != AIR64_DATA_LAYOUT {
+            return Err(self.refuse(format_args!(
+                "a struct laid out by the data layout {:?} rather than the air64 one",
+                self.data_layout
+            )));
+        }
         let mut out = Vec::with_capacity(info.members.len());
         for m in &info.members {
             if m.name.as_bytes().contains(&0) {
@@ -842,7 +854,7 @@ fn legacy(module: &AirModule, entry: &EntryPoint, function_type: u64, describe: 
         if a.position as usize != i {
             return Err(refuse("argument records out of the function's parameter order"));
         }
-        let mut p = Parser { function: describe, next_id, cache: Vec::new() };
+        let mut p = Parser { function: describe, data_layout: &module.ir.datalayout, next_id, cache: Vec::new() };
         let record = p.record(a, Some(argument_used(module, entry, i as u32)))?;
         next_id = p.next_id;
         let Some(mut r) = record else { continue };
@@ -1058,6 +1070,16 @@ mod tests {
         assert_eq!(upgrade_problem(Some((2, 6, 1)), "air32-apple-ios17.0.0", ""), None);
         // AIR 2.5 with the layout the 2.6 step writes.
         assert_eq!(upgrade_problem(Some((2, 5, 0)), "air64-apple-ios16.0.0", AIR64_DATA_LAYOUT), None);
+    }
+
+    #[test]
+    fn structs_are_laid_out_only_under_the_air64_layout() {
+        let info = StructInfo { members: Vec::new() };
+        let mut p = Parser { function: "f", data_layout: AIR64_DATA_LAYOUT, next_id: 0, cache: Vec::new() };
+        assert!(p.members(&info).is_ok());
+        let other = AIR64_DATA_LAYOUT.replace("-i64:64:64-", "-i64:32:64-");
+        let mut p = Parser { function: "f", data_layout: &other, next_id: 0, cache: Vec::new() };
+        assert!(p.members(&info).is_err());
     }
 
     #[test]
