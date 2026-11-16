@@ -247,18 +247,50 @@ impl Reader<'_> {
     }
 }
 
+/// A post-vertex-dump output as `-[MTLPostVertexDumpOutput initWithAirMDType:dataType:pixelFormat:aluType:name:offset:]`
+/// receives it.
+#[derive(Clone, Debug, PartialEq)]
+struct DumpOutput {
+    air_md_type: String,
+    data_type: u32,
+    pixel_format: u32,
+    alu_type: u32,
+    name: String,
+    offset: u32,
+}
+
+/// An inferred input as `-[MTLInferredInput initWithDataType:pixelFormat:aluType:offset:bufferIndex:stride:stepFunction:
+/// stepRate:baseInstanceUnused:]` receives it.
+#[derive(Clone, Debug, PartialEq)]
+struct InferredInput {
+    data_type: u32,
+    pixel_format: u32,
+    alu_type: u32,
+    offset: u32,
+    buffer_index: u32,
+    stride: u32,
+    step_function: u32,
+    step_rate: u32,
+    base_instance_unused: bool,
+}
+
 /// The reflection of one function as Metal.framework reads it.
 #[derive(Debug)]
 struct FunctionReflection {
     stage_attributes: Vec<u32>,
     builtin_count: u32,
     arguments: Vec<Binding>,
+    dump_stride: u32,
+    dump: Vec<DumpOutput>,
+    inferred: Vec<InferredInput>,
     trace_buffer_index: u32,
 }
 
 /// `_MTLNewReflectionData` (0x187abe3d0) for retrieval types 1 and 4, then the legacy deserializer of the function type
-/// (`MTLInputStageReflectionDeserializer::deserialize` 0x187abf0c4 for kernels, `MTLFragmentReflectionDeserializerLegacy::
-/// deserialize` 0x187abef00 for fragment functions), reading struct types.
+/// (`MTLInputStageReflectionDeserializer::deserialize` 0x187abf0c4 for vertex functions and kernels,
+/// `MTLFragmentReflectionDeserializerLegacy::deserialize` 0x187abef00 for fragment functions), reading struct types and
+/// the post-vertex-dump and inferred-input sections as with MTLPipelineOption bits 19 and 20, which read their records
+/// and check that each section ends where it says (0x187abf1dc-0x187abf2c0, 0x187abf2e8-0x187abf410).
 fn read_reply(reply: &[u8], function_type: u64) -> FunctionReflection {
     let word = |i: usize| u64::from_le_bytes(reply[i * 8..i * 8 + 8].try_into().unwrap());
     assert_eq!(word(0), 0x8_ef13_c710, "the block's magic");
@@ -271,7 +303,7 @@ fn read_reply(reply: &[u8], function_type: u64) -> FunctionReflection {
     let mut r = Reader { c: Context { data: legacy, offset: 8 }, structs: HashMap::new(), version: 0 };
     r.version = r.c.u32();
     let mut stage_attributes = Vec::new();
-    if function_type == 3 {
+    if function_type != 2 {
         let n = r.c.u32();
         for _ in 0..n {
             stage_attributes.push(r.c.u32());
@@ -282,19 +314,40 @@ fn read_reply(reply: &[u8], function_type: u64) -> FunctionReflection {
     let end = r.c.u32() as usize;
     let arguments = r.arguments(true);
     r.c.move_to(end, true);
+    let (mut dump_stride, mut dump, mut inferred) = (0, Vec::new(), Vec::new());
     if function_type == 2 {
         if r.c.u32() != 0 {
             panic!("an output imageblock data argument");
         }
     } else {
-        // The post-vertex-dump and inferred-input sections, read without MTLPipelineOption bits 19 and 20.
-        r.c.u32();
+        dump_stride = r.c.u32();
         let end = r.c.u32() as usize;
-        assert_eq!(r.c.u32(), 0, "post-vertex-dump outputs");
-        r.c.move_to(end, false);
+        for _ in 0..r.c.u32() {
+            dump.push(DumpOutput {
+                air_md_type: r.c.string(),
+                data_type: r.c.u32(),
+                pixel_format: r.c.u32(),
+                alu_type: r.c.u32(),
+                name: r.c.string(),
+                offset: r.c.u32(),
+            });
+        }
+        r.c.move_to(end, true);
         let end = r.c.u32() as usize;
-        assert_eq!(r.c.u32(), 0, "inferred inputs");
-        r.c.move_to(end, false);
+        for _ in 0..r.c.u32() {
+            inferred.push(InferredInput {
+                data_type: r.c.u32(),
+                pixel_format: r.c.u32(),
+                alu_type: r.c.u32(),
+                offset: r.c.u32(),
+                buffer_index: r.c.u32(),
+                stride: r.c.u32(),
+                step_function: r.c.u32(),
+                step_rate: r.c.u32(),
+                base_instance_unused: r.c.u32() != 0,
+            });
+        }
+        r.c.move_to(end, true);
     }
     let trace_buffer_index = r.c.u32();
     if r.version >> 16 != 0 {
@@ -307,7 +360,7 @@ fn read_reply(reply: &[u8], function_type: u64) -> FunctionReflection {
         r.c.move_to(end, true);
     }
     assert_eq!(r.c.offset, legacy.len(), "the reflection ends where its data does");
-    FunctionReflection { stage_attributes, builtin_count, arguments, trace_buffer_index }
+    FunctionReflection { stage_attributes, builtin_count, arguments, dump_stride, dump, inferred, trace_buffer_index }
 }
 
 fn reflect(h: &Harness, name: &str) -> (Vec<u8>, FunctionReflection) {
@@ -469,14 +522,148 @@ fn a_fragment_function_reflects_its_resources() {
     assert!(matches!(r.arguments[2].detail, Detail::Buffer { data_type: 6, constant: true, .. }));
 }
 
-/// The reflection requests the host does not answer fail as not implemented, naming why.
+fn builtin(name: &str, data_type: u32, offset: u32) -> DumpOutput {
+    DumpOutput {
+        air_md_type: name.into(),
+        data_type,
+        pixel_format: 0,
+        alu_type: data_type,
+        name: String::new(),
+        offset,
+    }
+}
+
+fn output(role: &str, data_type: u32, name: &str, offset: u32) -> DumpOutput {
+    DumpOutput { air_md_type: role.into(), data_type, pixel_format: 0, alu_type: 0, name: name.into(), offset }
+}
+
+fn inferred(data_type: u32, offset: u32, buffer_index: u32, stride: u32, step: (u32, u32)) -> InferredInput {
+    InferredInput {
+        data_type,
+        pixel_format: 0,
+        alu_type: 0,
+        offset,
+        buffer_index,
+        stride,
+        step_function: step.0,
+        step_rate: step.1,
+        base_instance_unused: true,
+    }
+}
+
+/// `pip_reflect_vertex`: a stage-in struct, a constant matrix, a device array indexed by the instance id, and the
+/// vertex and instance ids.
 #[test]
-fn vertex_functions_are_refused() {
+fn a_vertex_function_reflects_its_dump_and_inferred_inputs() {
+    let h = Harness::new();
+    let (bytes, r) = reflect(&h, "pip_reflect_vertex");
+    assert_eq!(bytes.len() % 8, 0);
+    assert_eq!(r.trace_buffer_index, 0xffff_ffff);
+    // The attributes of the stage-in members the function reads; `unused` (attribute 4) is air.arg_unused.
+    assert_eq!(r.stage_attributes, [0, 1, 3]);
+    let names: Vec<&str> = r.arguments.iter().map(|b| b.name.as_str()).collect();
+    assert_eq!(names, ["mvp", "offsets", "vid", "iid"]);
+    assert_eq!(r.builtin_count, 2);
+    assert!(matches!(
+        r.arguments[0].detail,
+        Detail::Buffer { data_type: 15, constant: true, alignment: 16, data_size: 64, .. }
+    ));
+    assert_eq!((r.arguments[1].index, r.arguments[1].access), (2, 0));
+    assert_eq!(r.arguments[2].detail, Detail::Builtin { data_type: 33, builtin_type: 1 });
+    assert_eq!(r.arguments[3].detail, Detail::Builtin { data_type: 33, builtin_type: 2 });
+    // The dump: the ids it requires, then the members of the return value, an unnamed packed struct whose members'
+    // paths therefore start at the separator.
+    assert_eq!(
+        r.dump,
+        [
+            builtin("air.vertex_id", 33, 0),
+            builtin("air.instance_id", 33, 4),
+            output("air.position", 6, ".position", 8),
+            output("air.vertex_output", 4, ".uv", 24),
+            output("air.vertex_output", 19, ".color", 32),
+            output("air.point_size", 3, ".point", 40),
+        ]
+    );
+    assert_eq!(r.dump_stride, 44);
+    // `offsets[iid]` is a float2 per instance from buffer 2. The matrix's columns are read through GEPs of three
+    // indices, which the service does not match.
+    assert_eq!(r.inferred, [inferred(4, 0, 2, 8, (2, 1))]);
+}
+
+/// `rnd_vertex`: the members of a struct array read at the vertex id.
+#[test]
+fn struct_members_read_at_the_vertex_id_are_inferred() {
+    let h = Harness::new();
+    let (_, r) = reflect(&h, "rnd_vertex");
+    assert!(r.stage_attributes.is_empty());
+    assert_eq!(
+        r.dump,
+        [
+            builtin("air.vertex_id", 33, 0),
+            builtin("air.instance_id", 33, 4),
+            output("air.position", 6, ".position", 8),
+            output("air.vertex_output", 36, ".data", 24),
+            output("air.point_size", 3, ".point_size", 40),
+            output("air.vertex_output", 5, ".smooth_value", 44),
+        ]
+    );
+    assert_eq!(r.dump_stride, 56);
+    // RVertex's float4, uint4 (an i32 vector, int4 to the service) and float4, 48 bytes apart.
+    assert_eq!(
+        r.inferred,
+        [inferred(6, 0, 0, 48, (1, 1)), inferred(32, 16, 0, 48, (1, 1)), inferred(6, 32, 0, 48, (1, 1))]
+    );
+}
+
+/// `tess_enum_triangle` and `tess_enum_quad`: post-tessellation vertex functions with no return value. The dump
+/// requires the instance and patch ids and the position in the patch, a float3 for triangles and a float2 for quads;
+/// the capacity they load from a constant buffer is a constant inferred input.
+#[test]
+fn post_tessellation_functions_dump_their_patch_built_ins() {
+    let h = Harness::new();
+    for (name, position, stride) in [("tess_enum_triangle", 5, 20), ("tess_enum_quad", 4, 16)] {
+        let (_, r) = reflect(&h, name);
+        assert_eq!(
+            r.dump,
+            [
+                builtin("air.instance_id", 33, 0),
+                builtin("air.patch_id", 33, 4),
+                builtin("air.position_in_patch", position, 8),
+            ],
+            "{name}"
+        );
+        assert_eq!(r.dump_stride, stride, "{name}");
+        assert_eq!(r.inferred, [inferred(29, 0, 2, 4, (0, 0))], "{name}");
+        let builtins: Vec<&str> =
+            r.arguments[r.arguments.len() - r.builtin_count as usize..].iter().map(|b| b.name.as_str()).collect();
+        assert_eq!(builtins, ["p", "patch", "instance"], "{name}");
+    }
+}
+
+/// `fmt_fullscreen_vertex` returns a float4 and `pip_void_vertex` nothing: a return value that is not a struct is one
+/// output the service names from nothing (its metadata is the list of output nodes), and a written buffer is no input.
+#[test]
+fn return_values_that_are_not_structs_are_dumped_unnamed() {
+    let h = Harness::new();
+    let (_, r) = reflect(&h, "fmt_fullscreen_vertex");
+    assert_eq!(r.dump, [builtin("air.vertex_id", 33, 0), builtin("air.instance_id", 33, 4), output("", 0, "", 8)]);
+    assert_eq!(r.dump_stride, 24);
+    assert!(r.inferred.is_empty());
+    let (_, r) = reflect(&h, "pip_void_vertex");
+    assert_eq!(r.dump, [builtin("air.vertex_id", 33, 0), builtin("air.instance_id", 33, 4)]);
+    assert_eq!(r.dump_stride, 8);
+    assert!(r.inferred.is_empty());
+}
+
+/// A post-tessellation vertex function with a control-point input is refused: the record the service makes of
+/// `air.patch_control_point_input` is not reproduced.
+#[test]
+fn patch_control_point_inputs_are_refused() {
     let h = Harness::new();
     let lib = reference_library();
-    let f = &lib["pip_reflect_vertex"];
-    let handle = h.function(&f.bitcode, "pip_reflect_vertex", f.function_type);
+    let f = &lib["pip_post_tess"];
+    let handle = h.function(&f.bitcode, "pip_post_tess", f.function_type);
     let failure = h.status(Request::ReflectFunction(ReflectFunction { function: handle }));
     assert_eq!(failure.status, status::UNIMPLEMENTED, "{failure:?}");
-    assert!(failure.message.contains("post-vertex-dump"), "{}", failure.message);
+    assert!(failure.message.contains("patch control point"), "{}", failure.message);
 }

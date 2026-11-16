@@ -22,20 +22,29 @@
 //!
 //! **What is produced.** This module writes the block from the function's AIR as the service does: the argument records
 //! of `parseArgumentMetadata` (0x1c3dfeadc) in the module's argument order, built-ins after them, the struct layouts of
-//! `parseStructTypeMetadata` (0x1c3df9d50), and the sections of `generateReflectionData` for kernel and fragment
-//! functions. Every value is taken from the AIR metadata by the rules of those functions; the type-name tables are the
-//! service's own (`bufferTypeMap` and `textureTypeMap`, below).
+//! `parseStructTypeMetadata` (0x1c3df9d50), and the sections of `generateReflectionData` for vertex, kernel and
+//! fragment functions. Every value is taken from the AIR metadata by the rules of those functions; the type-name tables
+//! are the service's own (`bufferTypeMap` and `textureTypeMap`, below).
+//!
+//! **Vertex functions.** For a vertex function (`BinaryRequestData` +0x28 == 1) `generateReflection` first runs
+//! `MTLAddPostVertexDumpingToModulePass::addPostVertexDumpingToModule` (0x1c3e0c30c, called at 0x1c3e0b24c) with its
+//! reflection-only argument set, which skips every change to the module (0x1c3e0c610, 0x1c3e0cbe4, 0x1c3e0cd10,
+//! 0x1c3e0ce70, 0x1c3e0d6b0) and only lists what the dump would record: the built-ins the dump needs, then each value
+//! of the function's return value. The list and its stride are the post-vertex-dump section of the reflection
+//! ([`post_vertex_dump`]). `generateReflectionData` then runs `inferInputsFromModule` (0x1c3e184f8), which finds the
+//! loads of read-only buffers the function indexes by its vertex or instance id, for the inferred-input section
+//! ([`infer_inputs`]). The vertex inputs' attribute indices are listed as a kernel's stage-in attributes are.
 //!
 //! What it does not produce is refused as not implemented, naming the reason:
 //!
-//! - vertex functions: the service adds post-vertex-dump instrumentation to a vertex function before reflecting it
-//!   (`MTLAddPostVertexDumpingToModulePass::addPostVertexDumpingToModule`, 0x1c3e0c30c) and writes its outputs and the
-//!   inputs `MTLGenerateReflectionDataPass::inferInputsFromModule` finds; neither is reproduced;
 //! - visible, intersection, mesh and object functions (other requests, other readers);
 //! - argument kinds whose records carry data the host does not model (imageblocks, payloads, meshes, `air.constant`
 //!   and `air.byval` arguments, function pointers), buffers of pixel-format types, `air.global_bindings`, and an
 //!   argument named `trace.buffer` (which the service lists or drops by a request flag);
-//! - modules whose AIR upgrade would change what the reflection reads (below).
+//! - modules whose AIR upgrade would change what the reflection reads (below);
+//! - the vertex metadata and IR shapes on which the passes above read memory they do not own (a missing or non-tuple
+//!   `air.vertex` operand, a key with no string after it), and the inferred inputs whose sizes come from a data layout
+//!   other than the air64 one or from the pointee of a loaded pointer, which the AIR layer does not keep.
 //!
 //! **The AIR upgrade.** The service upgrades every module it reads from AIR bitcode before it reflects it:
 //! `readModuleFromBinaryRequest` calls `MTLCompilerObject::upgradeAIRModule` (0x1c3e09578, 0x1c3e09964) with the
@@ -72,7 +81,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use airwgsl::air::{Access, AirModule, Argument, EntryPoint, IndirectArgument, Location, Role, Slot, StructInfo};
-use airwgsl::ir::Value;
+use airwgsl::ir::layout::DataLayout;
+use airwgsl::ir::{BinOp, CastOp, ConstKind, GlobalId, MdId, Metadata, Module, Op, Type, TypeId, Value};
 use webmetal_wire::Failure;
 
 use super::registry::{Function, function_type};
@@ -727,6 +737,15 @@ impl Writer {
         self.out.len() - 4
     }
 
+    /// A string of the post-vertex-dump section: its bytes, then a NUL unless it already ends in one (the writer
+    /// 0x1c3dfcfdc, whose sizing counterpart 0x1c3dfcfa8 counts the same).
+    fn dump_string(&mut self, s: &[u8]) {
+        self.out.extend_from_slice(s);
+        if s.last() != Some(&0) {
+            self.out.push(0);
+        }
+    }
+
     fn patch(&mut self, at: usize) {
         let end = self.out.len() as u32;
         self.out[at..at + 4].copy_from_slice(&end.to_le_bytes());
@@ -831,7 +850,614 @@ fn argument_used(module: &AirModule, entry: &EntryPoint, i: u32) -> bool {
     module.ir.functions[entry.function as usize].insts.iter().any(|inst| inst.op.operands().contains(&Value::Arg(i)))
 }
 
-/// The legacy reflection of a kernel or fragment entry point (`generateReflectionData`, 0x1c3dfd044).
+// Vertex functions ----------------------------------------------------------------------------------------------------
+
+/// `MTLFrameworkPass::vertexFetchbuiltInAIRString` (MTLCompiler 0x1ef046030): the built-ins the post-vertex dump and
+/// the inferred inputs know, by their id.
+const VERTEX_FETCH_BUILTINS: [&str; 10] = [
+    "air.vertex_id",
+    "air.instance_id",
+    "air.base_instance",
+    "air.patch_id",
+    "air.position_in_patch",
+    "air.thread_position_in_grid",
+    "air.stage_in_grid_origin",
+    "air.stage_in_grid_size",
+    "air.amplification_id",
+    "air.amplification_count",
+];
+
+/// The data type `addRequiredBuiltInsToBuiltInList` (0x1c3e19ea8) gives each built-in it requires, by id (the `u32`
+/// table at 0x1c3eb12e4): `float` for `air.position_in_patch`, `uint` for the others.
+const VERTEX_FETCH_BUILTIN_TYPES: [u32; 10] = [33, 33, 33, 33, 3, 33, 33, 33, 33, 33];
+
+/// Whether the device supports vertex amplification. `MTLGetCompilerOptions` (Metal 0x187a9adf4) sets request flag
+/// bit 10 from `-[MTLDevice supportsVertexAmplification]`, and `generateReflection` passes that bit to the post-vertex
+/// dump (0x1c3e0b234), which then also requires `air.amplification_id`. The A10X answers no (`-[AGXA10FamilyDevice
+/// supportsVertexAmplification]` 0x21c8d4f44, the device profile).
+const SUPPORTS_VERTEX_AMPLIFICATION: bool = false;
+
+/// `vertexFetchBuiltInInfo` (0x1c3e33344): the id of a built-in record's `builtInType` (the byte table at 0x1c3eb14d3,
+/// for the types of mask 0x30f01b), or `None` for a built-in neither pass knows.
+fn vertex_fetch_id(builtin_type: u32) -> Option<usize> {
+    Some(match builtin_type {
+        1 => 0,
+        2 => 1,
+        4 => 2,
+        5 => 5,
+        13 => 3,
+        14 => 4,
+        15 => 6,
+        16 => 7,
+        21 => 8,
+        22 => 9,
+        _ => return None,
+    })
+}
+
+/// `MTLDataTypeGetComponentType` (0x1c3e1a6dc, table 0x1c3eb14ec) and `MTLDataTypeGetComponentCount` (0x1c3e333cc,
+/// table 0x1c3eb1644): a scalar or vector data type's scalar type and length; (0, 0) for any other type.
+fn component(data_type: u32) -> (u32, u32) {
+    let base = match data_type {
+        3..=6 => 3,
+        16..=19 => 16,
+        29..=56 => 29 + (data_type - 29) / 4 * 4,
+        81..=88 => 81 + (data_type - 81) / 4 * 4,
+        _ => return (0, 0),
+    };
+    (base, data_type - base + 1)
+}
+
+/// `MTLDataTypeGetVectorDataType` (MTLCompiler 0x1c3e0e4d0): the vector of `count` (1 to 4) elements of a scalar
+/// data type, or 0. Metal's own (0x187bab674), which `inferInputsFromModule` calls, also knows `bfloat` (121); the
+/// scalar types that pass gives it are among the ones both know.
+fn vector_data_type(scalar: u32, count: u32) -> u32 {
+    match scalar {
+        3 | 16 | 29 | 33 | 37 | 41 | 45 | 49 | 53 | 81 | 85 if (1..=4).contains(&count) => scalar + count - 1,
+        _ => 0,
+    }
+}
+
+/// The size in bits of `MTLFrameworkPass::getLLVMVectorType(dataType, count)` (0x1c3e0e428): a `count`-element vector
+/// of the data type's LLVM scalar, or the scalar itself for a count below 2. The service aborts for another type.
+fn builtin_vector_bits(data_type: u32, count: u32) -> Result<u64, String> {
+    let scalar = match data_type {
+        3 | 29 | 33 => 32,
+        16 | 37 | 41 => 16,
+        53 => 1,
+        t => return Err(format!("a post-vertex-dump built-in of data type {t}, for which the service aborts")),
+    };
+    Ok(scalar * if count >= 2 { count as u64 } else { 1 })
+}
+
+/// `llvm::Type::getPrimitiveSizeInBits`: a scalar's or fixed vector's size, 0 for any other type.
+fn primitive_bits(ir: &Module, ty: TypeId) -> Result<u64, String> {
+    Ok(match ir.types.get(ty) {
+        Type::Half | Type::BFloat => 16,
+        Type::Float => 32,
+        Type::Double => 64,
+        Type::X86Fp80 => 80,
+        Type::Fp128 | Type::PpcFp128 => 128,
+        Type::X86Amx => 8192,
+        Type::Int(bits) => *bits as u64,
+        Type::Vector { len, elem, scalable: false } => *len as u64 * primitive_bits(ir, *elem)?,
+        Type::Vector { scalable: true, .. } => return Err("a scalable vector in a vertex function's output".into()),
+        _ => 0,
+    })
+}
+
+/// The bytes a post-vertex dump gives a value of `bits` bits (0x1c3e0d484, 0x1c3dfadb0): its bytes, at least 4,
+/// rounded up to a multiple of 4.
+fn dump_size(bits: u64) -> u32 {
+    ((bits >> 3) as u32).max(4).wrapping_add(3) & !3
+}
+
+/// What the post-vertex dump records of one value (`PostVertexDumpOutput`, 0x1c3dfaf6c), in the order
+/// `serializePostVertexDumpOutputs` (0x1c3dfcd64) writes it.
+#[derive(Debug, PartialEq)]
+struct DumpOutput {
+    /// +0x10: the value's AIR role (`air.position`), or the built-in's name.
+    md_type: Vec<u8>,
+    data_type: u32,
+    pixel_format: u32,
+    alu_type: u32,
+    /// +0x40: the value's path in the return value.
+    name: Vec<u8>,
+    /// +0x58: where the dump writes it.
+    offset: u32,
+}
+
+/// The `air.vertex` node of the function: its outputs operand and, for a post-tessellation vertex function, whether its
+/// patches are triangles. `eliminateOtherEntryPoints` (0x1c3e09a44) leaves the module this one node, which both passes
+/// read as `air.vertex`'s operand 0.
+struct VertexNode {
+    outputs: Option<MdId>,
+    triangle_patch: Option<bool>,
+}
+
+fn md_string<'a>(ir: &'a Module, op: Option<&Option<MdId>>) -> Option<&'a [u8]> {
+    match op.copied().flatten().map(|id| ir.md(id)) {
+        Some(Metadata::String(s)) => Some(s),
+        _ => None,
+    }
+}
+
+fn vertex_node(ir: &Module, function: u32) -> Result<VertexNode, String> {
+    let nodes: Vec<&[Option<MdId>]> = ir
+        .named_metadata
+        .iter()
+        .filter(|n| n.name == "air.vertex")
+        .flat_map(|n| n.ops.iter())
+        .filter_map(|&id| match ir.md(id) {
+            Metadata::Tuple { ops, .. } => Some(ops.as_slice()),
+            _ => None,
+        })
+        .filter(|ops| {
+            matches!(
+                ops.first().copied().flatten().map(|id| ir.md(id)),
+                Some(Metadata::Value { value: Value::Global(GlobalId::Function(f)), .. }) if *f == function
+            )
+        })
+        .collect();
+    let [ops] = nodes.as_slice() else {
+        return Err(format!("{} air.vertex nodes of the function rather than one", nodes.len()));
+    };
+    // The pass reads operand 1 as the outputs and operand 2 as the argument list (getArgumentMetadataIndices,
+    // 0x1c3e1a04c) without checking that they are there.
+    if ops.len() < 3 {
+        return Err("an air.vertex node without its outputs and arguments operands".into());
+    }
+    for (i, what) in [(1, "outputs"), (2, "arguments")] {
+        if let Some(id) = ops[i]
+            && !matches!(ir.md(id), Metadata::Tuple { .. })
+        {
+            return Err(format!("an air.vertex {what} operand that is not a node"));
+        }
+    }
+    if ops[2].is_none() {
+        return Err("an air.vertex node whose arguments operand is null".into());
+    }
+    // The patch operand (0x1c3e0c3ec-0x1c3e0c448, 0x1c3e0dc00-0x1c3e0dc58): a node of at least two operands whose first
+    // is "air.patch"; its second "triangle" makes triangle patches, any other string quad ones.
+    let mut triangle_patch = None;
+    if let Some(&patch) = ops.get(3) {
+        let Some(Metadata::Tuple { ops: p, .. }) = patch.map(|id| ir.md(id)) else {
+            return Err("an air.vertex operand 3 that is not a node".into());
+        };
+        if p.len() >= 2 {
+            let Some(key) = md_string(ir, p.first()) else {
+                return Err("an air.vertex operand 3 whose first operand is not a string".into());
+            };
+            if key == b"air.patch" {
+                let Some(kind) = md_string(ir, p.get(1)) else {
+                    return Err("an air.patch node whose patch type is not a string".into());
+                };
+                triangle_patch = Some(kind == b"triangle");
+            }
+        }
+    }
+    Ok(VertexNode { outputs: ops[1], triangle_patch })
+}
+
+/// The post-vertex dump's walk over the function's return value (`iterateAllContainedValues`, 0x1c3df9314, with the
+/// pass's block 0x1c3dfad5c), appending to `outputs` and `stride`.
+struct Dump<'a> {
+    ir: &'a Module,
+    outputs: Vec<DumpOutput>,
+    stride: u32,
+}
+
+impl Dump<'_> {
+    /// One value of type `ty` described by `md`, inside a value named `name` at `path` whose metadata gave
+    /// (`data_type`, `pixel_format`, `alu_type`).
+    #[allow(clippy::too_many_arguments)]
+    fn value(
+        &mut self,
+        ty: TypeId,
+        md: Option<MdId>,
+        name: &[u8],
+        data_type: u32,
+        pixel_format: u32,
+        alu_type: u32,
+        path: &[u8],
+    ) -> Result<(), String> {
+        let ops: &[Option<MdId>] = match md.map(|id| self.ir.md(id)) {
+            None => &[],
+            Some(Metadata::Tuple { ops, .. }) => ops,
+            Some(_) => return Err("a vertex output whose metadata is not a node".into()),
+        };
+        // The node's strings: the first is the role; "air.arg_type_name" and "air.arg_name" name the string after them.
+        let mut role: &[u8] = b"";
+        let mut arg_name: &[u8] = b"";
+        let (mut md_type, mut md_format, mut md_alu) = (0, 0, 0);
+        for (i, op) in ops.iter().enumerate() {
+            let Some(s) = md_string(self.ir, Some(op)) else { continue };
+            if s == b"air.arg_type_name" {
+                let Some(t) = md_string(self.ir, ops.get(i + 1)) else {
+                    return Err("an air.arg_type_name with no string after it in a vertex output".into());
+                };
+                // Read through `strlen` (0x1c3df9484).
+                let t = &t[..t.iter().position(|&c| c == 0).unwrap_or(t.len())];
+                let (dt, _, _, pf, alu) = data_type_info(&String::from_utf8_lossy(t))?;
+                (md_type, md_format, md_alu) = (dt, pf, alu);
+            } else if s == b"air.arg_name" {
+                let Some(n) = md_string(self.ir, ops.get(i + 1)) else {
+                    return Err("an air.arg_name with no string after it in a vertex output".into());
+                };
+                arg_name = n;
+            } else if i == 0 {
+                role = s;
+            }
+        }
+        let name = if name.is_empty() { role.to_vec() } else { [name, b" ", role].concat() };
+        let data_type = if data_type != 0 { data_type } else { md_type };
+        let pixel_format = if pixel_format != 0 { pixel_format } else { md_format };
+        let alu_type = if alu_type != 0 { alu_type } else { md_alu };
+        let path = [path, arg_name].concat();
+        match self.ir.types.get(ty) {
+            Type::Void => {}
+            Type::Struct { .. } | Type::LiteralStruct { .. } => {
+                let (struct_name, elems): (&[u8], &[TypeId]) = match self.ir.types.get(ty) {
+                    Type::Struct { name, body, .. } => (name.as_bytes(), body.as_deref().unwrap_or(&[])),
+                    Type::LiteralStruct { elems, .. } => (b"", elems),
+                    _ => unreachable!("matched above"),
+                };
+                let base = [if path.is_empty() { struct_name } else { &path }, b"."].concat();
+                for (i, &elem) in elems.iter().enumerate() {
+                    let member_md = match md {
+                        None => None,
+                        Some(_) => match ops.get(i) {
+                            Some(op) => *op,
+                            None => return Err("a vertex output struct with more members than its metadata".into()),
+                        },
+                    };
+                    self.value(elem, member_md, &name, data_type, pixel_format, alu_type, &base)?;
+                }
+            }
+            Type::Array { len, elem } => {
+                for i in 0..*len {
+                    let element_path = [&path, format!("[{i}]").as_bytes()].concat();
+                    self.value(*elem, None, &name, data_type, pixel_format, alu_type, &element_path)?;
+                }
+            }
+            _ => {
+                let offset = self.stride;
+                self.stride = self.stride.wrapping_add(dump_size(primitive_bits(self.ir, ty)?));
+                self.outputs.push(DumpOutput { md_type: name, data_type, pixel_format, alu_type, name: path, offset });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// What `addPostVertexDumpingToModule` reports in a reflection-only request: the dump's stride and its outputs, the
+/// built-ins it requires first (0x1c3e0cb5c-0x1c3e0d5d4), then each value of the return value (0x1c3e0d67c).
+fn post_vertex_dump(
+    ir: &Module,
+    entry: &EntryPoint,
+    node: &VertexNode,
+    records: &[Option<Record>],
+) -> Result<(u32, Vec<DumpOutput>), String> {
+    let mut dump = Dump { ir, outputs: Vec::new(), stride: 0 };
+    dump.builtins(records, node.triangle_patch)?;
+    let Type::Function { ret, .. } = ir.types.get(ir.functions[entry.function as usize].ty) else {
+        return Err("an entry point whose type is not a function type".into());
+    };
+    dump.value(*ret, node.outputs, b"", 0, 0, 0, b"")?;
+    Ok((dump.stride, dump.outputs))
+}
+
+impl Dump<'_> {
+    /// The built-ins the dump requires, for a post-tessellation vertex function of triangle (`Some(true)`) or quad
+    /// patches or for another vertex function (`None`).
+    fn builtins(&mut self, records: &[Option<Record>], triangle_patch: Option<bool>) -> Result<(), String> {
+        // The built-ins of the function's arguments (0x1c3e0c5b4-0x1c3e0c95c): (id, count, data type) in argument order,
+        // and each id's place in that list.
+        let mut list: Vec<(usize, u32, u32)> = Vec::new();
+        let mut place: [Option<usize>; 10] = [None; 10];
+        for r in records.iter().flatten() {
+            if r.flags & flag::INPUT != 0 || r.flags & flag::BUILTIN == 0 {
+                continue;
+            }
+            let Some(id) = vertex_fetch_id(r.builtin_type) else { continue };
+            let type_name = r.type_name.as_deref().unwrap_or("");
+            let type_name = &type_name[..type_name.find('\0').unwrap_or(type_name.len())];
+            let (scalar, count) = component(data_type_info(type_name)?.0);
+            place[id] = Some(list.len());
+            list.push((id, count, scalar));
+        }
+        // The built-ins the dump requires, with their component counts (0x1c3e0cb5c-0x1c3e0cbdc).
+        let mut required = [0u32; 10];
+        required[1] = 1;
+        match triangle_patch {
+            None => required[0] = 1,
+            Some(triangle) => {
+                required[3] = 1;
+                required[4] = if triangle { 3 } else { 2 };
+            }
+        }
+        if SUPPORTS_VERTEX_AMPLIFICATION {
+            required[8] = 1;
+        }
+        // addRequiredBuiltInsToBuiltInList: a required built-in the arguments have takes the larger count and the
+        // required type; one they lack is added.
+        for (id, &count) in required.iter().enumerate() {
+            if count == 0 {
+                continue;
+            }
+            match place[id] {
+                Some(p) => list[p] = (list[p].0, list[p].1.max(count), VERTEX_FETCH_BUILTIN_TYPES[id]),
+                None => {
+                    place[id] = Some(list.len());
+                    list.push((id, count, VERTEX_FETCH_BUILTIN_TYPES[id]));
+                }
+            }
+        }
+        for (id, _) in required.iter().enumerate().filter(|(_, c)| **c != 0) {
+            let (name_id, count, data_type) = list[place[id].expect("added above")];
+            let vector = vector_data_type(data_type, count);
+            let offset = self.stride;
+            self.stride = self.stride.wrapping_add(dump_size(builtin_vector_bits(data_type, count)?));
+            self.outputs.push(DumpOutput {
+                md_type: VERTEX_FETCH_BUILTINS[name_id].as_bytes().to_vec(),
+                data_type: vector,
+                pixel_format: 0,
+                alu_type: vector,
+                name: Vec::new(),
+                offset,
+            });
+        }
+        Ok(())
+    }
+}
+
+/// An input `inferInputsFromModule` finds (`MTLGenerateReflectionDataPass::InferredInput`), in the order
+/// `serializeInferredInputs` (0x1c3e0114c) writes it; the pixel format and ALU type it writes are always 0 and the last
+/// word always 1 (0x1c3e18f88-0x1c3e18fa4).
+#[derive(Debug, PartialEq)]
+struct InferredInput {
+    data_type: u32,
+    offset: u32,
+    buffer_index: u32,
+    stride: u32,
+    /// `MTLVertexStepFunction`: constant 0, per vertex 1, per instance 2.
+    step_function: u32,
+    step_rate: u32,
+}
+
+/// The value of an integer constant (`ConstantInt`, value id 0x10): its low 64 bits, as the pass reads them.
+fn const_int(ir: &Module, v: Value) -> Option<u64> {
+    let Value::Const(c) = v else { return None };
+    let c = ir.constant(c);
+    match (&c.kind, ir.types.get(c.ty)) {
+        (ConstKind::Int(words), Type::Int(_)) => words.first().copied(),
+        _ => None,
+    }
+}
+
+/// `inferInputsFromModule` (0x1c3e184f8): the loads in the function's entry block of a read-only buffer the function
+/// only indexes (a buffer argument with an array length of 1 whose every use is a GEP, load or bitcast in the entry
+/// block), at an index of the form `(id + c) * m / d` (or with `<<` and `>>` for `*` and `/`, `or` for `+`, `zext`s
+/// around the id) of the function's vertex or instance id or of a constant.
+fn infer_inputs(ir: &Module, entry: &EntryPoint, records: &[Option<Record>]) -> Result<Vec<InferredInput>, String> {
+    let f = &ir.functions[entry.function as usize];
+    if f.blocks.is_empty() {
+        return Err("an entry point without a body".into());
+    }
+    let mut block_of = vec![0usize; f.insts.len()];
+    for (b, block) in f.blocks.iter().enumerate() {
+        for i in &block.insts {
+            block_of[i.0 as usize] = b;
+        }
+    }
+    // The arguments (0x1c3e186bc-0x1c3e18994): active vertex-fetch built-ins, by id, and read-only buffers only indexed
+    // in the entry block, by argument, with their buffer index.
+    let mut builtins: Vec<u32> = Vec::new();
+    let mut place: [Option<usize>; 10] = [None; 10];
+    let mut buffers: HashMap<u32, u32> = HashMap::new();
+    for (i, r) in records.iter().enumerate() {
+        let Some(r) = r else { continue };
+        if r.flags & flag::ACTIVE == 0 || r.flags & flag::INPUT != 0 {
+            continue;
+        }
+        if r.flags & flag::BUILTIN != 0 {
+            if let Some(id) = vertex_fetch_id(r.builtin_type) {
+                place[id] = Some(builtins.len());
+                builtins.push(i as u32);
+            }
+            continue;
+        }
+        if !matches!(r.kind(), kind::CONSTANT_BUFFER | kind::DEVICE_BUFFER)
+            || r.flags & (0x7 << flag::ACCESS_SHIFT) != 0
+            || r.array_length != 1
+        {
+            continue;
+        }
+        let only_indexed = f.insts.iter().enumerate().all(|(n, inst)| {
+            !inst.op.operands().contains(&Value::Arg(i as u32))
+                || (block_of[n] == 0
+                    && matches!(inst.op, Op::Gep { .. } | Op::Load { .. } | Op::Cast { op: CastOp::BitCast, .. }))
+        });
+        if only_indexed {
+            buffers.insert(i as u32, r.index);
+        }
+    }
+    let mut out = Vec::new();
+    if builtins.is_empty() || buffers.is_empty() {
+        return Ok(out);
+    }
+    let op_of = |v: Value| match v {
+        Value::Inst(i) => Some(&f.inst(i).op),
+        _ => None,
+    };
+    let strip_zext = |v: Value| match op_of(v) {
+        Some(Op::Cast { op: CastOp::ZExt, value, .. }) => *value,
+        _ => v,
+    };
+    // An operand pair with a constant: (the other operand, the constant), the left operand tried first.
+    let with_constant = |lhs: Value, rhs: Value| match (const_int(ir, lhs), const_int(ir, rhs)) {
+        (Some(c), _) => Some((rhs, c)),
+        (None, Some(c)) => Some((lhs, c)),
+        (None, None) => None,
+    };
+    let air64 = ir.datalayout == AIR64_DATA_LAYOUT;
+    let size_bytes = |t: TypeId| -> Result<u64, String> {
+        if !air64 {
+            return Err(format!(
+                "an inferred vertex input sized by the data layout {:?} rather than the air64 one",
+                ir.datalayout
+            ));
+        }
+        let dl = DataLayout::parse(&ir.datalayout)?;
+        dl.size_bits(&ir.types, t)
+            .map(|b| (b + 7) >> 3)
+            .ok_or_else(|| "an inferred vertex input of an unsized type".into())
+    };
+    // The loads of the entry block (0x1c3e189cc-0x1c3e190d4).
+    for &id in &f.blocks[0].insts {
+        let load = f.inst(id);
+        let Op::Load { ptr, .. } = load.op else { continue };
+        let ptr = match op_of(ptr) {
+            Some(Op::Cast { op: CastOp::BitCast, value, .. }) => *value,
+            _ => ptr,
+        };
+        let buffer_of = |v: Value| match v {
+            Value::Arg(a) => buffers.get(&a).map(|&index| (a, index)),
+            _ => None,
+        };
+        // (the buffer's index, the index value, the struct and member a three-operand GEP selects, the type the index
+        // steps over: the load's type for a load of the buffer itself, else the buffer's pointee). The pass reads the
+        // pointee from the GEP's base pointer type (0x1c3e18b2c-0x1c3e18b98, 0x1c3e18e10-0x1c3e18e28); the GEP's source
+        // element type is that pointee in every module the service reads, whose LLVM rejects a typed-pointer GEP
+        // whose explicit type is not its base's pointee.
+        let (buffer_index, index, member, element) = if let Some((_, index)) = buffer_of(ptr) {
+            (index, None, None, load.ty)
+        } else {
+            let Some(Op::Gep { source: pointee, ptr: base, indices, .. }) = op_of(ptr) else { continue };
+            let pointee = *pointee;
+            let Some((_, buffer_index)) = buffer_of(*base) else { continue };
+            match indices.as_slice() {
+                [index] => (buffer_index, Some(*index), None, pointee),
+                [index, field] => {
+                    let Some(field) = const_int(ir, *field) else { continue };
+                    // An opaque struct has no members, so no member index is in range.
+                    let members = match ir.types.get(pointee) {
+                        Type::Struct { body, .. } => body.as_ref().map_or(0, Vec::len),
+                        Type::LiteralStruct { elems, .. } => elems.len(),
+                        _ => continue,
+                    };
+                    if field >= members as u64 {
+                        continue;
+                    }
+                    (buffer_index, Some(*index), Some(field as usize), pointee)
+                }
+                _ => continue,
+            }
+        };
+        // The index (0x1c3e18a64-0x1c3e18dfc): constant 0 for a load of the buffer itself.
+        let (mut offset, mut multiplier, mut step_function, mut step_rate) = (0u64, 1u64, 0u32, 0u64);
+        match index {
+            None => {}
+            Some(v) => {
+                let v = strip_zext(v);
+                let (v, addend) = match op_of(v) {
+                    Some(Op::Binary { op: BinOp::Add | BinOp::Or, lhs, rhs, .. }) => {
+                        let Some(pair) = with_constant(*lhs, *rhs) else { continue };
+                        pair
+                    }
+                    _ => (v, 0),
+                };
+                let (v, scale, shift) = match op_of(v) {
+                    Some(Op::Binary { op: BinOp::Shl, lhs, rhs, .. }) => {
+                        let Some(s) = const_int(ir, *rhs) else { continue };
+                        (*lhs, 1, s)
+                    }
+                    Some(Op::Binary { op: BinOp::Mul, lhs, rhs, .. }) => {
+                        let Some((v, m)) = with_constant(*lhs, *rhs) else { continue };
+                        (v, m, 0)
+                    }
+                    _ => (v, 1, 0),
+                };
+                let v = strip_zext(v);
+                let (v, divisor, right) = match op_of(v) {
+                    Some(Op::Binary { op: BinOp::LShr, lhs, rhs, .. }) => {
+                        let Some(s) = const_int(ir, *rhs) else { continue };
+                        (*lhs, 1, s)
+                    }
+                    Some(Op::Binary { op: BinOp::UDiv, lhs, rhs, .. }) => {
+                        let Some(d) = const_int(ir, *rhs) else { continue };
+                        (*lhs, d, 0)
+                    }
+                    _ => (v, 1, 0),
+                };
+                // AArch64 `lsl` by a register shifts by its low six bits; `udiv` by 0 is 0.
+                multiplier = scale.wrapping_shl(shift as u32);
+                let divisor = divisor.wrapping_shl(right as u32);
+                if let Some(c) = const_int(ir, v) {
+                    offset = c.checked_div(divisor).unwrap_or(0).wrapping_mul(multiplier).wrapping_add(addend);
+                } else {
+                    let is = |id: usize| place[id].is_some_and(|p| v == Value::Arg(builtins[p]));
+                    step_function = if is(0) {
+                        1
+                    } else if is(1) {
+                        2
+                    } else {
+                        continue;
+                    };
+                    offset = addend;
+                    step_rate = divisor;
+                }
+            }
+        }
+        // The loaded type (0x1c3e18e58-0x1c3e18f70): a float, half, int, short or bool scalar or vector of 1 to 4.
+        let (count, scalar) = match ir.types.get(load.ty) {
+            Type::Ptr(_) => return Err("an inferred vertex input load of a pointer, whose pointee is not known".into()),
+            Type::Vector { len, elem, scalable: false } => (*len, *elem),
+            _ => (1, load.ty),
+        };
+        let scalar = match ir.types.get(scalar) {
+            Type::Float => 3,
+            Type::Half => 16,
+            Type::Int(32) => 29,
+            Type::Int(16) => 37,
+            Type::Int(1) => 53,
+            _ => continue,
+        };
+        let data_type = vector_data_type(scalar, count);
+        if data_type == 0 {
+            continue;
+        }
+        // The offset and stride (0x1c3e18e08-0x1c3e18ed0): a struct member read at the index itself (no constant, no
+        // scale) is the member's offset in steps of the struct's size; otherwise the element's size scales the index.
+        let (offset, stride) = match member {
+            Some(m) => {
+                if offset != 0 || multiplier != 1 {
+                    continue;
+                }
+                let size = size_bytes(element)?;
+                let layout = DataLayout::parse(&ir.datalayout)?
+                    .struct_layout(&ir.types, element)
+                    .ok_or_else(|| "an inferred vertex input in an unsized struct".to_string())?;
+                (layout.offsets[m], size)
+            }
+            None => {
+                let size = size_bytes(element)?;
+                (size.wrapping_mul(offset), size.wrapping_mul(multiplier))
+            }
+        };
+        out.push(InferredInput {
+            data_type,
+            offset: offset as u32,
+            buffer_index,
+            stride: stride as u32,
+            step_function,
+            step_rate: step_rate as u32,
+        });
+    }
+    Ok(out)
+}
+
+/// The legacy reflection of a vertex, kernel or fragment entry point (`generateReflectionData`, 0x1c3dfd044).
 fn legacy(module: &AirModule, entry: &EntryPoint, function_type: u64, describe: &str) -> Result<Vec<u8>, Failure> {
     let refuse = |what: &str| {
         failure::unimplemented(format!(
@@ -844,19 +1470,31 @@ fn legacy(module: &AirModule, entry: &EntryPoint, function_type: u64, describe: 
     }
     // A fragment function's output imageblock data (`extractOutputImageBlockDataFromMetadata`, 0x1c3e00dc4: an
     // output record of `air.imageblock_data`) has no output role in the AIR layer, which refuses such modules.
-    let staged = function_type == function_type::KERNEL;
-    let mut main = Vec::new();
-    let mut builtins = Vec::new();
-    let mut attributes = Vec::new();
-    let mut writer = Writer { out: Vec::new(), written: HashMap::new() };
+    // Vertex functions and kernels have the stage-in attributes, the post-vertex-dump and inferred-input sections
+    // (`(MTLFunctionType | 2) == 3`, 0x1c3dfde9c, 0x1c3dfe318, 0x1c3dfe3a8).
+    let staged = matches!(function_type, function_type::VERTEX | function_type::KERNEL);
+    let mut records = Vec::with_capacity(entry.arguments.len());
     let mut next_id = 0;
     for (i, a) in entry.arguments.iter().enumerate() {
         if a.position as usize != i {
             return Err(refuse("argument records out of the function's parameter order"));
         }
         let mut p = Parser { function: describe, data_layout: &module.ir.datalayout, next_id, cache: Vec::new() };
-        let record = p.record(a, Some(argument_used(module, entry, i as u32)))?;
+        records.push(p.record(a, Some(argument_used(module, entry, i as u32)))?);
         next_id = p.next_id;
+    }
+    let (dump_stride, dump, inferred) = if function_type == function_type::VERTEX {
+        let node = vertex_node(&module.ir, entry.function).map_err(|e| refuse(&e))?;
+        let (stride, dump) = post_vertex_dump(&module.ir, entry, &node, &records).map_err(|e| refuse(&e))?;
+        (stride, dump, infer_inputs(&module.ir, entry, &records).map_err(|e| refuse(&e))?)
+    } else {
+        (0, Vec::new(), Vec::new())
+    };
+    let mut main = Vec::new();
+    let mut builtins = Vec::new();
+    let mut attributes = Vec::new();
+    let mut writer = Writer { out: Vec::new(), written: HashMap::new() };
+    for record in records {
         let Some(mut r) = record else { continue };
         if r.flags & flag::ARGUMENT != 0 {
             if r.name == "trace.buffer" {
@@ -890,14 +1528,28 @@ fn legacy(module: &AirModule, entry: &EntryPoint, function_type: u64, describe: 
         w.u32(0);
     }
     if staged {
-        // The post-vertex-dump section: its index (0 outside vertex functions) and no outputs.
-        w.u32(0);
+        // The post-vertex-dump section (0x1c3dfe328-0x1c3dfe3a4): the dump's stride, the section's end, the outputs.
+        // A kernel's has stride 0 and no outputs.
+        w.u32(dump_stride);
         let end = w.reserve();
-        w.u32(0);
+        w.u32(dump.len() as u32);
+        for o in &dump {
+            w.dump_string(&o.md_type);
+            w.u32(o.data_type);
+            w.u32(o.pixel_format);
+            w.u32(o.alu_type);
+            w.dump_string(&o.name);
+            w.u32(o.offset);
+        }
         w.patch(end);
-        // Inferred inputs: only a vertex function's are inferred.
+        // The inferred inputs (0x1c3dfe3b4-0x1c3dfe3fc): only a vertex function's are inferred.
         let end = w.reserve();
-        w.u32(0);
+        w.u32(inferred.len() as u32);
+        for i in &inferred {
+            for v in [i.data_type, 0, 0, i.offset, i.buffer_index, i.stride, i.step_function, i.step_rate, 1] {
+                w.u32(v);
+            }
+        }
         w.patch(end);
     }
     // No trace buffer, no plugin data.
@@ -916,15 +1568,7 @@ fn legacy(module: &AirModule, entry: &EntryPoint, function_type: u64, describe: 
 pub fn reply(f: &Function) -> Result<Vec<u8>, Failure> {
     let describe = f.describe();
     match f.function_type {
-        function_type::KERNEL | function_type::FRAGMENT => {}
-        function_type::VERTEX => {
-            return Err(failure::unimplemented(format!(
-                "function reflection of {describe}: the A10X's compiler service adds post-vertex-dump instrumentation \
-                 to a vertex function before reflecting it (MTLAddPostVertexDumpingToModulePass::\
-                 addPostVertexDumpingToModule, MTLCompiler 21H461 0x1c3e0c30c) and writes the inputs \
-                 inferInputsFromModule finds, which the host does not reproduce"
-            )));
-        }
+        function_type::VERTEX | function_type::KERNEL | function_type::FRAGMENT => {}
         t => {
             return Err(failure::unimplemented(format!(
                 "function reflection of {describe}: {} functions are reflected by another request of the compiler \
@@ -1142,5 +1786,200 @@ mod tests {
         u(&mut want, 0);
         u(&mut want, 0);
         assert_eq!(w.out, want);
+    }
+
+    #[test]
+    fn data_types_split_into_component_type_and_count() {
+        assert_eq!(component(3), (3, 1));
+        assert_eq!(component(5), (3, 3));
+        assert_eq!(component(19), (16, 4));
+        assert_eq!(component(33), (33, 1));
+        assert_eq!(component(55), (53, 3));
+        assert_eq!(component(88), (85, 4));
+        // Matrices and the types past the tables have none.
+        assert_eq!(component(15), (0, 0));
+        assert_eq!(component(57), (0, 0));
+        assert_eq!(component(0), (0, 0));
+        for t in 3..=88 {
+            let (scalar, count) = component(t);
+            if count != 0 {
+                assert_eq!(vector_data_type(scalar, count), t, "{t}");
+            }
+        }
+        assert_eq!(vector_data_type(3, 5), 0);
+        assert_eq!(vector_data_type(3, 0), 0);
+        assert_eq!(vector_data_type(121, 1), 0);
+    }
+
+    #[test]
+    fn dumped_values_take_whole_words() {
+        assert_eq!(dump_size(0), 4);
+        assert_eq!(dump_size(1), 4);
+        assert_eq!(dump_size(32), 4);
+        assert_eq!(dump_size(48), 8);
+        assert_eq!(dump_size(96), 12);
+        assert_eq!(dump_size(128), 16);
+    }
+
+    #[test]
+    fn dump_strings_end_in_one_nul() {
+        let mut w = Writer { out: Vec::new(), written: HashMap::new() };
+        w.dump_string(b"");
+        w.dump_string(b"ab");
+        w.dump_string(b"c\0");
+        assert_eq!(w.out, b"\0ab\0c\0");
+    }
+
+    #[test]
+    fn vertex_fetch_ids_follow_the_service_table() {
+        let ids: Vec<Option<usize>> = (0..=23).map(vertex_fetch_id).collect();
+        let want = [
+            None,
+            Some(0),
+            Some(1),
+            None,
+            Some(2),
+            Some(5),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(3),
+            Some(4),
+            Some(6),
+            Some(7),
+            None,
+            None,
+            None,
+            None,
+            Some(8),
+            Some(9),
+            None,
+        ];
+        assert_eq!(ids, want);
+    }
+
+    fn builtin(builtin_type: u32, type_name: &str) -> Option<Record> {
+        let mut r = record("b", flag::BUILTIN | flag::ACTIVE | (kind::BUILTIN << flag::KIND_SHIFT));
+        r.builtin_type = builtin_type;
+        r.type_name = Some(type_name.into());
+        Some(r)
+    }
+
+    fn dumped(name: &str, data_type: u32, offset: u32) -> DumpOutput {
+        DumpOutput {
+            md_type: name.as_bytes().to_vec(),
+            data_type,
+            pixel_format: 0,
+            alu_type: data_type,
+            name: Vec::new(),
+            offset,
+        }
+    }
+
+    #[test]
+    fn a_vertex_function_dumps_its_vertex_and_instance_ids() {
+        let ir = Module::new();
+        let mut dump = Dump { ir: &ir, outputs: Vec::new(), stride: 0 };
+        // A `ushort` vertex id is dumped as the `uint` the dump requires; a base instance is not required.
+        dump.builtins(&[builtin(4, "uint"), builtin(1, "ushort")], None).unwrap();
+        assert_eq!(dump.outputs, [dumped("air.vertex_id", 33, 0), dumped("air.instance_id", 33, 4)]);
+        assert_eq!(dump.stride, 8);
+    }
+
+    #[test]
+    fn a_post_tessellation_function_dumps_its_patch_and_position() {
+        let ir = Module::new();
+        let mut dump = Dump { ir: &ir, outputs: Vec::new(), stride: 0 };
+        dump.builtins(&[builtin(14, "float3"), builtin(13, "uint")], Some(true)).unwrap();
+        assert_eq!(
+            dump.outputs,
+            [dumped("air.instance_id", 33, 0), dumped("air.patch_id", 33, 4), dumped("air.position_in_patch", 5, 8)]
+        );
+        assert_eq!(dump.stride, 20);
+        let mut dump = Dump { ir: &ir, outputs: Vec::new(), stride: 0 };
+        dump.builtins(&[], Some(false)).unwrap();
+        assert_eq!(dump.outputs[2], dumped("air.position_in_patch", 4, 8));
+        assert_eq!(dump.stride, 16);
+    }
+
+    fn strings(m: &mut Module, s: &[&str]) -> MdId {
+        let ops = s.iter().map(|s| Some(m.intern_md(Metadata::String(s.as_bytes().to_vec())))).collect();
+        m.intern_md(Metadata::Tuple { distinct: false, ops })
+    }
+
+    #[test]
+    fn the_dump_walks_the_return_value_by_its_metadata() {
+        let mut m = Module::new();
+        let float = m.types.intern(Type::Float);
+        let half = m.types.intern(Type::Half);
+        let float4 = m.types.vector(4, float);
+        let half3 = m.types.vector(3, half);
+        let clip = m.types.intern(Type::Array { len: 2, elem: float });
+        let ret = m.types.intern(Type::LiteralStruct { packed: true, elems: vec![float4, clip, half3] });
+        let position = strings(&mut m, &["air.position", "air.arg_type_name", "float4", "air.arg_name", "position"]);
+        let distance = strings(&mut m, &["air.clip_distance", "air.arg_type_name", "float", "air.arg_name", "clip"]);
+        let color =
+            strings(&mut m, &["air.vertex_output", "generated(1c)", "air.arg_type_name", "half3", "air.arg_name", "c"]);
+        let outputs =
+            m.intern_md(Metadata::Tuple { distinct: false, ops: vec![Some(position), Some(distance), Some(color)] });
+        let mut dump = Dump { ir: &m, outputs: Vec::new(), stride: 8 };
+        dump.value(ret, Some(outputs), b"", 0, 0, 0, b"").unwrap();
+        let got: Vec<(String, u32, String, u32)> = dump
+            .outputs
+            .iter()
+            .map(|o| {
+                (
+                    String::from_utf8(o.md_type.clone()).unwrap(),
+                    o.data_type,
+                    String::from_utf8(o.name.clone()).unwrap(),
+                    o.offset,
+                )
+            })
+            .collect();
+        // A literal struct has no name, so its members' paths start at the separator; an array's elements have no
+        // metadata of their own, which leaves a space after their role.
+        let want = [
+            ("air.position", 6, ".position", 8),
+            ("air.clip_distance ", 3, ".clip[0]", 24),
+            ("air.clip_distance ", 3, ".clip[1]", 28),
+            ("air.vertex_output", 18, ".c", 32),
+        ];
+        let want: Vec<(String, u32, String, u32)> =
+            want.iter().map(|(a, b, c, d)| (a.to_string(), *b, c.to_string(), *d)).collect();
+        assert_eq!(got, want);
+        assert_eq!(dump.stride, 40);
+        // A value that is not a struct is one output, named by nothing: the outputs node holds nodes, not strings.
+        let mut dump = Dump { ir: &m, outputs: Vec::new(), stride: 0 };
+        dump.value(float4, Some(outputs), b"", 0, 0, 0, b"").unwrap();
+        assert_eq!(
+            dump.outputs,
+            [DumpOutput {
+                md_type: Vec::new(),
+                data_type: 0,
+                pixel_format: 0,
+                alu_type: 0,
+                name: Vec::new(),
+                offset: 0
+            }]
+        );
+        // A named struct names the path; a member without its node is refused.
+        let named = m.types.new_struct("struct.V".into());
+        m.types.set_struct_body(named, false, vec![float4]);
+        let one = m.intern_md(Metadata::Tuple { distinct: false, ops: vec![Some(position)] });
+        let mut dump = Dump { ir: &m, outputs: Vec::new(), stride: 0 };
+        dump.value(named, Some(one), b"", 0, 0, 0, b"").unwrap();
+        assert_eq!(dump.outputs[0].name, b"struct.V.position");
+        let two = m.intern_md(Metadata::Tuple { distinct: false, ops: vec![] });
+        let mut dump = Dump { ir: &m, outputs: Vec::new(), stride: 0 };
+        assert!(dump.value(named, Some(two), b"", 0, 0, 0, b"").is_err());
+        // A key with nothing after it is refused.
+        let bad = strings(&mut m, &["air.position", "air.arg_name"]);
+        let list = m.intern_md(Metadata::Tuple { distinct: false, ops: vec![Some(bad)] });
+        let mut dump = Dump { ir: &m, outputs: Vec::new(), stride: 0 };
+        assert!(dump.value(named, Some(list), b"", 0, 0, 0, b"").is_err());
     }
 }
